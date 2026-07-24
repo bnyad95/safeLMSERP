@@ -1591,37 +1591,55 @@ class ErpController extends Controller
         OrganizationScope::apply($coursesQuery, $user, 'course');
         OrganizationScope::apply($sectionsQuery, $user, 'section');
 
-        $universities = $universitiesQuery->get(['id', 'name', 'code', 'email']);
-        $colleges = $collegesQuery->get(['id', 'name', 'code', 'university_id']);
-        $departments = $departmentsQuery->get(['id', 'name', 'code', 'university_id', 'college_id']);
-        $semesters = $semestersQuery->get(['id', 'name', 'academic_year', 'start_date', 'end_date', 'university_id']);
-        $courses = $coursesQuery->get(['id', 'name', 'code', 'credits', 'status', 'department_id', 'university_id']);
-        $sections = $sectionsQuery->get();
+        $universityCount = (clone $universitiesQuery)->count();
+        $collegeCount = (clone $collegesQuery)->count();
+        $departmentCount = (clone $departmentsQuery)->count();
+        $semesterCount = (clone $semestersQuery)->count();
+        $courseCount = (clone $coursesQuery)->count();
+        $moduleCount = (clone $sectionsQuery)->reorder()->count();
+        $inactiveCourseCount = (clone $coursesQuery)->where('status', 'inactive')->count();
 
         $structureStats = [
-            ['label' => 'Universities', 'value' => number_format($universities->count()), 'detail' => 'Institution records in scope'],
-            ['label' => 'Colleges', 'value' => number_format($colleges->count()), 'detail' => 'College definitions'],
-            ['label' => 'Departments', 'value' => number_format($departments->count()), 'detail' => 'Academic departments'],
-            ['label' => 'Semesters', 'value' => number_format($semesters->count()), 'detail' => 'Academic periods'],
-            ['label' => 'Course Names', 'value' => number_format($courses->count()), 'detail' => 'Catalog definitions'],
-            ['label' => 'Modules', 'value' => number_format($sections->count()), 'detail' => 'Course sections by stage'],
+            ['label' => 'Universities', 'value' => number_format($universityCount), 'detail' => 'Institution records in scope'],
+            ['label' => 'Colleges', 'value' => number_format($collegeCount), 'detail' => 'College definitions'],
+            ['label' => 'Departments', 'value' => number_format($departmentCount), 'detail' => 'Academic departments'],
+            ['label' => 'Semesters', 'value' => number_format($semesterCount), 'detail' => 'Academic periods'],
+            ['label' => 'Course Catalog', 'value' => number_format($courseCount), 'detail' => 'Catalog definitions'],
+            ['label' => 'Modules', 'value' => number_format($moduleCount), 'detail' => 'Course sections by stage'],
         ];
 
-        $stageSummaries = $sections
-            ->groupBy(fn (CourseSection $section) => $section->grade_level ?: 'Stage not specified')
-            ->map(fn ($stageSections, string $stage) => [
-                'stage' => $stage,
-                'modules' => $stageSections->count(),
-                'courses' => $stageSections->pluck('course_id')->unique()->count(),
-                'semesters' => $stageSections->pluck('semester_id')->filter()->unique()->count(),
-                'students' => $stageSections->sum('active_enrollments_count'),
-                'credits' => $stageSections->sum(fn (CourseSection $section) => (int) ($section->course?->credits ?? 0)),
-            ])
-            ->sortBy('stage')
-            ->values();
+        $activeEnrollmentCounts = Enrollment::query()
+            ->selectRaw('course_section_id, COUNT(*) as active_enrollments_count')
+            ->where('status', 'enrolled')
+            ->groupBy('course_section_id');
 
-        $moduleSummaries = $sections
-            ->take(12)
+        $stageSummaries = (clone $sectionsQuery)
+            ->reorder()
+            ->leftJoin('courses', 'course_sections.course_id', '=', 'courses.id')
+            ->leftJoinSub($activeEnrollmentCounts, 'active_enrollment_counts', function ($join) {
+                $join->on('active_enrollment_counts.course_section_id', '=', 'course_sections.id');
+            })
+            ->selectRaw("COALESCE(NULLIF(course_sections.grade_level, ''), 'Stage not specified') as stage")
+            ->selectRaw('COUNT(course_sections.id) as modules')
+            ->selectRaw('COUNT(DISTINCT course_sections.course_id) as courses')
+            ->selectRaw('COUNT(DISTINCT course_sections.semester_id) as semesters')
+            ->selectRaw('COALESCE(SUM(active_enrollment_counts.active_enrollments_count), 0) as students')
+            ->selectRaw('COALESCE(SUM(courses.credits), 0) as credits')
+            ->groupByRaw("COALESCE(NULLIF(course_sections.grade_level, ''), 'Stage not specified')")
+            ->orderBy('stage')
+            ->get()
+            ->map(fn ($stage) => [
+                'stage' => $stage->stage,
+                'modules' => (int) $stage->modules,
+                'courses' => (int) $stage->courses,
+                'semesters' => (int) $stage->semesters,
+                'students' => (int) $stage->students,
+                'credits' => (int) $stage->credits,
+            ]);
+
+        $moduleSummaries = (clone $sectionsQuery)
+            ->limit(12)
+            ->get()
             ->map(fn (CourseSection $section) => [
                 'module' => trim(($section->course?->code ?? 'Course').' '.$section->section_code),
                 'course' => $section->course?->name ?? 'No course',
@@ -1635,34 +1653,42 @@ class ErpController extends Controller
         $curriculumSignals = collect([
             [
                 'label' => 'Missing stage',
-                'value' => $sections->whereNull('grade_level')->count() + $sections->where('grade_level', '')->count(),
+                'value' => (clone $sectionsQuery)
+                    ->reorder()
+                    ->where(fn ($query) => $query->whereNull('grade_level')->orWhere('grade_level', ''))
+                    ->count(),
                 'detail' => 'Modules should be assigned to a stage.',
             ],
             [
                 'label' => 'Missing semester',
-                'value' => $sections->whereNull('semester_id')->count(),
+                'value' => (clone $sectionsQuery)->reorder()->whereNull('semester_id')->count(),
                 'detail' => 'Modules should be attached to an academic period.',
             ],
             [
                 'label' => 'Unassigned teacher',
-                'value' => $sections->whereNull('teacher_id')->count(),
+                'value' => (clone $sectionsQuery)->reorder()->whereNull('teacher_id')->count(),
                 'detail' => 'Every active module should have an instructor.',
             ],
             [
                 'label' => 'Inactive courses',
-                'value' => $courses->where('status', 'inactive')->count(),
+                'value' => $inactiveCourseCount,
                 'detail' => 'Review inactive catalog definitions.',
             ],
         ]);
         $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
+        $canViewCourseCatalog = $user->hasRole('super_administrator') || $user->hasPermission('courses.view');
+
+        $setupCards = [
+            ['title' => 'Universities', 'description' => 'Institution records and official codes.', 'route' => route('universities.index'), 'count' => $universityCount, 'enabled' => true],
+            ['title' => 'Colleges', 'description' => 'College definitions under each university.', 'route' => route('colleges.index'), 'count' => $collegeCount, 'enabled' => true],
+            ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
+            ['title' => 'Semesters', 'description' => 'Academic periods with year and date range.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
+            ['title' => 'Course Catalog', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
+        ];
 
         return view('erp.bologna-definition', compact(
-            'universities',
-            'colleges',
-            'departments',
-            'semesters',
-            'courses',
+            'setupCards',
             'structureStats',
             'stageSummaries',
             'moduleSummaries',

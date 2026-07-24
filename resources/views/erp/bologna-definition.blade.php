@@ -2,96 +2,89 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900">Bologna Definition</h2>
-                <p class="text-sm text-gray-600">Academic structure, stages, semesters, modules, credits, and curriculum readiness.</p>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Bologna Definition</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Academic structure, stages, semesters, modules, credits, and curriculum readiness.</p>
             </div>
             <div class="flex gap-2">
                 @if($canManageAcademicSetup)
-                    <a href="{{ route('academic-years.create') }}" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                    <a href="{{ route('academic-years.create') }}" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">
                         Add Academic Year
                     </a>
                 @endif
-                <a href="{{ route('dashboard') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                <a href="{{ route('dashboard') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                     Back to Dashboard
                 </a>
             </div>
         </div>
     </x-slot>
 
-    @php
-        $setupCards = [
-            ['title' => 'Universities', 'description' => 'Institution records and official codes.', 'route' => route('universities.index'), 'count' => $universities->count()],
-            ['title' => 'Colleges', 'description' => 'College definitions under each university.', 'route' => route('colleges.index'), 'count' => $colleges->count()],
-            ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departments->count()],
-            ['title' => 'Semesters', 'description' => 'Academic periods with year and date range.', 'route' => route('semesters.index'), 'count' => $semesters->count()],
-            ['title' => 'Course Names', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courses->count()],
-        ];
-    @endphp
-
     <div class="py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             <section class="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
                 @foreach($structureStats as $stat)
-                    <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                        <p class="text-xs font-semibold uppercase text-gray-500">{{ $stat['label'] }}</p>
-                        <p class="mt-2 text-2xl font-semibold text-gray-900">{{ $stat['value'] }}</p>
-                        <p class="mt-1 text-xs text-gray-500">{{ $stat['detail'] }}</p>
+                    <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $stat['label'] }}</p>
+                        <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $stat['value'] }}</p>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $stat['detail'] }}</p>
                     </div>
                 @endforeach
             </section>
 
-            <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                <div class="border-b border-gray-200 px-5 py-4">
-                    <h3 class="text-base font-semibold text-gray-900">Academic Setup</h3>
-                    <p class="mt-1 text-sm text-gray-500">Use these records as the base before opening modules, enrollment, timetable, attendance, and results.</p>
+            <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Academic Setup</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Use these records as the base before opening modules, enrollment, timetable, attendance, and results.</p>
                 </div>
                 <div class="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
                     @foreach($setupCards as $card)
-                        <a href="{{ $card['route'] }}" class="flex min-h-36 flex-col justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:border-blue-300 hover:bg-blue-50">
+                        <a
+                            @if($card['enabled']) href="{{ $card['route'] }}" @else aria-disabled="true" @endif
+                            class="flex min-h-36 flex-col justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950 {{ $card['enabled'] ? 'hover:border-blue-300 hover:bg-blue-50 dark:hover:border-indigo-500 dark:hover:bg-gray-900' : 'cursor-not-allowed opacity-70' }}"
+                        >
                             <div>
                                 <div class="flex items-start justify-between gap-3">
-                                    <h4 class="text-sm font-semibold text-gray-900">{{ $card['title'] }}</h4>
-                                    <span class="rounded bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">{{ $card['count'] }}</span>
+                                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $card['title'] }}</h4>
+                                    <span class="rounded bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ $card['count'] }}</span>
                                 </div>
-                                <p class="mt-2 text-sm text-gray-500">{{ $card['description'] }}</p>
+                                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ $card['description'] }}</p>
                             </div>
-                            <span class="mt-4 text-sm font-semibold text-blue-700">Open</span>
+                            <span class="mt-4 text-sm font-semibold {{ $card['enabled'] ? 'text-blue-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400' }}">{{ $card['enabled'] ? 'Open' : 'No access' }}</span>
                         </a>
                     @endforeach
                 </div>
             </section>
 
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
-                <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <div class="border-b border-gray-200 px-5 py-4">
-                        <h3 class="text-base font-semibold text-gray-900">Stages And Credits</h3>
-                        <p class="mt-1 text-sm text-gray-500">Modules grouped by Bologna stage, with enrolled students and total catalog credits.</p>
+                <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Stages And Credits</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Modules grouped by Bologna stage, with enrolled students and total catalog credits.</p>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
+                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                            <thead class="bg-gray-50 dark:bg-gray-950">
                                 <tr>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Stage</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Modules</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Courses</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Semesters</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Students</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Credits</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Stage</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Modules</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Catalog Courses</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Semesters</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Students</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Credits</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100 bg-white">
+                            <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
                                 @forelse($stageSummaries as $stage)
                                     <tr>
-                                        <td class="px-5 py-4 text-sm font-semibold text-gray-900">{{ $stage['stage'] }}</td>
-                                        <td class="px-5 py-4 text-sm text-gray-600">{{ $stage['modules'] }}</td>
-                                        <td class="px-5 py-4 text-sm text-gray-600">{{ $stage['courses'] }}</td>
-                                        <td class="px-5 py-4 text-sm text-gray-600">{{ $stage['semesters'] }}</td>
-                                        <td class="px-5 py-4 text-sm text-gray-600">{{ $stage['students'] }}</td>
-                                        <td class="px-5 py-4 text-sm text-gray-600">{{ $stage['credits'] }}</td>
+                                        <td class="px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $stage['stage'] }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['modules'] }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['courses'] }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['semesters'] }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['students'] }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['credits'] }}</td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="px-5 py-10 text-center text-sm text-gray-500">No modules have been defined yet.</td>
+                                        <td colspan="6" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No modules have been defined yet.</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -99,19 +92,19 @@
                     </div>
                 </section>
 
-                <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <div class="border-b border-gray-200 px-5 py-4">
-                        <h3 class="text-base font-semibold text-gray-900">Curriculum Checks</h3>
-                        <p class="mt-1 text-sm text-gray-500">Items to review before the structure is ready for daily operations.</p>
+                <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Curriculum Checks</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Items to review before the structure is ready for daily operations.</p>
                     </div>
-                    <div class="divide-y divide-gray-100">
+                    <div class="divide-y divide-gray-100 dark:divide-gray-800">
                         @foreach($curriculumSignals as $signal)
                             <div class="flex items-start justify-between gap-4 px-5 py-4">
                                 <div>
-                                    <p class="text-sm font-semibold text-gray-900">{{ $signal['label'] }}</p>
-                                    <p class="mt-1 text-sm text-gray-500">{{ $signal['detail'] }}</p>
+                                    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $signal['label'] }}</p>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $signal['detail'] }}</p>
                                 </div>
-                                <span class="rounded-md {{ $signal['value'] > 0 ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800' }} px-3 py-1 text-sm font-semibold">
+                                <span class="rounded-md {{ $signal['value'] > 0 ? 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200' : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' }} px-3 py-1 text-sm font-semibold">
                                     {{ $signal['value'] }}
                                 </span>
                             </div>
@@ -120,38 +113,38 @@
                 </section>
             </div>
 
-            <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                <div class="border-b border-gray-200 px-5 py-4">
-                    <h3 class="text-base font-semibold text-gray-900">Recent Modules</h3>
-                    <p class="mt-1 text-sm text-gray-500">Course modules currently connected to stages, semesters, teachers, credits, and active students.</p>
+            <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Recent Modules</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Course modules currently connected to stages, semesters, teachers, credits, and active students.</p>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                        <thead class="bg-gray-50 dark:bg-gray-950">
                             <tr>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Module</th>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Course</th>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Stage</th>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Semester</th>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Teacher</th>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Students</th>
-                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Credits</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Module</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Course</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Stage</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Semester</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Teacher</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Students</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Credits</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100 bg-white">
+                        <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
                             @forelse($moduleSummaries as $module)
                                 <tr>
-                                    <td class="px-5 py-4 text-sm font-semibold text-gray-900">{{ $module['module'] }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600">{{ $module['course'] }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600">{{ $module['stage'] }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600">{{ $module['semester'] }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600">{{ $module['teacher'] }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600">{{ $module['students'] }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600">{{ $module['credits'] }}</td>
+                                    <td class="px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $module['module'] }}</td>
+                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $module['course'] }}</td>
+                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $module['stage'] }}</td>
+                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $module['semester'] }}</td>
+                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $module['teacher'] }}</td>
+                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $module['students'] }}</td>
+                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $module['credits'] }}</td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-5 py-10 text-center text-sm text-gray-500">No modules have been defined yet.</td>
+                                    <td colspan="7" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No modules have been defined yet.</td>
                                 </tr>
                             @endforelse
                         </tbody>

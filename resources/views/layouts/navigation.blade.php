@@ -119,7 +119,6 @@
                         $isSuper = $navUser->hasRole('super_administrator');
                         $canStudents = $isSuper || $navUser->hasPermission('students.view');
                         $canTeachers = $isSuper || $navUser->hasPermission('teachers.view');
-                        $canCourses = ! $navUser->hasRole('teacher') && ($isSuper || $navUser->hasPermission('courses.view'));
                         $canEnrollments = $isSuper || $navUser->hasPermission('enrollments.view');
                         $canTimetable = $isSuper || $navUser->hasAnyPermission(['timetable.view', 'timetable.manage']);
                         $canAttendance = ($isSuper || $navUser->hasAnyRole(['administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'registrar']))
@@ -149,11 +148,10 @@
                         $canUserManagement = $isSuper || ($navUser->hasRole('it_support') && $navUser->hasAnyPermission(['users.create', 'users.update', 'users.assign_roles', 'users.reset_password']));
                     @endphp
 
-                    @if($canStudents || $canTeachers || $canCourses || $canEnrollments || $canTimetable || $canAttendance)
+                    @if($canStudents || $canTeachers || $canEnrollments || $canTimetable || $canAttendance)
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Academic</p>
                         @if($canStudents)<x-nav-link :href="route('students.index')" :active="request()->routeIs('students.*')">{{ __('Student Records') }}</x-nav-link>@endif
                         @if($canTeachers)<x-nav-link :href="route('teachers.index')" :active="request()->routeIs('teachers.*')">{{ __('Teachers') }}</x-nav-link>@endif
-                        @if($canCourses)<x-nav-link :href="route('course-records.index')" :active="request()->routeIs('course-records.*', 'courses')">{{ __('Courses') }}</x-nav-link>@endif
                         @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.*')">{{ __('Enrollments') }}</x-nav-link>@endif
                         @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
                         @if($canAttendance)<x-nav-link :href="route('attendance')" :active="request()->routeIs('attendance', 'attendance.*')">{{ __('Attendance') }}</x-nav-link>@endif
