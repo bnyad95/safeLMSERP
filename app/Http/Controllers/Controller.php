@@ -4,6 +4,16 @@ namespace App\Http\Controllers;
 
 abstract class Controller
 {
+    protected function safeUploadRules(string $presence = 'nullable', int $maxKilobytes = 51200): array
+    {
+        return [
+            $presence,
+            'file',
+            'max:'.$maxKilobytes,
+            'mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png,webp,mp4,mov,zip',
+        ];
+    }
+
     protected function requireAnyPermission(string ...$permissions): void
     {
         $user = auth()->user();

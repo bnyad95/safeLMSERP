@@ -33,16 +33,9 @@ class TeacherController extends Controller
         ];
 
         $directoryQuery = $this->teacherDirectoryQuery($filters, $request->user());
-        $matchingTeachers = (clone $directoryQuery)->get();
         $teachers = (clone $directoryQuery)->paginate(15)->withQueryString();
-        $stats = [
-            'total' => $matchingTeachers->count(),
-            'active' => $matchingTeachers->where('status', 'Active')->count(),
-            'inactive' => $matchingTeachers->where('status', 'Inactive')->count(),
-            'retired' => $matchingTeachers->where('status', 'Retired')->count(),
-            'active_classes' => $matchingTeachers->sum('active_sections_count'),
-        ];
-        $classificationGroups = $this->classifyTeachers($matchingTeachers);
+        $stats = $this->teacherStatusStats((clone $directoryQuery));
+        $classificationGroups = $this->teacherClassificationGroups((clone $directoryQuery));
         $universities = $this->scopedUniversities($request->user());
         $colleges = $this->scopedColleges($request->user());
         $departments = $this->scopedDepartments($request->user());
@@ -275,16 +268,16 @@ class TeacherController extends Controller
                 'courseSections as active_sections_count' => fn ($query) => $query->where('status', 'active'),
             ])
             ->when($filters['q'] !== '', fn ($query) => $query->where(function ($searchQuery) use ($filters) {
-                $searchQuery->where('full_name', 'like', "%{$filters['q']}%")
-                    ->orWhere('staff_id', 'like', "%{$filters['q']}%")
-                    ->orWhere('email', 'like', "%{$filters['q']}%")
-                    ->orWhere('title', 'like', "%{$filters['q']}%");
+                $searchQuery->where('teachers.full_name', 'like', "%{$filters['q']}%")
+                    ->orWhere('teachers.staff_id', 'like', "%{$filters['q']}%")
+                    ->orWhere('teachers.email', 'like', "%{$filters['q']}%")
+                    ->orWhere('teachers.title', 'like', "%{$filters['q']}%");
             }))
-            ->when($filters['university_id'], fn ($query) => $query->where('university_id', $filters['university_id']))
+            ->when($filters['university_id'], fn ($query) => $query->where('teachers.university_id', $filters['university_id']))
             ->when($filters['college_id'], fn ($query) => $query->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
-            ->when($filters['department_id'], fn ($query) => $query->where('department_id', $filters['department_id']))
-            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
-            ->orderBy('full_name');
+            ->when($filters['department_id'], fn ($query) => $query->where('teachers.department_id', $filters['department_id']))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('teachers.status', $filters['status']))
+            ->orderBy('teachers.full_name');
 
         return $query;
     }
@@ -308,6 +301,79 @@ class TeacherController extends Controller
                     ->values(),
             ])
             ->sortBy('college')
+            ->values();
+    }
+
+    private function teacherStatusStats($query): array
+    {
+        $counts = (clone $query)
+            ->reorder()
+            ->select('teachers.status', DB::raw('COUNT(*) as aggregate'))
+            ->groupBy('teachers.status')
+            ->pluck('aggregate', 'status');
+
+        $matchingTeacherIds = (clone $query)
+            ->reorder()
+            ->select('teachers.id');
+
+        $activeClasses = Teacher::withoutGlobalScope('organization')
+            ->whereIn('teachers.id', $matchingTeacherIds)
+            ->join('course_sections as active_teacher_sections', function ($join) {
+                $join->on('teachers.id', '=', 'active_teacher_sections.teacher_id')
+                    ->where('active_teacher_sections.status', 'active')
+                    ->whereNull('active_teacher_sections.deleted_at');
+            })
+            ->count('active_teacher_sections.id');
+
+        return [
+            'total' => (int) $counts->sum(),
+            'active' => (int) ($counts['Active'] ?? 0),
+            'inactive' => (int) ($counts['Inactive'] ?? 0),
+            'retired' => (int) ($counts['Retired'] ?? 0),
+            'active_classes' => (int) $activeClasses,
+        ];
+    }
+
+    private function teacherClassificationGroups($query)
+    {
+        $matchingTeacherIds = (clone $query)
+            ->reorder()
+            ->select('teachers.id');
+
+        $rows = Teacher::withoutGlobalScope('organization')
+            ->whereIn('teachers.id', $matchingTeacherIds)
+            ->leftJoin('departments as classification_departments', 'teachers.department_id', '=', 'classification_departments.id')
+            ->leftJoin('colleges as classification_colleges', 'classification_departments.college_id', '=', 'classification_colleges.id')
+            ->leftJoin('course_sections as classification_sections', function ($join) {
+                $join->on('teachers.id', '=', 'classification_sections.teacher_id')
+                    ->where('classification_sections.status', 'active')
+                    ->whereNull('classification_sections.deleted_at');
+            })
+            ->selectRaw("
+                COALESCE(classification_colleges.name, 'No college') as college_name,
+                COALESCE(classification_departments.name, 'No department') as department_name,
+                COUNT(DISTINCT teachers.id) as teachers_count,
+                COUNT(classification_sections.id) as active_classes_count
+            ")
+            ->groupBy('college_name', 'department_name')
+            ->orderBy('college_name')
+            ->orderBy('department_name')
+            ->get();
+
+        return $rows
+            ->groupBy('college_name')
+            ->map(fn ($collegeRows, string $collegeName) => [
+                'college' => $collegeName,
+                'count' => (int) $collegeRows->sum('teachers_count'),
+                'active_classes' => (int) $collegeRows->sum('active_classes_count'),
+                'departments' => $collegeRows
+                    ->map(fn ($row) => [
+                        'department' => $row->department_name,
+                        'count' => (int) $row->teachers_count,
+                        'active_classes' => (int) $row->active_classes_count,
+                    ])
+                    ->values(),
+            ])
             ->values();
     }
 

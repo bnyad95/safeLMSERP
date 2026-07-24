@@ -237,7 +237,7 @@ class AssessmentController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['assignment', 'exam', 'quiz', 'project', 'lab'])],
             'description' => ['nullable', 'string', 'max:5000'],
-            'instruction_file' => ['nullable', 'file', 'max:51200'],
+            'instruction_file' => $this->safeUploadRules(),
             'max_score' => ['required', 'numeric', 'min:1', 'max:1000'],
             'weight_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'opens_at' => ['nullable', 'date'],
@@ -286,7 +286,7 @@ class AssessmentController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'type' => ['required', Rule::in(['assignment', 'exam', 'quiz', 'project', 'lab'])],
             'description' => ['nullable', 'string', 'max:5000'],
-            'instruction_file' => ['nullable', 'file', 'max:51200'],
+            'instruction_file' => $this->safeUploadRules(),
             'max_score' => ['required', 'numeric', 'min:1', 'max:1000'],
             'weight_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'opens_at' => ['nullable', 'date'],
@@ -370,7 +370,7 @@ class AssessmentController extends Controller
 
         $validated = $request->validate([
             'content' => ['nullable', 'required_without:submission_file', 'string', 'max:10000'],
-            'submission_file' => ['nullable', 'required_without:content', 'file', 'max:51200'],
+            'submission_file' => $this->safeUploadRules('required_without:content'),
         ]);
 
         $attachmentPath = $request->hasFile('submission_file')
@@ -403,6 +403,7 @@ class AssessmentController extends Controller
     {
         abort_unless($assessmentItem->instruction_file_path, 404);
         abort_unless($this->canAccessAssessment($request, $assessmentItem), 403);
+        abort_unless(Storage::disk('public')->exists($assessmentItem->instruction_file_path), 404);
 
         return Storage::disk('public')->download($assessmentItem->instruction_file_path);
     }
@@ -418,6 +419,7 @@ class AssessmentController extends Controller
             || ($user->hasAnyPermission(['lms.grade_assignment', 'marks.enter']) && $this->canManageAssessment($request, $submission->assessmentItem));
 
         abort_unless($canDownload, 403);
+        abort_unless(Storage::disk('public')->exists($submission->attachment_path), 404);
 
         return Storage::disk('public')->download($submission->attachment_path);
     }

@@ -964,8 +964,8 @@ class FinanceController extends Controller
             return false;
         }
 
-        return $user->hasAnyRole(['super_administrator', 'administrator', 'chief_accountant', 'accountant'])
-            || $user->hasPermission('finance.view');
+        return $user->hasAnyRole(['super_administrator', 'chief_accountant', 'accountant'])
+            || $user->hasDirectPermissionGrant('finance.view');
     }
 
     private function canManageStudentAccountBlock(?User $user): bool
@@ -975,8 +975,8 @@ class FinanceController extends Controller
         }
 
         return $user->hasRole('super_administrator')
-            || $user->hasAnyRole(['administrator', 'chief_accountant', 'accountant'])
-            || $user->hasAnyPermission(['finance.create_invoice', 'finance.record_payment', 'finance.approve_payment']);
+            || $user->hasAnyRole(['chief_accountant', 'accountant'])
+            || $user->hasAnyDirectPermissionGrant(['finance.create_invoice', 'finance.record_payment', 'finance.approve_payment']);
     }
 
     private function validatedInvoiceAllocation(array $transaction): ?int

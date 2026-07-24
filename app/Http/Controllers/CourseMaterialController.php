@@ -51,7 +51,7 @@ class CourseMaterialController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'file' => 'nullable|file|max:52428800', // 50MB
+            'file' => $this->safeUploadRules('nullable', 51200),
             'file_type' => 'required|in:pdf,doc,video,image,presentation,other',
             'visibility' => 'required|in:draft,published',
         ]);
@@ -82,7 +82,7 @@ class CourseMaterialController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'file' => 'nullable|file|max:52428800',
+            'file' => $this->safeUploadRules('nullable', 51200),
             'file_type' => 'required|in:pdf,doc,video,image,presentation,other',
             'visibility' => 'required|in:draft,published',
         ]);
@@ -122,6 +122,7 @@ class CourseMaterialController extends Controller
         if (! $material->file_path) {
             abort(404, 'File not found');
         }
+        abort_unless(Storage::disk('public')->exists($material->file_path), 404);
 
         return Storage::disk('public')->download($material->file_path);
     }

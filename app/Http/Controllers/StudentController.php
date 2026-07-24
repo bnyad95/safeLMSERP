@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Models\StudentDocument;
 use App\Models\StudentGuardian;
 use App\Models\User;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
@@ -37,19 +38,13 @@ class StudentController extends Controller
         ];
 
         $directoryQuery = $this->studentDirectoryQuery($filters);
-        $classificationStudents = $this->addGradeLabels((clone $directoryQuery)->get());
         $students = (clone $directoryQuery)
             ->paginate(15)
             ->withQueryString();
         $students->setCollection($this->addGradeLabels($students->getCollection()));
 
-        $classificationGroups = $this->classifyStudents($classificationStudents);
-        $stats = [
-            'total' => $classificationStudents->count(),
-            'active' => $classificationStudents->where('status', 'Active')->count(),
-            'inactive' => $classificationStudents->where('status', 'Inactive')->count(),
-            'graduated' => $classificationStudents->where('status', 'Graduated')->count(),
-        ];
+        $classificationGroups = $this->studentClassificationGroups((clone $directoryQuery));
+        $stats = $this->studentStatusStats((clone $directoryQuery));
         $colleges = College::orderBy('name')->get(['id', 'name']);
         $departments = Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']);
         $gradeOptions = CourseSection::whereNotNull('grade_level')
@@ -108,6 +103,7 @@ class StudentController extends Controller
     public function show(Request $request, Student $student)
     {
         $this->requireAnyPermission('students.view');
+        $this->authorizeStudentScope($request, $student);
 
         $student->load([
             'university',
@@ -130,6 +126,7 @@ class StudentController extends Controller
     public function edit(Student $student)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope(request(), $student);
 
         $student->load(['guardians', 'documents.uploader']);
         $departments = Department::orderBy('name')->get();
@@ -143,6 +140,7 @@ class StudentController extends Controller
     public function update(Request $request, Student $student)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope($request, $student);
 
         $validated = $this->validateStudent($request, $student);
 
@@ -165,6 +163,7 @@ class StudentController extends Controller
     public function storeGuardian(Request $request, Student $student)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope($request, $student);
 
         $validated = $request->validate($this->guardianRules());
         $validated['is_primary'] = $request->boolean('is_primary');
@@ -181,6 +180,7 @@ class StudentController extends Controller
     public function updateGuardian(Request $request, StudentGuardian $guardian)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope($request, $guardian->student);
 
         $validated = $request->validate($this->guardianRules());
         $validated['is_primary'] = $request->boolean('is_primary');
@@ -197,6 +197,7 @@ class StudentController extends Controller
     public function destroyGuardian(StudentGuardian $guardian)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope(request(), $guardian->student);
 
         $student = $guardian->student;
         $guardian->delete();
@@ -207,17 +208,18 @@ class StudentController extends Controller
     public function storeDocument(Request $request, Student $student)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope($request, $student);
 
         $validated = $request->validate([
             'type' => ['required', 'string', 'max:100'],
             'title' => ['required', 'string', 'max:255'],
-            'document' => ['required', 'file', 'max:51200'],
+            'document' => $this->safeUploadRules('required'),
             'status' => ['required', Rule::in(['Submitted', 'Verified', 'Rejected', 'Expired'])],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $file = $request->file('document');
-        $path = $file->store('student-documents', 'public');
+        $path = $file->store('student-documents');
 
         $student->documents()->create([
             'uploaded_by' => $request->user()->id,
@@ -237,19 +239,20 @@ class StudentController extends Controller
     public function downloadDocument(Request $request, StudentDocument $document)
     {
         abort_unless($this->canAccessDocument($request, $document), 403);
-        abort_unless($document->file_path && Storage::disk('public')->exists($document->file_path), 404);
+        abort_unless($document->file_path && Storage::disk('local')->exists($document->file_path), 404);
 
-        return Storage::disk('public')->download($document->file_path, $document->original_name);
+        return Storage::disk('local')->download($document->file_path, $document->original_name);
     }
 
     public function destroyDocument(StudentDocument $document)
     {
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope(request(), $document->student);
 
         $student = $document->student;
 
         if ($document->file_path) {
-            Storage::disk('public')->delete($document->file_path);
+            Storage::disk('local')->delete($document->file_path);
         }
 
         $document->delete();
@@ -263,6 +266,7 @@ class StudentController extends Controller
     public function destroy(Student $student)
     {
         $this->requireAnyPermission('students.archive');
+        $this->authorizeStudentScope(request(), $student);
 
         DB::transaction(function () use ($student) {
             $user = $this->linkedUser($student);
@@ -307,6 +311,7 @@ class StudentController extends Controller
 
         $student = Student::withTrashed()->findOrFail($studentId);
         abort_unless($student->trashed(), 404);
+        $this->authorizeStudentScope($request, $student);
 
         $accountCreated = DB::transaction(function () use ($student) {
             $student->restore();
@@ -325,6 +330,7 @@ class StudentController extends Controller
     {
         $this->requireAnyRole('super_administrator', 'department_administrator');
         $this->requireAnyPermission('students.update');
+        $this->authorizeStudentScope($request, $student);
 
         $validated = $request->validate([
             'password' => ['required', 'string', 'min:8', 'confirmed'],
@@ -458,23 +464,94 @@ class StudentController extends Controller
             ->values();
     }
 
+    private function studentStatusStats($query): array
+    {
+        $counts = $query
+            ->reorder()
+            ->select('status', DB::raw('COUNT(*) as aggregate'))
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
+        return [
+            'total' => (int) $counts->sum(),
+            'active' => (int) ($counts['Active'] ?? 0),
+            'inactive' => (int) ($counts['Inactive'] ?? 0),
+            'graduated' => (int) ($counts['Graduated'] ?? 0),
+        ];
+    }
+
+    private function studentClassificationGroups($query)
+    {
+        $matchingStudentIds = (clone $query)
+            ->reorder()
+            ->select('students.id');
+
+        $rows = Student::withoutGlobalScope('organization')
+            ->whereIn('students.id', $matchingStudentIds)
+            ->leftJoin('departments as classification_departments', 'students.department_id', '=', 'classification_departments.id')
+            ->leftJoin('colleges as classification_colleges', 'classification_departments.college_id', '=', 'classification_colleges.id')
+            ->leftJoin('enrollments as classification_enrollments', function ($join) {
+                $join->on('students.id', '=', 'classification_enrollments.student_id')
+                    ->where('classification_enrollments.status', 'enrolled')
+                    ->whereNull('classification_enrollments.deleted_at');
+            })
+            ->leftJoin('course_sections as classification_sections', function ($join) {
+                $join->on('classification_enrollments.course_section_id', '=', 'classification_sections.id')
+                    ->whereIn('classification_sections.status', ['planned', 'active'])
+                    ->whereNull('classification_sections.deleted_at');
+            })
+            ->selectRaw("
+                COALESCE(classification_colleges.name, 'No college') as college_name,
+                COALESCE(classification_departments.name, 'No department') as department_name,
+                COALESCE(classification_sections.grade_level, 'No stage') as stage_name,
+                COUNT(DISTINCT students.id) as students_count
+            ")
+            ->groupBy('college_name', 'department_name', 'stage_name')
+            ->orderBy('college_name')
+            ->orderBy('department_name')
+            ->orderBy('stage_name')
+            ->get();
+
+        return $rows
+            ->groupBy('college_name')
+            ->map(fn ($collegeRows, string $collegeName) => [
+                'college' => $collegeName,
+                'count' => (int) $collegeRows->sum('students_count'),
+                'departments' => $collegeRows
+                    ->groupBy('department_name')
+                    ->map(fn ($departmentRows, string $departmentName) => [
+                        'department' => $departmentName,
+                        'count' => (int) $departmentRows->sum('students_count'),
+                        'grades' => $departmentRows
+                            ->map(fn ($row) => [
+                                'grade' => $row->stage_name,
+                                'count' => (int) $row->students_count,
+                            ])
+                            ->values(),
+                    ])
+                    ->values(),
+            ])
+            ->values();
+    }
+
     private function studentDirectoryQuery(array $filters)
     {
-        return Student::with(['department.college', 'enrollments.courseSection'])
+        return $this->scopedStudentQuery(request()->user())
+            ->with(['department.college', 'enrollments.courseSection'])
             ->when($filters['q'] !== '', fn ($query) => $query->where(function ($searchQuery) use ($filters) {
-                $searchQuery->where('full_name', 'like', "%{$filters['q']}%")
-                    ->orWhere('student_id', 'like', "%{$filters['q']}%")
-                    ->orWhere('email', 'like', "%{$filters['q']}%");
+                $searchQuery->where('students.full_name', 'like', "%{$filters['q']}%")
+                    ->orWhere('students.student_id', 'like', "%{$filters['q']}%")
+                    ->orWhere('students.email', 'like', "%{$filters['q']}%");
             }))
             ->when($filters['college_id'], fn ($query) => $query->whereHas('department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id'])))
-            ->when($filters['department_id'], fn ($query) => $query->where('department_id', $filters['department_id']))
+            ->when($filters['department_id'], fn ($query) => $query->where('students.department_id', $filters['department_id']))
             ->when($filters['grade_level'] !== '', fn ($query) => $query->whereHas('enrollments', fn ($enrollmentQuery) => $enrollmentQuery
                 ->where('status', 'enrolled')
                 ->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery
                     ->where('grade_level', $filters['grade_level'])
                     ->whereIn('status', ['planned', 'active']))))
-            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
-            ->orderBy('full_name');
+            ->when($filters['status'] !== '', fn ($query) => $query->where('students.status', $filters['status']))
+            ->orderBy('students.full_name');
     }
 
     private function addGradeLabels($students)
@@ -510,6 +587,23 @@ class StudentController extends Controller
             'reset_password' => $isSuper || ($user->hasRole('department_administrator') && $user->hasPermission('students.update')),
             'transcript' => $isSuper || ($user->hasAnyRole(['administrator', 'university_administrator', 'college_administrator', 'department_administrator']) && $user->hasPermission('marks.view')),
         ];
+    }
+
+    private function scopedStudentQuery(User $user, bool $onlyTrashed = false)
+    {
+        $query = $onlyTrashed ? Student::onlyTrashed() : Student::query();
+        OrganizationScope::apply($query, $user, 'student');
+
+        return $query;
+    }
+
+    private function authorizeStudentScope(Request $request, Student $student): void
+    {
+        $query = $student->trashed()
+            ? $this->scopedStudentQuery($request->user(), true)
+            : $this->scopedStudentQuery($request->user());
+
+        abort_unless($query->whereKey($student->id)->exists(), 404);
     }
 
     private function syncStudentUser(Student $student, ?string $temporaryPassword = null, bool $forcePasswordChange = false): bool

@@ -589,11 +589,13 @@ class FinanceTest extends TestCase
         $this->assertNull($studentUser->fresh()->account_blocked_at);
     }
 
-    public function test_academic_admin_can_use_student_account_block_controls(): void
+    public function test_academic_admin_needs_direct_finance_permission_for_account_block_controls(): void
     {
         $academicAdminRole = Role::create(['name' => 'administrator', 'display_name' => 'Academic Administrator']);
         $academicAdmin = User::factory()->create();
         $academicAdmin->roles()->attach($academicAdminRole);
+        $viewPermission = Permission::create(['name' => 'finance.view', 'display_name' => 'View finance']);
+        $blockPermission = Permission::create(['name' => 'finance.create_invoice', 'display_name' => 'Create invoices']);
         $student = $this->makeStudent();
         $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
         $studentUser = User::factory()->create(['email' => $student->email]);
@@ -612,6 +614,13 @@ class FinanceTest extends TestCase
             'invoice_number' => 'INV-2026-000090',
             'transaction_date' => '2026-07-18',
         ]);
+
+        $this->actingAs($academicAdmin)
+            ->get(route('finance.students.show', $student))
+            ->assertForbidden();
+
+        $academicAdmin->permissionOverrides()->attach($viewPermission, ['effect' => 'grant']);
+        $academicAdmin->permissionOverrides()->attach($blockPermission, ['effect' => 'grant']);
 
         $this->actingAs($academicAdmin)
             ->get(route('finance.students.show', $student))

@@ -391,6 +391,41 @@ class AcademicYearClosureTest extends TestCase
             ->assertSee('No archived modules match these filters.');
     }
 
+    public function test_archive_rebuild_command_backfills_missing_snapshot_data(): void
+    {
+        $admin = $this->adminUser();
+        $setup = $this->academicSetup();
+        $setup['section']->update(['status' => 'closed']);
+        $setup['student']->enrollments()->first()->update(['status' => 'completed']);
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'final_mark' => 72,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+        AcademicYearClosure::create([
+            'university_id' => $setup['university']->id,
+            'academic_year' => $setup['semester']->academic_year,
+            'status' => 'closed',
+            'closed_by' => $admin->id,
+            'closed_at' => now(),
+            'summary' => null,
+        ]);
+
+        $this->artisan('academic-years:rebuild-archive', [
+            'academic_year' => $setup['semester']->academic_year,
+        ])->assertExitCode(0);
+
+        $summary = AcademicYearClosure::firstOrFail()->summary;
+
+        $this->assertIsArray($summary['archive_snapshot'] ?? null);
+        $this->assertCount(1, $summary['archive_snapshot']['modules']);
+        $this->assertCount(1, $summary['archive_snapshot']['marks']);
+    }
+
     public function test_closed_year_archive_lists_passed_and_failed_students_sorted_by_marks(): void
     {
         $admin = $this->adminUser();

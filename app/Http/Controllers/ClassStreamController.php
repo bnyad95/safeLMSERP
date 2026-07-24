@@ -75,7 +75,7 @@ class ClassStreamController extends Controller
 
         $validated = $request->validate([
             'body' => ['nullable', 'required_without:attachment', 'string', 'max:10000'],
-            'attachment' => ['nullable', 'required_without:body', 'file', 'max:51200'],
+            'attachment' => $this->safeUploadRules('required_without:body'),
         ]);
 
         $attachment = $request->file('attachment');

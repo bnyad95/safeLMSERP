@@ -59,7 +59,7 @@ class ClassMessageController extends Controller
         $validated = $request->validate([
             'recipient_id' => ['required', 'integer', 'exists:users,id'],
             'body' => ['nullable', 'required_without:attachment', 'string', 'max:5000'],
-            'attachment' => ['nullable', 'required_without:body', 'file', 'max:51200'],
+            'attachment' => $this->safeUploadRules('required_without:body'),
         ]);
         $recipient = $this->participants($request, $courseSection)->firstWhere('id', (int) $validated['recipient_id']);
         abort_unless($recipient, 403);

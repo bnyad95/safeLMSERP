@@ -55,7 +55,7 @@ class StudentProfileTest extends TestCase
 
     public function test_admin_can_manage_guardians_and_documents(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $admin = $this->makeAdmin();
         $student = $this->makeStudent();
@@ -98,12 +98,12 @@ class StudentProfileTest extends TestCase
             'status' => 'Verified',
             'original_name' => 'admission.pdf',
         ]);
-        Storage::disk('public')->assertExists($document->file_path);
+        Storage::disk('local')->assertExists($document->file_path);
     }
 
     public function test_student_can_view_and_download_own_profile_document(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $student = $this->makeStudent(['email' => 'portal-profile@example.com']);
         $student->guardians()->create([
@@ -113,7 +113,7 @@ class StudentProfileTest extends TestCase
             'is_primary' => true,
         ]);
 
-        Storage::disk('public')->put('student-documents/profile.pdf', 'profile document');
+        Storage::disk('local')->put('student-documents/profile.pdf', 'profile document');
         $document = $student->documents()->create([
             'type' => 'ID document',
             'title' => 'National ID',

@@ -273,22 +273,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance');
     Route::get('/finance/export', [FinanceController::class, 'export'])
-        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.export');
     Route::get('/finance/tuition-reminders', [FinanceController::class, 'tuitionReminders'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view,permission:finance.create_invoice,permission:finance.record_payment')
         ->name('finance.tuition-reminders.index');
     Route::get('/finance/students/{student}', [FinanceController::class, 'showStudent'])
-        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.students.show');
     Route::get('/finance/students/{student}/statement', [FinanceController::class, 'statement'])
-        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.statement');
     Route::post('/finance/students/{student}/account-block', [FinanceController::class, 'blockStudentAccount'])
-        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.approve_payment')
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.approve_payment')
         ->name('finance.students.account-block.store');
     Route::delete('/finance/students/{student}/account-block', [FinanceController::class, 'unblockStudentAccount'])
-        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.approve_payment')
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.approve_payment')
         ->name('finance.students.account-block.destroy');
     Route::post('/finance/transactions', [FinanceController::class, 'store'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.record_expense,permission:finance.refund')

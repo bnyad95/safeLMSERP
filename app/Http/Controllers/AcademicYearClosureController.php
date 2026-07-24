@@ -362,6 +362,47 @@ class AcademicYearClosureController extends Controller
         return redirect()->route('academic-year-closures.archive.show', $params);
     }
 
+    public function rebuildArchiveSummaries(?string $academicYear = null, bool $force = false): array
+    {
+        $years = AcademicYearClosure::query()
+            ->when($academicYear, fn ($query) => $query->where('academic_year', $academicYear))
+            ->distinct()
+            ->orderBy('academic_year')
+            ->pluck('academic_year');
+
+        $rebuilt = 0;
+        $skipped = 0;
+
+        foreach ($years as $year) {
+            $closures = AcademicYearClosure::where('academic_year', $year)->get();
+            $needsRebuild = $closures->contains(function (AcademicYearClosure $closure) {
+                $summary = $closure->summary ?? [];
+
+                return empty($summary['archive_snapshot'] ?? null);
+            });
+
+            if (! $force && ! $needsRebuild) {
+                $skipped += $closures->count();
+
+                continue;
+            }
+
+            $summary = $this->buildSummary($year);
+
+            AcademicYearClosure::where('academic_year', $year)->update([
+                'summary' => $summary['snapshot'],
+            ]);
+
+            $rebuilt += $closures->count();
+        }
+
+        return [
+            'years' => $years->count(),
+            'rebuilt' => $rebuilt,
+            'skipped' => $skipped,
+        ];
+    }
+
     public function store(Request $request)
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);

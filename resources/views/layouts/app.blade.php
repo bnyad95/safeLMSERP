@@ -36,7 +36,7 @@
             <div class="min-w-0 flex-1 lg:pl-72">
                 @if (session('success') || session('error'))
                     <div class="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-                        <div class="rounded-xl border p-4 text-sm shadow-sm sm:p-5 {{ session('success') ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800' }}">
+                        <div class="rounded-xl border p-4 text-sm shadow-sm sm:p-5 {{ session('success') ? 'bg-green-50 border-green-200 text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-100' : 'bg-red-50 border-red-200 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-100' }}">
                             {{ session('success') ?? session('error') }}
                         </div>
                     </div>
@@ -44,7 +44,7 @@
 
                 <!-- Page Heading -->
                 @isset($header)
-                    <header class="bg-white shadow">
+                    <header class="bg-white shadow dark:bg-gray-900 dark:shadow-gray-950/40">
                         <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
                             {{ $header }}
                         </div>
