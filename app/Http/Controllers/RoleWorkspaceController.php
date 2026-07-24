@@ -1,0 +1,138 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Attendance;
+use App\Models\CourseMaterial;
+use App\Models\FinanceTransaction;
+use App\Models\Student;
+use App\Models\StudentDocument;
+use App\Models\StudentGuardian;
+use Illuminate\Http\Request;
+
+class RoleWorkspaceController extends Controller
+{
+    public function library(Request $request)
+    {
+        abort_unless($request->user()?->hasRole('librarian'), 403);
+
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'file_type' => trim((string) $request->query('file_type', '')),
+            'visibility' => in_array($request->query('visibility'), ['draft', 'published'], true) ? $request->query('visibility') : '',
+        ];
+
+        $materialsQuery = CourseMaterial::with(['course.department', 'courseSection'])
+            ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
+                $search->where('title', 'like', "%{$filters['q']}%")
+                    ->orWhere('description', 'like', "%{$filters['q']}%")
+                    ->orWhereHas('course', fn ($course) => $course
+                        ->where('name', 'like', "%{$filters['q']}%")
+                        ->orWhere('code', 'like', "%{$filters['q']}%"));
+            }))
+            ->when($filters['file_type'] !== '', fn ($query) => $query->where('file_type', $filters['file_type']))
+            ->when($filters['visibility'] !== '', fn ($query) => $query->where('visibility', $filters['visibility']))
+            ->latest();
+
+        $materials = (clone $materialsQuery)->paginate(12)->withQueryString();
+        $stats = [
+            ['label' => 'Resources', 'value' => number_format(CourseMaterial::count()), 'detail' => 'Course materials in the LMS'],
+            ['label' => 'Published', 'value' => number_format(CourseMaterial::where('visibility', 'published')->count()), 'detail' => 'Visible learning resources'],
+            ['label' => 'Drafts', 'value' => number_format(CourseMaterial::where('visibility', 'draft')->count()), 'detail' => 'Need teacher publication'],
+            ['label' => 'Student Documents', 'value' => number_format(StudentDocument::count()), 'detail' => 'Academic document records'],
+        ];
+        $fileTypes = CourseMaterial::getFileTypeOptions();
+
+        return view('workspaces.library', compact('materials', 'stats', 'filters', 'fileTypes'));
+    }
+
+    public function parent(Request $request)
+    {
+        abort_unless($request->user()?->hasRole('parent_user'), 403);
+
+        $children = Student::with([
+            'department.college',
+            'guardians',
+            'enrollments.courseSection.course',
+            'marks.course',
+            'attendances.course',
+            'financeTransactions',
+        ])
+            ->whereHas('guardians', fn ($guardian) => $guardian->where('email', $request->user()->email))
+            ->orderBy('full_name')
+            ->get();
+
+        $childSummaries = $children->map(function (Student $student) {
+            $publishedMarks = $student->marks->where('visibility_status', 'published');
+            $attendanceTotal = $student->attendances->count();
+            $attendancePresent = $student->attendances->where('status', 'present')->count();
+            $finance = $this->financeSummary($student);
+
+            return [
+                'student' => $student,
+                'classes' => $student->enrollments
+                    ->where('status', 'enrolled')
+                    ->filter(fn ($enrollment) => in_array($enrollment->courseSection?->status, ['planned', 'active'], true))
+                    ->count(),
+                'average' => $publishedMarks->isNotEmpty() ? number_format((float) $publishedMarks->avg('final_mark'), 1) : 'N/A',
+                'attendance' => $attendanceTotal > 0 ? number_format(($attendancePresent / $attendanceTotal) * 100, 1).'%' : 'N/A',
+                'balance' => $finance['value'],
+                'finance_detail' => $finance['detail'],
+                'recent_marks' => $publishedMarks->sortByDesc('published_at')->take(4),
+                'recent_attendance' => $student->attendances->sortByDesc('date')->take(4),
+            ];
+        });
+
+        $stats = [
+            ['label' => 'Linked Students', 'value' => number_format($children->count()), 'detail' => 'Matched by guardian email'],
+            ['label' => 'Active Classes', 'value' => number_format($childSummaries->sum('classes')), 'detail' => 'Current enrolled classes'],
+            ['label' => 'Published Results', 'value' => number_format($children->flatMap->marks->where('visibility_status', 'published')->count()), 'detail' => 'Visible marks only'],
+        ];
+
+        return view('workspaces.parent', compact('childSummaries', 'stats'));
+    }
+
+    public function reception(Request $request)
+    {
+        abort_unless($request->user()?->hasRole('receptionist'), 403);
+
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'status' => in_array($request->query('status'), ['Active', 'Inactive', 'Graduated'], true) ? $request->query('status') : '',
+        ];
+
+        $students = Student::with(['department.college', 'guardians'])
+            ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
+                $search->where('full_name', 'like', "%{$filters['q']}%")
+                    ->orWhere('student_id', 'like', "%{$filters['q']}%")
+                    ->orWhere('email', 'like', "%{$filters['q']}%")
+                    ->orWhere('phone', 'like', "%{$filters['q']}%");
+            }))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
+            ->orderBy('full_name')
+            ->paginate(15)
+            ->withQueryString();
+
+        $stats = [
+            ['label' => 'Students', 'value' => number_format(Student::count()), 'detail' => 'Available front-desk records'],
+            ['label' => 'Active', 'value' => number_format(Student::where('status', 'Active')->count()), 'detail' => 'Currently active students'],
+            ['label' => 'With Guardians', 'value' => number_format(StudentGuardian::distinct('student_id')->count('student_id')), 'detail' => 'Emergency or guardian contacts'],
+        ];
+
+        return view('workspaces.reception', compact('students', 'filters', 'stats'));
+    }
+
+    private function financeSummary(Student $student): array
+    {
+        $transactions = $student->financeTransactions->where('status', '!=', 'cancelled');
+        $currency = $transactions->first()?->currency ?? 'USD';
+        $charges = $transactions->whereIn('type', FinanceTransaction::chargeTypes())->sum(fn ($transaction) => (float) $transaction->amount);
+        $credits = $transactions->whereIn('type', FinanceTransaction::creditTypes())->sum(fn ($transaction) => (float) $transaction->amount);
+        $balance = max(0, $charges - $credits);
+
+        return [
+            'value' => $balance > 0 ? number_format($balance, 2).' '.$currency : 'No balance',
+            'detail' => $balance > 0 ? 'Outstanding tuition balance' : 'No unpaid tuition charges',
+        ];
+    }
+}

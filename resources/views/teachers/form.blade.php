@@ -1,0 +1,128 @@
+@php
+    $isEdit = isset($teacher);
+    $selectedDepartmentId = old('department_id', $teacher->department_id ?? '');
+    $selectedDepartment = $departments->firstWhere('id', (int) $selectedDepartmentId);
+    $selectedCollegeId = old('college_id', $selectedDepartment?->college_id ?? '');
+    $selectedUniversityId = old('university_id', $teacher->university_id ?? $selectedDepartment?->university_id ?? '');
+@endphp
+
+<div class="space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <section>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Teacher Information</h3>
+        <div class="mt-4 grid gap-5 md:grid-cols-2">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Full name</label>
+                <input type="text" name="full_name" value="{{ old('full_name', $teacher->full_name ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                @error('full_name')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Teacher ID</label>
+                <input type="text" name="staff_id" value="{{ old('staff_id', $teacher->staff_id ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                @error('staff_id')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                <input type="email" name="email" value="{{ old('email', $teacher->email ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                @error('email')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                <input type="text" name="title" value="{{ old('title', $teacher->title ?? '') }}" placeholder="Lecturer, Assistant Professor, Professor" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500">
+                @error('title')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Organization Placement</h3>
+        <div class="mt-4 grid gap-5 md:grid-cols-3">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">University <span class="text-red-500">*</span></label>
+                <select id="teacher-form-university" name="university_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                    <option value="">Select university</option>
+                    @foreach($universities as $university)
+                        <option value="{{ $university->id }}" @selected((string) $selectedUniversityId === (string) $university->id)>{{ $university->name }}</option>
+                    @endforeach
+                </select>
+                @error('university_id')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">College <span class="text-red-500">*</span></label>
+                <select id="teacher-form-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                    <option value="">Select college</option>
+                    @foreach($colleges as $college)
+                        <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected((string) $selectedCollegeId === (string) $college->id)>{{ $college->name }}</option>
+                    @endforeach
+                </select>
+                @error('college_id')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department <span class="text-red-500">*</span></label>
+                <select id="teacher-form-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                    <option value="">Select department</option>
+                    @foreach($departments as $department)
+                        <option value="{{ $department->id }}" data-university-id="{{ $department->university_id }}" data-college-id="{{ $department->college_id }}" @selected((string) $selectedDepartmentId === (string) $department->id)>{{ $department->name }}{{ $department->college ? ' / '.$department->college->name : '' }}</option>
+                    @endforeach
+                </select>
+                @error('department_id')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Access Status</h3>
+        <div class="mt-4 max-w-xs">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+            <select name="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                @foreach(['Active','Inactive','Retired'] as $statusOption)
+                    <option value="{{ $statusOption }}" @selected(old('status', $teacher->status ?? 'Active') === $statusOption)>{{ $statusOption }}</option>
+                @endforeach
+            </select>
+            @error('status')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
+        </div>
+    </section>
+
+    <div class="flex items-center justify-end gap-3 border-t border-gray-100 pt-5 dark:border-gray-800">
+        <a href="{{ isset($teacher) ? route('teachers.show', $teacher) : route('teachers.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</a>
+        <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">{{ $isEdit ? 'Update Teacher' : 'Create Teacher' }}</button>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const university = document.getElementById('teacher-form-university');
+        const college = document.getElementById('teacher-form-college');
+        const department = document.getElementById('teacher-form-department');
+
+        if (! university || ! college || ! department) {
+            return;
+        }
+
+        const filterOptions = () => {
+            const universityId = university.value;
+            const collegeId = college.value;
+
+            [...college.options].forEach((option) => {
+                option.hidden = option.value !== '' && universityId !== '' && option.dataset.universityId !== universityId;
+            });
+
+            if (college.selectedOptions[0]?.hidden) {
+                college.value = '';
+            }
+
+            [...department.options].forEach((option) => {
+                option.hidden = option.value !== ''
+                    && ((universityId !== '' && option.dataset.universityId !== universityId)
+                        || (collegeId !== '' && option.dataset.collegeId !== collegeId));
+            });
+
+            if (department.selectedOptions[0]?.hidden) {
+                department.value = '';
+            }
+        };
+
+        university.addEventListener('change', filterOptions);
+        college.addEventListener('change', filterOptions);
+        filterOptions();
+    })();
+</script>

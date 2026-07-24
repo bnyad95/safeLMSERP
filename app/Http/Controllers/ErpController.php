@@ -1,0 +1,1946 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\AssessmentItem;
+use App\Models\AssessmentSubmission;
+use App\Models\Attendance;
+use App\Models\ClassMessage;
+use App\Models\College;
+use App\Models\Course;
+use App\Models\CourseMaterial;
+use App\Models\CourseSection;
+use App\Models\Department;
+use App\Models\Enrollment;
+use App\Models\FinanceTransaction;
+use App\Models\Mark;
+use App\Models\Permission;
+use App\Models\Role;
+use App\Models\Semester;
+use App\Models\Student;
+use App\Models\Teacher;
+use App\Models\Timetable;
+use App\Models\University;
+use App\Models\User;
+use App\Services\RolePermissionService;
+use App\Support\OrganizationScope;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
+
+class ErpController extends Controller
+{
+    public function dashboard()
+    {
+        $user = auth()->user();
+
+        if ($user?->hasRole('student')) {
+            return redirect()->route('student-portal');
+        }
+
+        if ($user?->hasRole('parent_user')) {
+            return redirect()->route('parent.workspace');
+        }
+
+        if ($user?->hasRole('librarian')) {
+            return redirect()->route('library.workspace');
+        }
+
+        if ($user?->hasRole('receptionist')) {
+            return redirect()->route('reception.workspace');
+        }
+
+        if ($user?->hasRole('university_president') && ! $user->hasRole('super_administrator')) {
+            return redirect()->route('analytics.index');
+        }
+
+        if ($user?->hasRole('teacher') && ! $user->hasRole('super_administrator')) {
+            return $this->teacherHomeDashboard($user);
+        }
+
+        if ($user?->hasAnyRole(['examination_administrator', 'examination_committee']) && ! $user->hasRole('super_administrator')) {
+            return $this->examinationDashboard($user);
+        }
+
+        $studentsCount = Student::count();
+        $activeStudentsCount = Student::where('status', 'Active')->count();
+        $teachersCount = Teacher::count();
+        $activeTeachersCount = Teacher::where('status', 'Active')->count();
+        $coursesCount = Course::count();
+        $submittedMarksCount = Mark::where('submission_status', 'submitted')->count();
+        $publishedMarksCount = Mark::where('visibility_status', 'published')->count();
+        $draftMaterialsCount = CourseMaterial::where('visibility', 'draft')->count();
+        $todayAttendanceCount = Attendance::whereDate('date', today())->count();
+
+        $stats = [
+            ['label' => 'Students', 'value' => number_format($studentsCount), 'detail' => number_format($activeStudentsCount).' active records', 'tone' => 'blue'],
+            ['label' => 'Teachers', 'value' => number_format($teachersCount), 'detail' => number_format($activeTeachersCount).' active staff', 'tone' => 'emerald'],
+            ['label' => 'Courses', 'value' => number_format($coursesCount), 'detail' => number_format(Department::count()).' departments mapped', 'tone' => 'indigo'],
+            ['label' => 'Marks Queue', 'value' => number_format($submittedMarksCount), 'detail' => number_format($publishedMarksCount).' published results', 'tone' => 'amber'],
+        ];
+
+        $reviewItems = [
+            ['label' => 'Submitted marks', 'value' => number_format($submittedMarksCount), 'hint' => 'Need review before publishing'],
+            ['label' => 'Draft materials', 'value' => number_format($draftMaterialsCount), 'hint' => 'Waiting for teacher publication'],
+            ['label' => 'Attendance entries today', 'value' => number_format($todayAttendanceCount), 'hint' => 'Recorded across active courses'],
+        ];
+
+        $structure = [
+            ['label' => 'Universities', 'value' => number_format(University::count())],
+            ['label' => 'Colleges', 'value' => number_format(College::count())],
+            ['label' => 'Departments', 'value' => number_format(Department::count())],
+            ['label' => 'Semesters', 'value' => number_format(Semester::count())],
+        ];
+
+        return view('dashboard', compact('stats', 'reviewItems', 'structure'));
+    }
+
+    private function examinationDashboard(User $user)
+    {
+        $canPublish = $user->hasPermission('marks.publish');
+        $submitted = Mark::where('submission_status', 'submitted')->count();
+        $underReview = Mark::where('submission_status', 'under_review')->count();
+        $approvedDraft = Mark::where('submission_status', 'approved')->where('visibility_status', 'draft')->count();
+        $rejected = Mark::where('submission_status', 'rejected')->count();
+        $published = Mark::where('visibility_status', 'published')->count();
+        $finalExamEntry = Mark::whereIn('submission_status', ['draft', 'rejected'])
+            ->where('visibility_status', 'draft')
+            ->whereNotNull('prefinal_mark')
+            ->count();
+
+        $stats = [
+            ['label' => 'Submitted', 'value' => number_format($submitted), 'detail' => 'Waiting for committee review', 'tone' => 'blue'],
+            ['label' => 'Under Review', 'value' => number_format($underReview), 'detail' => 'Being checked by committee', 'tone' => 'amber'],
+            ['label' => 'Approved', 'value' => number_format($approvedDraft), 'detail' => $canPublish ? 'Ready for publication' : 'Waiting for examination administrator', 'tone' => 'emerald'],
+            ['label' => 'Published', 'value' => number_format($published), 'detail' => 'Visible to students', 'tone' => 'indigo'],
+        ];
+
+        $reviewItems = [
+            ['label' => 'Final exam entry', 'value' => number_format($finalExamEntry), 'hint' => 'Enter first-trial and eligible second-trial scores', 'href' => route('marks.final-exam.index')],
+            ['label' => 'Approve or request changes', 'value' => number_format($submitted + $underReview), 'hint' => 'Open the Mark Queue to review submitted marks', 'href' => route('marks.submission-queue')],
+            ['label' => $canPublish ? 'Ready to publish' : 'Awaiting publication', 'value' => number_format($approvedDraft), 'hint' => $canPublish ? 'Approved marks can be published to students' : 'Publication is handled by the examination administrator', 'href' => $canPublish ? route('marks.submission-queue', ['submission_status' => 'approved']) : route('exams', ['submission_status' => 'approved', 'visibility_status' => 'draft'])],
+            ['label' => 'Rejected marks', 'value' => number_format($rejected), 'hint' => 'Returned to teachers for correction', 'href' => route('exams', ['submission_status' => 'rejected'])],
+        ];
+
+        $recentMarks = Mark::with(['student', 'course', 'courseSection.teacher'])
+            ->whereIn('submission_status', ['submitted', 'under_review', 'approved', 'rejected'])
+            ->latest('updated_at')
+            ->limit(8)
+            ->get();
+
+        return view('erp.examination-dashboard', compact('stats', 'reviewItems', 'recentMarks', 'canPublish'));
+    }
+
+    private function teacherHomeDashboard(User $user)
+    {
+        $teacher = Teacher::with('department')->where('email', $user->email)->first();
+        $dashboardDate = now('Asia/Baghdad');
+
+        $assignedSections = CourseSection::with(['course.department', 'semester'])
+            ->withCount(['activeEnrollments as students_count', 'assessmentItems as assessments_count'])
+            ->when($teacher, fn ($query) => $query->where('teacher_id', $teacher->id))
+            ->when(! $teacher, fn ($query) => $query->whereRaw('1 = 0'))
+            ->where('status', 'active')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $sectionIds = $assignedSections->pluck('id');
+        $studentIds = Student::whereHas('enrollments', fn ($query) => $query
+            ->where('status', 'enrolled')
+            ->whereIn('course_section_id', $sectionIds))
+            ->pluck('id');
+
+        $todayTimetable = Timetable::with(['course', 'courseSection', 'classroom', 'timeSlot'])
+            ->whereIn('course_section_id', $sectionIds)
+            ->where('day_of_week', $dashboardDate->format('l'))
+            ->where('status', 'scheduled')
+            ->orderBy('start_time')
+            ->get();
+
+        $upcomingAssessments = AssessmentItem::with('courseSection.course')
+            ->withCount('submissions')
+            ->whereIn('course_section_id', $sectionIds)
+            ->where('status', 'published')
+            ->whereNotNull('due_at')
+            ->where('due_at', '>=', now())
+            ->orderBy('due_at')
+            ->limit(6)
+            ->get();
+
+        $pendingSubmissions = AssessmentSubmission::with(['assessmentItem.courseSection.course', 'student'])
+            ->whereHas('assessmentItem', fn ($query) => $query->whereIn('course_section_id', $sectionIds))
+            ->where('status', 'submitted')
+            ->whereNull('graded_at')
+            ->latest('submitted_at')
+            ->limit(6)
+            ->get();
+
+        $unreadMessages = ClassMessage::with(['sender', 'courseSection.course'])
+            ->whereIn('course_section_id', $sectionIds)
+            ->where('recipient_id', $user->id)
+            ->whereNull('read_at')
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        $attendanceRecords = Attendance::whereIn('course_section_id', $sectionIds)
+            ->whereIn('student_id', $studentIds)
+            ->whereDate('date', '>=', now()->subDays(30)->toDateString())
+            ->get();
+        $students = Student::whereIn('id', $studentIds)->orderBy('full_name')->get();
+        $attendanceRisks = $students->map(function (Student $student) use ($attendanceRecords) {
+            $records = $attendanceRecords->where('student_id', $student->id);
+            $total = $records->count();
+            $attended = $records->whereIn('status', ['present', 'late', 'excused'])->count();
+            $rate = $total > 0 ? round(($attended / $total) * 100, 1) : null;
+
+            return [
+                'student' => $student,
+                'section_id' => $records->first()?->course_section_id,
+                'rate' => $rate,
+                'absences' => $records->where('status', 'absent')->count(),
+            ];
+        })->filter(fn ($risk) => $risk['rate'] !== null && $risk['rate'] < 85)
+            ->sortBy('rate')
+            ->take(5)
+            ->values();
+
+        $stats = [
+            'classes' => $assignedSections->count(),
+            'students' => $studentIds->count(),
+            'pending_submissions' => AssessmentSubmission::whereHas('assessmentItem', fn ($query) => $query->whereIn('course_section_id', $sectionIds))
+                ->where('status', 'submitted')
+                ->whereNull('graded_at')
+                ->count(),
+            'unread_messages' => ClassMessage::whereIn('course_section_id', $sectionIds)
+                ->where('recipient_id', $user->id)
+                ->whereNull('read_at')
+                ->count(),
+        ];
+
+        return view('teacher.home-dashboard', compact(
+            'teacher',
+            'dashboardDate',
+            'todayTimetable',
+            'upcomingAssessments',
+            'pendingSubmissions',
+            'unreadMessages',
+            'attendanceRisks',
+            'stats'
+        ));
+    }
+
+    public function students()
+    {
+        $students = Student::with('department')->latest()->take(8)->get();
+
+        return $this->modulePage('Student Management', 'Track admissions, registrations, and student academic status.', [
+            ['label' => 'Active students', 'value' => number_format(Student::where('status', 'Active')->count())],
+            ['label' => 'New admissions', 'value' => number_format(Student::count())],
+            ['label' => 'Graduated', 'value' => '0'],
+        ], $students->map(function ($student) {
+            return [
+                'title' => $student->full_name,
+                'meta' => $student->student_id.' • '.($student->department->name ?? 'No department').' • '.$student->status,
+            ];
+        })->all());
+    }
+
+    public function teachers()
+    {
+        $teachers = Teacher::with('department')->latest()->take(8)->get();
+
+        return $this->modulePage('Teacher & Staff Management', 'Coordinate teacher profiles, teaching loads, and leave requests.', [
+            ['label' => 'Active teachers', 'value' => number_format(Teacher::where('status', 'Active')->count())],
+            ['label' => 'Pending leave', 'value' => '0'],
+            ['label' => 'Courses assigned', 'value' => number_format(Course::count())],
+        ], $teachers->map(function ($teacher) {
+            return [
+                'title' => $teacher->full_name,
+                'meta' => $teacher->title.' • '.($teacher->department->name ?? 'No department'),
+            ];
+        })->all());
+    }
+
+    public function exams(Request $request)
+    {
+        $this->requireAnyPermission('marks.view', 'marks.review', 'marks.approve', 'marks.publish');
+
+        $examUser = auth()->user();
+        $canOpenMarkQueue = $examUser?->hasAnyRole([
+            'super_administrator',
+            'examination_administrator',
+            'examination_committee',
+        ]) && ($examUser->hasRole('super_administrator')
+            || $examUser->hasAnyPermission(['marks.review', 'marks.approve', 'marks.publish']));
+        $canViewStudents = $examUser?->hasRole('super_administrator') || $examUser?->hasPermission('students.view');
+        $canViewCourses = $examUser?->hasRole('super_administrator') || $examUser?->hasPermission('courses.view');
+        $filters = $this->resultFilterState($request);
+        $allMarks = $this->resultsMarkCollection();
+        $filteredMarks = $this->applyResultFilters($allMarks, $filters);
+        $filterOptions = $this->resultFilterOptions($allMarks);
+        $hierarchy = $this->buildResultsHierarchy($filteredMarks, $filters);
+        $missingResultsCount = $this->missingResultCount($filters);
+        $stats = $this->resultStats($filteredMarks, $missingResultsCount);
+        $sortedMarks = $this->sortResultMarks($filteredMarks, $filters['sort']);
+        $recentMarks = $this->resultRows($sortedMarks->take(12), $canOpenMarkQueue, $canViewStudents, $canViewCourses);
+        $statusBreakdown = $this->resultStatusBreakdown($filteredMarks);
+        $coursePerformance = $this->resultCoursePerformance($filteredMarks);
+        $departmentRisk = $this->resultDepartmentRisk($filteredMarks);
+
+        return view('erp.results-overview', compact(
+            'filters',
+            'filterOptions',
+            'hierarchy',
+            'stats',
+            'recentMarks',
+            'statusBreakdown',
+            'coursePerformance',
+            'departmentRisk',
+            'canOpenMarkQueue'
+        ));
+
+    }
+
+    public function exportResults(Request $request)
+    {
+        $this->requireAnyPermission('marks.view', 'marks.review', 'marks.approve', 'marks.publish');
+
+        $filters = $this->resultFilterState($request);
+        $marks = $this->sortResultMarks(
+            $this->applyResultFilters($this->resultsMarkCollection(), $filters),
+            $filters['sort']
+        );
+        $filename = 'results-overview-'.now()->format('Y-m-d-His').'.csv';
+
+        return response()->streamDownload(function () use ($marks) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, [
+                'Student ID',
+                'Student',
+                'College',
+                'Department',
+                'Stage',
+                'Class',
+                'Course',
+                'Semester',
+                'Teacher',
+                'Prefinal',
+                'Final exam',
+                'Final mark',
+                'Result',
+                'Submission status',
+                'Visibility status',
+                'Submitted at',
+                'Reviewed at',
+                'Published at',
+            ]);
+
+            foreach ($marks as $mark) {
+                $section = $mark->courseSection;
+                $course = $mark->course;
+                fputcsv($handle, [
+                    $mark->student?->student_id,
+                    $mark->student?->full_name,
+                    $this->resultCollege($mark)?->name,
+                    $this->resultDepartment($mark)?->name,
+                    $section?->grade_level ?: 'Stage not specified',
+                    $section?->section_code,
+                    trim(($course?->code ? $course->code.' - ' : '').($course?->name ?? '')),
+                    $section?->semester ? trim($section->semester->name.' '.$section->semester->academic_year) : '',
+                    $section?->teacher?->full_name,
+                    $mark->prefinal_mark,
+                    $mark->final_exam,
+                    $mark->final_mark,
+                    $this->resultOutcome($mark),
+                    $mark->submission_status,
+                    $mark->visibility_status,
+                    $mark->submitted_at?->format('Y-m-d H:i'),
+                    $mark->reviewed_at?->format('Y-m-d H:i'),
+                    $mark->published_at?->format('Y-m-d H:i'),
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, ['Content-Type' => 'text/csv']);
+    }
+
+    private function resultsMarkCollection()
+    {
+        return Mark::with([
+            'student.department.college',
+            'course.department.college',
+            'courseSection.course.department.college',
+            'courseSection.semester',
+            'courseSection.teacher',
+            'reviewer',
+        ])
+            ->latest()
+            ->get();
+    }
+
+    private function resultFilterState(Request $request): array
+    {
+        $submissionStatus = in_array($request->query('submission_status'), ['draft', 'submitted', 'under_review', 'approved', 'rejected'], true)
+            ? $request->query('submission_status')
+            : '';
+        $visibilityStatus = in_array($request->query('visibility_status'), ['draft', 'published'], true)
+            ? $request->query('visibility_status')
+            : '';
+        $resultStatus = in_array($request->query('result_status'), ['passed', 'failed'], true)
+            ? $request->query('result_status')
+            : '';
+        $sort = in_array($request->query('sort'), ['recent', 'final_desc', 'final_asc'], true)
+            ? $request->query('sort')
+            : 'recent';
+
+        return [
+            'q' => trim((string) $request->query('q', '')),
+            'college_id' => $request->integer('college_id') ?: null,
+            'department_id' => $request->integer('department_id') ?: null,
+            'stage' => trim((string) ($request->query('stage') ?? $request->query('grade', ''))),
+            'semester_id' => $request->integer('semester_id') ?: null,
+            'section_id' => $request->integer('section_id') ?: null,
+            'course_id' => $request->integer('course_id') ?: null,
+            'teacher_id' => $request->integer('teacher_id') ?: null,
+            'submission_status' => $submissionStatus,
+            'visibility_status' => $visibilityStatus,
+            'result_status' => $resultStatus,
+            'sort' => $sort,
+        ];
+    }
+
+    private function applyResultFilters($marks, array $filters)
+    {
+        return $marks->filter(function (Mark $mark) use ($filters) {
+            if ($filters['college_id'] && (int) ($this->resultCollege($mark)?->id) !== (int) $filters['college_id']) {
+                return false;
+            }
+
+            if ($filters['department_id'] && (int) ($this->resultDepartment($mark)?->id) !== (int) $filters['department_id']) {
+                return false;
+            }
+
+            if ($filters['stage'] !== '' && $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__') !== $this->stageAlias($filters['stage'])) {
+                return false;
+            }
+
+            if ($filters['semester_id'] && (int) $mark->courseSection?->semester_id !== (int) $filters['semester_id']) {
+                return false;
+            }
+
+            if ($filters['section_id'] && (int) $mark->course_section_id !== (int) $filters['section_id']) {
+                return false;
+            }
+
+            if ($filters['course_id'] && (int) $mark->course_id !== (int) $filters['course_id']) {
+                return false;
+            }
+
+            if ($filters['teacher_id'] && (int) $mark->courseSection?->teacher_id !== (int) $filters['teacher_id']) {
+                return false;
+            }
+
+            if ($filters['submission_status'] !== '' && $mark->submission_status !== $filters['submission_status']) {
+                return false;
+            }
+
+            if ($filters['visibility_status'] !== '' && $mark->visibility_status !== $filters['visibility_status']) {
+                return false;
+            }
+
+            if ($filters['result_status'] === 'passed' && ! $this->resultPassed($mark)) {
+                return false;
+            }
+
+            if ($filters['result_status'] === 'failed' && ! $this->resultFailed($mark)) {
+                return false;
+            }
+
+            if ($filters['q'] !== '') {
+                $needle = str($filters['q'])->lower()->toString();
+                $haystack = str(collect([
+                    $mark->student?->full_name,
+                    $mark->student?->student_id,
+                    $mark->student?->email,
+                    $mark->course?->code,
+                    $mark->course?->name,
+                    $mark->courseSection?->section_code,
+                    $mark->courseSection?->teacher?->full_name,
+                ])->filter()->implode(' '))->lower()->toString();
+
+                if (! str_contains($haystack, $needle)) {
+                    return false;
+                }
+            }
+
+            return true;
+        })->values();
+    }
+
+    private function sortResultMarks($marks, string $sort)
+    {
+        return match ($sort) {
+            'final_desc' => $marks->sortByDesc(fn (Mark $mark) => (float) $mark->final_mark)->values(),
+            'final_asc' => $marks->sortBy(fn (Mark $mark) => (float) $mark->final_mark)->values(),
+            default => $marks->sortByDesc(fn (Mark $mark) => $mark->updated_at?->timestamp ?? 0)->values(),
+        };
+    }
+
+    private function missingResultCount(array $filters): int
+    {
+        if ($filters['submission_status'] !== '' || $filters['visibility_status'] !== '' || $filters['result_status'] !== '') {
+            return 0;
+        }
+
+        $enrollments = Enrollment::with([
+            'student.department.college',
+            'courseSection.course.department.college',
+            'courseSection.semester',
+            'courseSection.teacher',
+        ])
+            ->whereIn('status', ['enrolled', 'completed'])
+            ->get()
+            ->filter(fn (Enrollment $enrollment) => $this->enrollmentMatchesResultFilters($enrollment, $filters))
+            ->values();
+
+        if ($enrollments->isEmpty()) {
+            return 0;
+        }
+
+        $markKeys = Mark::query()
+            ->whereIn('course_section_id', $enrollments->pluck('course_section_id')->filter()->unique()->values())
+            ->get(['student_id', 'course_section_id'])
+            ->mapWithKeys(fn (Mark $mark) => [$mark->student_id.'-'.$mark->course_section_id => true]);
+
+        return $enrollments
+            ->reject(fn (Enrollment $enrollment) => $markKeys->has($enrollment->student_id.'-'.$enrollment->course_section_id))
+            ->count();
+    }
+
+    private function enrollmentMatchesResultFilters(Enrollment $enrollment, array $filters): bool
+    {
+        $section = $enrollment->courseSection;
+        $course = $section?->course;
+
+        if (! $section || ! $course) {
+            return false;
+        }
+
+        if ($filters['college_id'] && (int) ($this->enrollmentCollege($enrollment)?->id) !== (int) $filters['college_id']) {
+            return false;
+        }
+
+        if ($filters['department_id'] && (int) ($this->enrollmentDepartment($enrollment)?->id) !== (int) $filters['department_id']) {
+            return false;
+        }
+
+        if ($filters['stage'] !== '' && $this->stageAlias($section->grade_level ?: '__unassigned__') !== $this->stageAlias($filters['stage'])) {
+            return false;
+        }
+
+        if ($filters['semester_id'] && (int) $section->semester_id !== (int) $filters['semester_id']) {
+            return false;
+        }
+
+        if ($filters['section_id'] && (int) $section->id !== (int) $filters['section_id']) {
+            return false;
+        }
+
+        if ($filters['course_id'] && (int) $course->id !== (int) $filters['course_id']) {
+            return false;
+        }
+
+        if ($filters['teacher_id'] && (int) $section->teacher_id !== (int) $filters['teacher_id']) {
+            return false;
+        }
+
+        if ($filters['q'] !== '') {
+            $needle = str($filters['q'])->lower()->toString();
+            $haystack = str(collect([
+                $enrollment->student?->full_name,
+                $enrollment->student?->student_id,
+                $enrollment->student?->email,
+                $course->code,
+                $course->name,
+                $section->section_code,
+                $section->teacher?->full_name,
+            ])->filter()->implode(' '))->lower()->toString();
+
+            if (! str_contains($haystack, $needle)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function resultFilterOptions($marks): array
+    {
+        $stages = $marks
+            ->groupBy(fn (Mark $mark) => (string) $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__'))
+            ->map(fn ($stageMarks, $alias) => [
+                'key' => $alias,
+                'label' => $this->stageLabel($alias, $stageMarks->first()->courseSection?->grade_level),
+            ])
+            ->sortBy(fn ($stage) => $this->stageSortValue($stage['key'], $stage['label']))
+            ->values();
+
+        return [
+            'colleges' => $marks->map(fn (Mark $mark) => $this->resultCollege($mark))->filter()->unique('id')->sortBy('name')->values(),
+            'departments' => $marks->map(fn (Mark $mark) => $this->resultDepartment($mark))->filter()->unique('id')->sortBy('name')->values(),
+            'stages' => $stages,
+            'semesters' => $marks->pluck('courseSection.semester')->filter()->unique('id')->sortByDesc('academic_year')->values(),
+            'courses' => $marks->pluck('course')->filter()->unique('id')->sortBy('code')->values(),
+            'teachers' => $marks->pluck('courseSection.teacher')->filter()->unique('id')->sortBy('full_name')->values(),
+        ];
+    }
+
+    private function buildResultsHierarchy($marks, array $filters): array
+    {
+        $baseParams = collect([
+            'q' => $filters['q'],
+            'course_id' => $filters['course_id'],
+            'teacher_id' => $filters['teacher_id'],
+            'submission_status' => $filters['submission_status'],
+            'visibility_status' => $filters['visibility_status'],
+            'result_status' => $filters['result_status'],
+            'sort' => $filters['sort'] === 'recent' ? null : $filters['sort'],
+        ])->filter(fn ($value) => ! blank($value))->all();
+        $url = fn (array $extra = []) => route('exams', array_filter(array_merge($baseParams, $extra), fn ($value) => ! blank($value)));
+        $selectedCollege = $filters['college_id'] ? $marks->map(fn (Mark $mark) => $this->resultCollege($mark))->filter()->firstWhere('id', $filters['college_id']) : null;
+        $selectedDepartment = $filters['department_id'] ? $marks->map(fn (Mark $mark) => $this->resultDepartment($mark))->filter()->firstWhere('id', $filters['department_id']) : null;
+        $selectedStageLabel = $filters['stage'] !== '' ? $this->stageLabel($this->stageAlias($filters['stage']), $filters['stage']) : null;
+        $selectedSemester = $filters['semester_id'] ? $marks->pluck('courseSection.semester')->filter()->firstWhere('id', $filters['semester_id']) : null;
+        $selectedSection = $filters['section_id'] ? $marks->pluck('courseSection')->filter()->firstWhere('id', $filters['section_id']) : null;
+
+        $level = match (true) {
+            ! $filters['college_id'] => 'colleges',
+            ! $filters['department_id'] => 'departments',
+            $filters['stage'] === '' => 'stages',
+            ! $filters['semester_id'] => 'semesters',
+            default => 'classes',
+        };
+
+        $cards = match ($level) {
+            'colleges' => $marks
+                ->groupBy(fn (Mark $mark) => $this->resultCollege($mark)?->id ?: 0)
+                ->map(function ($group, $collegeId) use ($url) {
+                    $college = $this->resultCollege($group->first());
+
+                    return $this->resultHierarchyCard(
+                        $college?->name ?? 'College not specified',
+                        $college?->code ?? 'No code',
+                        $group,
+                        $collegeId ? $url(['college_id' => $collegeId]) : null
+                    );
+                })
+                ->sortBy('title')
+                ->values(),
+            'departments' => $marks
+                ->groupBy(fn (Mark $mark) => $this->resultDepartment($mark)?->id ?: 0)
+                ->map(function ($group, $departmentId) use ($url, $filters) {
+                    $department = $this->resultDepartment($group->first());
+
+                    return $this->resultHierarchyCard(
+                        $department?->name ?? 'Department not specified',
+                        $department?->code ?? 'No code',
+                        $group,
+                        $departmentId ? $url(['college_id' => $filters['college_id'], 'department_id' => $departmentId]) : null
+                    );
+                })
+                ->sortBy('title')
+                ->values(),
+            'stages' => $marks
+                ->groupBy(fn (Mark $mark) => (string) $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__'))
+                ->map(function ($group, $stageAlias) use ($url, $filters) {
+                    $label = $this->stageLabel($stageAlias, $group->first()->courseSection?->grade_level);
+
+                    return $this->resultHierarchyCard(
+                        $label,
+                        $group->pluck('courseSection.semester_id')->filter()->unique()->count().' semesters',
+                        $group,
+                        $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $stageAlias])
+                    );
+                })
+                ->sortBy(fn ($card) => $this->stageSortValue($this->stageAlias($card['title']), $card['title']))
+                ->values(),
+            'semesters' => $marks
+                ->groupBy(fn (Mark $mark) => $mark->courseSection?->semester_id ?: 0)
+                ->map(function ($group, $semesterId) use ($url, $filters) {
+                    $semester = $group->first()->courseSection?->semester;
+
+                    return $this->resultHierarchyCard(
+                        $semester ? trim($semester->name.' '.$semester->academic_year) : 'Semester not specified',
+                        $semester?->code ?? 'No code',
+                        $group,
+                        $semesterId ? $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage'], 'semester_id' => $semesterId]) : null
+                    );
+                })
+                ->sortBy('title')
+                ->values(),
+            default => $marks
+                ->groupBy(fn (Mark $mark) => $mark->course_section_id ? 'section-'.$mark->course_section_id : 'course-'.$mark->course_id)
+                ->map(function ($group) use ($url, $filters) {
+                    $mark = $group->first();
+                    $section = $mark->courseSection;
+                    $course = $mark->course;
+                    $title = $section
+                        ? ($course?->name ?? 'Untitled course').' / Group '.$section->section_code
+                        : ($course?->name ?? 'Course not specified');
+
+                    return $this->resultHierarchyCard(
+                        $title,
+                        ($course?->code ?? 'No code').' / '.($section?->teacher?->full_name ?? 'No teacher assigned'),
+                        $group,
+                        $section ? $url([
+                            'college_id' => $filters['college_id'],
+                            'department_id' => $filters['department_id'],
+                            'stage' => $filters['stage'],
+                            'semester_id' => $filters['semester_id'],
+                            'section_id' => $section->id,
+                        ]) : null
+                    );
+                })
+                ->sortBy('title')
+                ->values(),
+        };
+
+        $breadcrumbs = collect([
+            ['label' => 'Results Overview', 'href' => $url()],
+            $selectedCollege ? ['label' => $selectedCollege->name, 'href' => $url(['college_id' => $selectedCollege->id])] : null,
+            $selectedDepartment ? ['label' => $selectedDepartment->name, 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $selectedDepartment->id])] : null,
+            $selectedStageLabel ? ['label' => $selectedStageLabel, 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage']])] : null,
+            $selectedSemester ? ['label' => trim($selectedSemester->name.' '.$selectedSemester->academic_year), 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage'], 'semester_id' => $selectedSemester->id])] : null,
+            $selectedSection ? ['label' => ($selectedSection->course?->code ?? 'Course').' Group '.$selectedSection->section_code, 'href' => null] : null,
+        ])->filter()->values();
+
+        return compact('level', 'cards', 'breadcrumbs');
+    }
+
+    private function resultHierarchyCard(string $title, string $meta, $marks, ?string $href): array
+    {
+        $pending = $marks->whereIn('submission_status', ['submitted', 'under_review'])->count();
+        $published = $marks->where('visibility_status', 'published')->count();
+        $average = $marks->whereNotNull('final_mark')->isNotEmpty()
+            ? round((float) $marks->avg('final_mark'), 1)
+            : null;
+
+        return [
+            'title' => $title,
+            'meta' => $meta,
+            'href' => $href,
+            'marks' => $marks->count(),
+            'pending' => $pending,
+            'published' => $published,
+            'average' => $average,
+        ];
+    }
+
+    private function resultStats($marks, int $missingResultsCount): array
+    {
+        $pending = $marks->whereIn('submission_status', ['submitted', 'under_review'])->count();
+        $ready = $marks->filter(fn (Mark $mark) => $mark->submission_status === 'approved' && $mark->visibility_status !== 'published')->count();
+        $publishedMarks = $marks->where('visibility_status', 'published');
+        $published = $publishedMarks->count();
+        $passed = $publishedMarks->filter(fn (Mark $mark) => $this->resultPassed($mark))->count();
+        $failed = $publishedMarks->filter(fn (Mark $mark) => $this->resultFailed($mark))->count();
+        $average = $publishedMarks->whereNotNull('final_mark')->isNotEmpty()
+            ? number_format((float) $publishedMarks->avg('final_mark'), 1)
+            : 'N/A';
+        $passRate = $published > 0 ? number_format(($passed / $published) * 100, 1).'%' : 'N/A';
+
+        return [
+            ['label' => 'Total Marks', 'value' => number_format($marks->count()), 'detail' => 'Matching current scope'],
+            ['label' => 'Pending Review', 'value' => number_format($pending), 'detail' => 'Submitted or under review'],
+            ['label' => 'Ready to Publish', 'value' => number_format($ready), 'detail' => 'Approved and not published'],
+            ['label' => 'Published', 'value' => number_format($published), 'detail' => 'Visible to students'],
+            ['label' => 'Passed', 'value' => number_format($passed), 'detail' => 'Published final mark 50 or more'],
+            ['label' => 'Failed', 'value' => number_format($failed), 'detail' => 'Published final mark below 50'],
+            ['label' => 'Pass Rate', 'value' => $passRate, 'detail' => 'Published results only'],
+            ['label' => 'Avg Published Mark', 'value' => $average, 'detail' => 'Published final mark average'],
+            ['label' => 'Missing Results', 'value' => number_format($missingResultsCount), 'detail' => 'Enrolled students without marks'],
+        ];
+    }
+
+    private function resultRows($marks, bool $canOpenMarkQueue, bool $canViewStudents, bool $canViewCourses)
+    {
+        return $marks->map(fn (Mark $mark) => [
+            'student' => $mark->student?->full_name ?? 'Unknown student',
+            'student_id' => $mark->student?->student_id ?? '-',
+            'course' => trim(($mark->course?->code ? $mark->course->code.' - ' : '').($mark->course?->name ?? 'No course')),
+            'class' => $mark->courseSection ? 'Group '.$mark->courseSection->section_code : 'No class',
+            'final_mark' => is_null($mark->final_mark) ? 'N/A' : number_format((float) $mark->final_mark, 1),
+            'result_status' => $this->resultOutcome($mark),
+            'submission_status' => $this->resultStatusLabel($mark->submission_status),
+            'visibility_status' => $this->resultStatusLabel($mark->visibility_status),
+            'submitted_at' => $mark->submitted_at?->format('M j, Y H:i') ?? '-',
+            'student_url' => $canViewStudents && $mark->student ? route('students.show', $mark->student) : null,
+            'course_url' => $canViewCourses && $mark->course ? route('course-records.show', $mark->course) : null,
+            'queue_url' => $canOpenMarkQueue && in_array($mark->submission_status, ['submitted', 'under_review', 'approved'], true) ? route('marks.submission-queue') : null,
+        ])->values();
+    }
+
+    private function resultStatusBreakdown($marks)
+    {
+        $total = max($marks->count(), 1);
+
+        return collect(['draft', 'submitted', 'under_review', 'approved', 'rejected'])
+            ->map(fn ($status) => [
+                'label' => $this->resultStatusLabel($status),
+                'count' => $marks->where('submission_status', $status)->count(),
+                'percent' => round(($marks->where('submission_status', $status)->count() / $total) * 100, 1),
+            ]);
+    }
+
+    private function resultCoursePerformance($marks)
+    {
+        return $marks
+            ->groupBy('course_id')
+            ->map(function ($group) {
+                $course = $group->first()->course;
+                $published = $group->where('visibility_status', 'published');
+                $publishedCount = $published->count();
+                $passed = $published->filter(fn (Mark $mark) => $this->resultPassed($mark))->count();
+                $failed = $published->filter(fn (Mark $mark) => $this->resultFailed($mark))->count();
+
+                return [
+                    'course' => trim(($course?->code ? $course->code.' - ' : '').($course?->name ?? 'No course')),
+                    'marks' => $group->count(),
+                    'average' => $published->whereNotNull('final_mark')->isNotEmpty() ? round((float) $published->avg('final_mark'), 1) : null,
+                    'published' => $publishedCount,
+                    'passed' => $passed,
+                    'failed' => $failed,
+                    'pass_rate' => $publishedCount > 0 ? round(($passed / $publishedCount) * 100, 1) : null,
+                ];
+            })
+            ->sortByDesc(fn ($row) => $row['average'] ?? -1)
+            ->take(8)
+            ->values();
+    }
+
+    private function resultDepartmentRisk($marks)
+    {
+        return $marks
+            ->groupBy(fn (Mark $mark) => $this->resultDepartment($mark)?->id ?: 0)
+            ->map(function ($group) {
+                $department = $this->resultDepartment($group->first());
+                $pending = $group->whereIn('submission_status', ['submitted', 'under_review'])->count();
+                $unpublished = $group->where('visibility_status', 'draft')->count();
+
+                return [
+                    'department' => $department?->name ?? 'Department not specified',
+                    'pending' => $pending,
+                    'unpublished' => $unpublished,
+                    'attention' => $pending + $unpublished,
+                ];
+            })
+            ->sortByDesc('attention')
+            ->take(8)
+            ->values();
+    }
+
+    private function resultCollege(Mark $mark): ?College
+    {
+        return $mark->courseSection?->course?->department?->college
+            ?? $mark->course?->department?->college
+            ?? $mark->student?->department?->college;
+    }
+
+    private function enrollmentCollege(Enrollment $enrollment): ?College
+    {
+        return $enrollment->courseSection?->course?->department?->college
+            ?? $enrollment->student?->department?->college;
+    }
+
+    private function resultDepartment(Mark $mark): ?Department
+    {
+        return $mark->courseSection?->course?->department
+            ?? $mark->course?->department
+            ?? $mark->student?->department;
+    }
+
+    private function enrollmentDepartment(Enrollment $enrollment): ?Department
+    {
+        return $enrollment->courseSection?->course?->department
+            ?? $enrollment->student?->department;
+    }
+
+    private function resultPassed(Mark $mark): bool
+    {
+        return ! is_null($mark->final_mark) && (float) $mark->final_mark >= 50;
+    }
+
+    private function resultFailed(Mark $mark): bool
+    {
+        return ! is_null($mark->final_mark) && (float) $mark->final_mark < 50;
+    }
+
+    private function resultOutcome(Mark $mark): string
+    {
+        if (is_null($mark->final_mark)) {
+            return 'No mark';
+        }
+
+        return $this->resultPassed($mark) ? 'Passed' : 'Failed';
+    }
+
+    private function resultStatusLabel(?string $status): string
+    {
+        return str($status ?: 'draft')->replace('_', ' ')->title()->toString();
+    }
+
+    public function finance()
+    {
+        $this->requireAnyPermission(
+            'finance.view',
+            'finance.create_invoice',
+            'finance.record_payment',
+            'finance.approve_payment',
+            'finance.record_expense',
+            'finance.approve_expense',
+            'finance.refund'
+        );
+
+        $activeStudents = Student::where('status', 'Active')->count();
+        $activeTeachers = Teacher::where('status', 'Active')->count();
+        $estimatedTuition = $activeStudents * 750000;
+        $estimatedPayroll = $activeTeachers * 1200000;
+
+        return view('erp.operations', [
+            'title' => 'Accounting & Finance',
+            'description' => 'Monitor tuition estimates, fee collection tasks, payroll exposure, and finance approvals.',
+            'badge' => 'Finance workspace',
+            'stats' => [
+                ['label' => 'Active Fee Accounts', 'value' => number_format($activeStudents), 'detail' => 'Active students'],
+                ['label' => 'Estimated Tuition', 'value' => number_format($estimatedTuition).' IQD', 'detail' => 'Based on active enrollment'],
+                ['label' => 'Payroll Exposure', 'value' => number_format($estimatedPayroll).' IQD', 'detail' => 'Estimated monthly staff payroll'],
+                ['label' => 'Approval Queues', 'value' => '0', 'detail' => 'No finance records table yet'],
+            ],
+            'actions' => collect([
+                ['label' => 'Review Students', 'route' => 'students.index', 'style' => 'primary', 'can' => auth()->user()?->hasRole('super_administrator') || auth()->user()?->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive'])],
+                ['label' => 'Review Teachers', 'route' => 'teachers.index', 'style' => 'secondary', 'can' => auth()->user()?->hasRole('super_administrator') || auth()->user()?->hasPermission('teachers.view')],
+            ])->where('can')->values()->all(),
+            'itemsTitle' => 'Finance Controls',
+            'items' => collect([
+                ['title' => 'Tuition ledger', 'meta' => 'Use active student records as the current fee base.', 'status' => 'Ready'],
+                ['title' => 'Payroll planning', 'meta' => 'Use active teacher records for monthly payroll estimates.', 'status' => 'Ready'],
+                ['title' => 'Invoices and payments', 'meta' => 'Dedicated finance transaction tables can be added next.', 'status' => 'Planned'],
+            ]),
+            'emptyText' => 'No finance controls are configured.',
+            'workflowTitle' => 'Finance Workflow',
+            'workflow' => [
+                ['label' => 'Invoice', 'description' => 'Create tuition and service invoices from student records.'],
+                ['label' => 'Collect', 'description' => 'Record payments, discounts, scholarships, and refunds.'],
+                ['label' => 'Approve', 'description' => 'Review expenses and payment adjustments before reporting.'],
+            ],
+        ]);
+
+        return $this->modulePage('Accounting & Finance', 'Monitor tuition, invoices, payments, expenses, and financial reporting.', [
+            ['label' => 'Collected this month', 'value' => '84,500,000 IQD'],
+            ['label' => 'Unpaid tuition', 'value' => '18,700,000 IQD'],
+            ['label' => 'Payroll due', 'value' => '9,200,000 IQD'],
+        ], [
+            ['title' => 'Invoice #INV-1001', 'meta' => 'Student fees • Paid in full'],
+            ['title' => 'Scholarship batch', 'meta' => '12 students approved'],
+            ['title' => 'Cash flow', 'meta' => 'Daily expense report ready'],
+        ]);
+    }
+
+    public function attendance(Request $request)
+    {
+        $this->requireAnyPermission('attendance.view', 'attendance.create', 'attendance.update');
+
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
+            'college_id' => ['nullable', 'integer'],
+            'department_id' => ['nullable', 'integer'],
+            'grade' => ['nullable', 'string', 'max:50'],
+            'stage' => ['nullable', 'string', 'max:50'],
+            'semester_id' => ['nullable', 'integer'],
+        ]);
+
+        $selectedDate = Carbon::parse($validated['date'] ?? today())->toDateString();
+        $filters = [
+            'college_id' => $validated['college_id'] ?? null,
+            'department_id' => $validated['department_id'] ?? null,
+            'grade' => $validated['stage'] ?? $validated['grade'] ?? '',
+            'semester_id' => $validated['semester_id'] ?? null,
+        ];
+
+        $attendanceUser = auth()->user();
+        $canMarkAttendance = $attendanceUser?->hasRole('super_administrator')
+            || ($attendanceUser?->hasAnyPermission(['attendance.create', 'attendance.update']) ?? false);
+
+        $sections = CourseSection::with(['course.department.college', 'semester', 'teacher'])
+            ->withCount([
+                'activeEnrollments',
+                'attendances as selected_date_attendances_count' => fn ($query) => $query->whereDate('date', $selectedDate),
+            ])
+            ->whereIn('status', ['planned', 'active'])
+            ->get();
+
+        $visibleSections = $sections
+            ->when($filters['college_id'], fn ($collection) => $collection->filter(fn (CourseSection $section) => (int) ($section->course?->department?->college_id) === (int) $filters['college_id']))
+            ->when($filters['department_id'], fn ($collection) => $collection->filter(fn (CourseSection $section) => (int) ($section->course?->department_id) === (int) $filters['department_id']))
+            ->when($filters['grade'] !== '', fn ($collection) => $collection->filter(fn (CourseSection $section) => $this->stageAlias($section->grade_level ?: '__unassigned__') === $this->stageAlias($filters['grade'])))
+            ->when($filters['semester_id'], fn ($collection) => $collection->filter(fn (CourseSection $section) => (int) $section->semester_id === (int) $filters['semester_id']))
+            ->values();
+
+        $sectionIds = $visibleSections->pluck('id');
+        $riskCount = 0;
+
+        if ($sectionIds->isNotEmpty()) {
+            $riskCount = Attendance::whereIn('course_section_id', $sectionIds)
+                ->get()
+                ->groupBy(fn (Attendance $attendance) => $attendance->course_section_id.'-'.$attendance->student_id)
+                ->filter(function ($records) {
+                    $total = $records->count();
+                    $present = $records->where('status', 'present')->count();
+
+                    return $total >= 3 && (($present / $total) * 100) < 75;
+                })
+                ->count();
+        }
+
+        $url = fn (array $extra = []) => route('attendance', array_filter(
+            array_merge(['date' => $selectedDate], $extra),
+            fn ($value) => $value !== null && $value !== ''
+        ));
+
+        $selectedCollege = $filters['college_id']
+            ? $sections->first(fn (CourseSection $section) => (int) ($section->course?->department?->college_id) === (int) $filters['college_id'])?->course?->department?->college
+            : null;
+        $selectedDepartment = $filters['department_id']
+            ? $sections->first(fn (CourseSection $section) => (int) ($section->course?->department_id) === (int) $filters['department_id'])?->course?->department
+            : null;
+        $selectedSemester = $filters['semester_id']
+            ? $sections->first(fn (CourseSection $section) => (int) $section->semester_id === (int) $filters['semester_id'])?->semester
+            : null;
+
+        $breadcrumbs = collect([
+            ['label' => 'Attendance', 'href' => $url()],
+            $selectedCollege ? ['label' => $selectedCollege->name, 'href' => $url(['college_id' => $selectedCollege->id])] : null,
+            $selectedDepartment ? ['label' => $selectedDepartment->name, 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $selectedDepartment->id])] : null,
+            $filters['grade'] !== '' ? ['label' => $filters['grade'] === '__unassigned__' ? 'Stage not specified' : $filters['grade'], 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['grade']])] : null,
+            $selectedSemester ? ['label' => trim($selectedSemester->name.' '.$selectedSemester->academic_year), 'href' => $url($filters)] : null,
+        ])->filter()->values();
+
+        $level = match (true) {
+            ! $filters['college_id'] => 'colleges',
+            ! $filters['department_id'] => 'departments',
+            $filters['grade'] === '' => 'grades',
+            ! $filters['semester_id'] => 'semesters',
+            default => 'modules',
+        };
+
+        $hierarchySections = match ($level) {
+            'colleges' => $sections,
+            'departments' => $sections->filter(fn (CourseSection $section) => (int) ($section->course?->department?->college_id) === (int) $filters['college_id']),
+            'grades' => $sections->filter(fn (CourseSection $section) => (int) ($section->course?->department_id) === (int) $filters['department_id']),
+            'semesters' => $sections
+                ->filter(fn (CourseSection $section) => (int) ($section->course?->department_id) === (int) $filters['department_id'])
+                ->filter(fn (CourseSection $section) => $this->stageAlias($section->grade_level ?: '__unassigned__') === $this->stageAlias($filters['grade'])),
+            default => $visibleSections,
+        };
+
+        $cards = match ($level) {
+            'colleges' => $hierarchySections
+                ->groupBy(fn (CourseSection $section) => $section->course?->department?->college_id ?: 0)
+                ->map(function ($collegeSections, $collegeId) use ($url) {
+                    $college = $collegeSections->first()->course?->department?->college;
+
+                    return [
+                        'title' => $college?->name ?? 'College not specified',
+                        'meta' => $college?->code ?? 'No code',
+                        'count' => $collegeSections->count(),
+                        'students' => $collegeSections->sum('active_enrollments_count'),
+                        'href' => $collegeId ? $url(['college_id' => $collegeId]) : null,
+                    ];
+                })
+                ->values(),
+            'departments' => $hierarchySections
+                ->groupBy(fn (CourseSection $section) => $section->course?->department_id ?: 0)
+                ->map(function ($departmentSections, $departmentId) use ($url, $filters) {
+                    $department = $departmentSections->first()->course?->department;
+
+                    return [
+                        'title' => $department?->name ?? 'Department not specified',
+                        'meta' => $department?->code ?? 'No code',
+                        'count' => $departmentSections->count(),
+                        'students' => $departmentSections->sum('active_enrollments_count'),
+                        'href' => $departmentId ? $url(['college_id' => $filters['college_id'], 'department_id' => $departmentId]) : null,
+                    ];
+                })
+                ->values(),
+            'grades' => $hierarchySections
+                ->groupBy(fn (CourseSection $section) => $section->grade_level ?: '__unassigned__')
+                ->map(fn ($gradeSections, $grade) => [
+                    'title' => $grade === '__unassigned__' ? 'Stage not specified' : $grade,
+                    'meta' => $gradeSections->pluck('semester_id')->unique()->count().' semesters',
+                    'count' => $gradeSections->count(),
+                    'students' => $gradeSections->sum('active_enrollments_count'),
+                    'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $grade]),
+                ])
+                ->values(),
+            'semesters' => $hierarchySections
+                ->groupBy(fn (CourseSection $section) => $section->semester_id ?: 0)
+                ->map(function ($semesterSections, $semesterId) use ($url, $filters) {
+                    $semester = $semesterSections->first()->semester;
+
+                    return [
+                        'title' => $semester ? trim($semester->name.' '.$semester->academic_year) : 'Semester not specified',
+                        'meta' => $semester?->code ?? 'No code',
+                        'count' => $semesterSections->count(),
+                        'students' => $semesterSections->sum('active_enrollments_count'),
+                        'href' => $semesterId ? $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'grade' => $filters['grade'], 'semester_id' => $semesterId]) : null,
+                    ];
+                })
+                ->values(),
+            default => collect(),
+        };
+
+        $moduleSections = $visibleSections->sortBy(fn (CourseSection $section) => ($section->course?->name ?? '').$section->section_code);
+
+        if ($level !== 'modules') {
+            $moduleSections = $moduleSections->take(12);
+        }
+
+        $modules = $moduleSections
+            ->map(function (CourseSection $section) use ($selectedDate, $canMarkAttendance) {
+                $course = $section->course;
+
+                return [
+                    'title' => ($course?->name ?? 'Untitled module').' / Group '.$section->section_code,
+                    'meta' => ($course?->code ?? 'No code').' / '.($section->teacher->full_name ?? 'No teacher assigned'),
+                    'status' => ucfirst($section->status),
+                    'students' => $section->active_enrollments_count,
+                    'recorded' => $section->selected_date_attendances_count,
+                    'markRoute' => $canMarkAttendance ? route('attendance.index', ['course' => $section->course_id, 'section_id' => $section->id, 'date' => $selectedDate]) : null,
+                    'reportRoute' => route('attendance.report', ['course' => $section->course_id, 'section_id' => $section->id]),
+                    'historyRoute' => route('attendance.history', ['course' => $section->course_id, 'section_id' => $section->id, 'from' => Carbon::parse($selectedDate)->subDays(30)->toDateString(), 'to' => $selectedDate]),
+                ];
+            })
+            ->values();
+
+        $todayEntries = $sectionIds->isEmpty()
+            ? 0
+            : Attendance::whereDate('date', $selectedDate)
+                ->whereIn('course_section_id', $sectionIds)
+                ->count();
+        $absentToday = $sectionIds->isEmpty()
+            ? 0
+            : Attendance::whereDate('date', $selectedDate)
+                ->whereIn('course_section_id', $sectionIds)
+                ->where('status', 'absent')
+                ->count();
+        $lateToday = $sectionIds->isEmpty()
+            ? 0
+            : Attendance::whereDate('date', $selectedDate)
+                ->whereIn('course_section_id', $sectionIds)
+                ->where('status', 'late')
+                ->count();
+        $expectedEntries = $visibleSections->sum('active_enrollments_count');
+        $missingEntries = max($expectedEntries - $todayEntries, 0);
+        $attendanceUser = auth()->user();
+
+        return view('attendance.admin', [
+            'selectedDate' => $selectedDate,
+            'filters' => $filters,
+            'breadcrumbs' => $breadcrumbs,
+            'level' => $level,
+            'cards' => $cards,
+            'modules' => $modules,
+            'stats' => [
+                ['label' => 'Recorded Rows', 'value' => number_format($todayEntries), 'detail' => Carbon::parse($selectedDate)->format('d M Y')],
+                ['label' => 'Missing Rows', 'value' => number_format($missingEntries), 'detail' => 'Expected from enrolled students'],
+                ['label' => 'Absent', 'value' => number_format($absentToday), 'detail' => 'Marked absent on selected date'],
+                ['label' => 'Late', 'value' => number_format($lateToday), 'detail' => 'Marked late on selected date'],
+                ['label' => 'At Risk', 'value' => number_format($riskCount), 'detail' => 'Below 75% with 3+ records'],
+            ],
+            'canMarkAttendance' => $canMarkAttendance,
+            'attendanceUser' => $attendanceUser,
+        ]);
+    }
+
+    public function studentPortal(Request $request)
+    {
+        $this->requireAnyRole('student');
+
+        $authUser = $request->user();
+        $student = Student::query()
+            ->where('user_id', $authUser->id)
+            ->first();
+
+        if (! $student) {
+            $student = Student::query()
+                ->where('email', $authUser->email)
+                ->first();
+        }
+
+        $marks = collect();
+        $publishedResultsCount = 0;
+        $averageFinalMark = null;
+        $enrolledSections = collect();
+        $todayClasses = collect();
+        $dueTodayAssessments = collect();
+        $unreadMessages = collect();
+        $attendanceSummary = [
+            'value' => 'No records',
+            'detail' => 'Attendance has not been recorded yet',
+        ];
+        $financeSummary = [
+            'value' => 'No balance',
+            'detail' => 'No unpaid tuition charges',
+        ];
+
+        if ($student) {
+            $publishedMarksQuery = Mark::query()
+                ->where('student_id', $student->id)
+                ->where('status', 'Published');
+
+            $publishedResultsCount = (clone $publishedMarksQuery)->count();
+            $averageFinalMark = (clone $publishedMarksQuery)->avg('final_mark');
+            $marks = (clone $publishedMarksQuery)
+                ->with('course')
+                ->latest()
+                ->limit(12)
+                ->get();
+
+            $sectionIds = $student->enrollments()
+                ->where('status', 'enrolled')
+                ->whereHas('courseSection', fn ($query) => $query->whereIn('status', ['planned', 'active']))
+                ->pluck('course_section_id');
+
+            $todayClasses = Timetable::with(['course', 'courseSection', 'teacher'])
+                ->whereIn('course_section_id', $sectionIds)
+                ->where('day_of_week', now('Asia/Baghdad')->format('l'))
+                ->where('status', 'scheduled')
+                ->orderBy('start_time')
+                ->get();
+
+            $enrolledSections = CourseSection::with(['course', 'semester', 'teacher'])
+                ->withCount([
+                    'streamPosts',
+                    'assessmentItems as open_work_count' => fn ($query) => $query
+                        ->where('status', 'published')
+                        ->where('allow_submissions', true)
+                        ->where(fn ($dateQuery) => $dateQuery->whereNull('opens_at')->orWhere('opens_at', '<=', now()))
+                        ->where(fn ($dateQuery) => $dateQuery->whereNull('due_at')->orWhere('due_at', '>=', now()))
+                        ->whereDoesntHave('submissions', fn ($submissionQuery) => $submissionQuery->where('student_id', $student->id)),
+                    'messages as unread_messages_count' => fn ($query) => $query
+                        ->where('recipient_id', $authUser->id)
+                        ->whereNull('read_at'),
+                    'timetables as today_classes_count' => fn ($query) => $query
+                        ->where('day_of_week', now('Asia/Baghdad')->format('l'))
+                        ->where('status', 'scheduled'),
+                ])
+                ->whereIn('id', $sectionIds)
+                ->orderByDesc('semester_id')
+                ->orderBy('section_code')
+                ->get();
+
+            $upcomingAssessments = AssessmentItem::whereIn('course_section_id', $sectionIds)
+                ->where('status', 'published')
+                ->where('allow_submissions', true)
+                ->whereNotNull('due_at')
+                ->where('due_at', '>=', now())
+                ->whereDoesntHave('submissions', fn ($query) => $query->where('student_id', $student->id))
+                ->orderBy('due_at')
+                ->get()
+                ->groupBy('course_section_id');
+
+            $dueTodayAssessments = AssessmentItem::with(['courseSection.course'])
+                ->whereIn('course_section_id', $sectionIds)
+                ->where('status', 'published')
+                ->where('allow_submissions', true)
+                ->whereNotNull('due_at')
+                ->where('due_at', '>=', now())
+                ->where('due_at', '<=', now('Asia/Baghdad')->endOfDay())
+                ->whereDoesntHave('submissions', fn ($query) => $query->where('student_id', $student->id))
+                ->orderBy('due_at')
+                ->limit(5)
+                ->get();
+
+            $unreadMessages = ClassMessage::with(['courseSection.course', 'sender'])
+                ->whereIn('course_section_id', $sectionIds)
+                ->where('recipient_id', $authUser->id)
+                ->whereNull('read_at')
+                ->latest()
+                ->limit(5)
+                ->get();
+
+            $enrolledSections->each(fn (CourseSection $section) => $section->setAttribute(
+                'next_assessment',
+                $upcomingAssessments->get($section->id)?->first()
+            ));
+
+            $attendanceRecords = Attendance::where('student_id', $student->id)
+                ->whereIn('course_section_id', $sectionIds)
+                ->get(['status']);
+            if ($attendanceRecords->isNotEmpty()) {
+                $attended = $attendanceRecords->whereIn('status', ['present', 'late', 'excused'])->count();
+                $absences = $attendanceRecords->where('status', 'absent')->count();
+                $rate = round(($attended / $attendanceRecords->count()) * 100, 1);
+
+                $attendanceSummary = [
+                    'value' => number_format($rate, 1).'%',
+                    'detail' => $absences.' absent / '.$attendanceRecords->count().' records',
+                ];
+            }
+
+            $financeSummary = $this->studentFinanceSummary($student);
+        }
+
+        $stats = $student ? [
+            ['label' => 'Published Results', 'value' => number_format($publishedResultsCount)],
+            ['label' => 'Average Final Mark', 'value' => $publishedResultsCount > 0 ? number_format((float) $averageFinalMark, 2) : 'N/A'],
+            ['label' => 'Enrolled Classes', 'value' => number_format($enrolledSections->count())],
+            ['label' => 'Attendance Status', 'value' => $attendanceSummary['value'], 'detail' => $attendanceSummary['detail']],
+            ['label' => 'Finance Balance', 'value' => $financeSummary['value'], 'detail' => $financeSummary['detail']],
+        ] : [];
+
+        return view('erp.student-portal', compact(
+            'student',
+            'stats',
+            'marks',
+            'enrolledSections',
+            'todayClasses',
+            'dueTodayAssessments',
+            'unreadMessages'
+        ));
+    }
+
+    private function studentFinanceSummary(Student $student): array
+    {
+        $transactions = FinanceTransaction::where('student_id', $student->id)
+            ->where('status', '!=', 'cancelled')
+            ->get();
+
+        $balances = $transactions
+            ->groupBy('currency')
+            ->map(function ($currencyTransactions, string $currency) {
+                $charges = $currencyTransactions
+                    ->whereIn('type', FinanceTransaction::chargeTypes())
+                    ->sum(fn (FinanceTransaction $transaction) => (float) $transaction->amount);
+                $credits = $currencyTransactions
+                    ->whereIn('type', FinanceTransaction::creditTypes())
+                    ->sum(fn (FinanceTransaction $transaction) => (float) $transaction->amount);
+
+                return [
+                    'currency' => $currency,
+                    'balance' => max(0, $charges - $credits),
+                ];
+            })
+            ->filter(fn (array $balance) => $balance['balance'] > 0)
+            ->values();
+
+        $nextDue = $transactions
+            ->filter(fn (FinanceTransaction $transaction) => $transaction->type === 'invoice'
+                && in_array($transaction->payment_status, ['open', 'partial', 'overdue'], true)
+                && $transaction->due_date)
+            ->sortBy('due_date')
+            ->first();
+
+        if ($balances->isEmpty()) {
+            return [
+                'value' => 'No balance',
+                'detail' => $nextDue ? 'Next due '.$nextDue->due_date->format('M j, Y') : 'No unpaid tuition charges',
+            ];
+        }
+
+        $value = $balances
+            ->take(2)
+            ->map(fn (array $balance) => number_format($balance['balance'], 2).' '.$balance['currency'])
+            ->join(' / ');
+
+        return [
+            'value' => $value,
+            'detail' => $nextDue ? 'Next due '.$nextDue->due_date->format('M j, Y') : 'No due date set',
+        ];
+    }
+
+    public function bolognaDefinition()
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
+
+        $universitiesQuery = University::orderBy('name');
+        $collegesQuery = College::with('university')->orderBy('name');
+        $departmentsQuery = Department::with(['university', 'college'])->orderBy('name');
+        $semestersQuery = Semester::with('university')->orderByDesc('academic_year')->orderBy('name');
+        $coursesQuery = Course::with(['department.college'])->withCount('sections')->orderBy('name');
+        $sectionsQuery = CourseSection::with(['course.department.college', 'semester', 'teacher'])
+            ->withCount('activeEnrollments')
+            ->orderBy('grade_level')
+            ->orderBy('section_code');
+
+        OrganizationScope::apply($universitiesQuery, $user, 'university');
+        OrganizationScope::apply($collegesQuery, $user, 'college');
+        OrganizationScope::apply($departmentsQuery, $user, 'department');
+        OrganizationScope::apply($semestersQuery, $user, 'semester');
+        OrganizationScope::apply($coursesQuery, $user, 'course');
+        OrganizationScope::apply($sectionsQuery, $user, 'section');
+
+        $universities = $universitiesQuery->get(['id', 'name', 'code', 'email']);
+        $colleges = $collegesQuery->get(['id', 'name', 'code', 'university_id']);
+        $departments = $departmentsQuery->get(['id', 'name', 'code', 'university_id', 'college_id']);
+        $semesters = $semestersQuery->get(['id', 'name', 'academic_year', 'start_date', 'end_date', 'university_id']);
+        $courses = $coursesQuery->get(['id', 'name', 'code', 'credits', 'status', 'department_id', 'university_id']);
+        $sections = $sectionsQuery->get();
+
+        $structureStats = [
+            ['label' => 'Universities', 'value' => number_format($universities->count()), 'detail' => 'Institution records in scope'],
+            ['label' => 'Colleges', 'value' => number_format($colleges->count()), 'detail' => 'College definitions'],
+            ['label' => 'Departments', 'value' => number_format($departments->count()), 'detail' => 'Academic departments'],
+            ['label' => 'Semesters', 'value' => number_format($semesters->count()), 'detail' => 'Academic periods'],
+            ['label' => 'Course Names', 'value' => number_format($courses->count()), 'detail' => 'Catalog definitions'],
+            ['label' => 'Modules', 'value' => number_format($sections->count()), 'detail' => 'Course sections by stage'],
+        ];
+
+        $stageSummaries = $sections
+            ->groupBy(fn (CourseSection $section) => $section->grade_level ?: 'Stage not specified')
+            ->map(fn ($stageSections, string $stage) => [
+                'stage' => $stage,
+                'modules' => $stageSections->count(),
+                'courses' => $stageSections->pluck('course_id')->unique()->count(),
+                'semesters' => $stageSections->pluck('semester_id')->filter()->unique()->count(),
+                'students' => $stageSections->sum('active_enrollments_count'),
+                'credits' => $stageSections->sum(fn (CourseSection $section) => (int) ($section->course?->credits ?? 0)),
+            ])
+            ->sortBy('stage')
+            ->values();
+
+        $moduleSummaries = $sections
+            ->take(12)
+            ->map(fn (CourseSection $section) => [
+                'module' => trim(($section->course?->code ?? 'Course').' '.$section->section_code),
+                'course' => $section->course?->name ?? 'No course',
+                'stage' => $section->grade_level ?: 'Stage not specified',
+                'semester' => trim(($section->semester?->name ?? 'No semester').' '.($section->semester?->academic_year ?? '')),
+                'teacher' => $section->teacher?->full_name ?? 'Unassigned teacher',
+                'students' => $section->active_enrollments_count,
+                'credits' => $section->course?->credits ?? 0,
+            ]);
+
+        $curriculumSignals = collect([
+            [
+                'label' => 'Missing stage',
+                'value' => $sections->whereNull('grade_level')->count() + $sections->where('grade_level', '')->count(),
+                'detail' => 'Modules should be assigned to a stage.',
+            ],
+            [
+                'label' => 'Missing semester',
+                'value' => $sections->whereNull('semester_id')->count(),
+                'detail' => 'Modules should be attached to an academic period.',
+            ],
+            [
+                'label' => 'Unassigned teacher',
+                'value' => $sections->whereNull('teacher_id')->count(),
+                'detail' => 'Every active module should have an instructor.',
+            ],
+            [
+                'label' => 'Inactive courses',
+                'value' => $courses->where('status', 'inactive')->count(),
+                'detail' => 'Review inactive catalog definitions.',
+            ],
+        ]);
+        $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
+            || $user->hasDirectPermissionGrant('academic_setup.manage');
+
+        return view('erp.bologna-definition', compact(
+            'universities',
+            'colleges',
+            'departments',
+            'semesters',
+            'courses',
+            'structureStats',
+            'stageSummaries',
+            'moduleSummaries',
+            'curriculumSignals',
+            'canManageAcademicSetup'
+        ));
+    }
+
+    public function search(Request $request)
+    {
+        $query = trim((string) $request->query('q', ''));
+        $user = $request->user();
+        $limit = 10;
+
+        $canSearchStudents = $user->hasRole('super_administrator')
+            || $user->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive']);
+        $canSearchTeachers = $user->hasRole('super_administrator')
+            || $user->hasPermission('teachers.view');
+        $canSearchCourses = $user->hasRole('super_administrator')
+            || $user->hasPermission('courses.view');
+        $canSearchStructure = $user->hasAnyRole([
+            'super_administrator',
+            'university_administrator',
+            'college_administrator',
+            'department_administrator',
+            'registrar',
+        ]);
+        $canSearchUsers = $user->hasRole('super_administrator');
+
+        $students = collect();
+        $teachers = collect();
+        $courses = collect();
+        $universities = collect();
+        $colleges = collect();
+        $departments = collect();
+        $semesters = collect();
+        $users = collect();
+
+        if ($query !== '') {
+            if ($canSearchStudents) {
+                $students = Student::with(['university', 'department'])
+                    ->where(function ($q) use ($query) {
+                        $q->where('full_name', 'like', "%{$query}%")
+                            ->orWhere('student_id', 'like', "%{$query}%")
+                            ->orWhere('email', 'like', "%{$query}%")
+                            ->orWhere('phone', 'like', "%{$query}%");
+                    })
+                    ->latest()
+                    ->limit($limit)
+                    ->get();
+            }
+
+            if ($canSearchTeachers) {
+                $teachers = Teacher::with(['university', 'department'])
+                    ->where(function ($q) use ($query) {
+                        $q->where('full_name', 'like', "%{$query}%")
+                            ->orWhere('staff_id', 'like', "%{$query}%")
+                            ->orWhere('email', 'like', "%{$query}%")
+                            ->orWhere('title', 'like', "%{$query}%");
+                    })
+                    ->latest()
+                    ->limit($limit)
+                    ->get();
+            }
+
+            if ($canSearchCourses) {
+                $courses = Course::with('department')
+                    ->where(function ($q) use ($query) {
+                        $q->where('name', 'like', "%{$query}%")
+                            ->orWhere('code', 'like', "%{$query}%");
+                    })
+                    ->latest()
+                    ->limit($limit)
+                    ->get();
+            }
+
+            if ($canSearchStructure) {
+                $universities = University::where(function ($q) use ($query) {
+                    $q->where('name', 'like', "%{$query}%")
+                        ->orWhere('code', 'like', "%{$query}%")
+                        ->orWhere('email', 'like', "%{$query}%");
+                })
+                    ->orderBy('name')
+                    ->limit($limit)
+                    ->get();
+
+                $colleges = College::with('university')
+                    ->where(function ($q) use ($query) {
+                        $q->where('name', 'like', "%{$query}%")
+                            ->orWhere('code', 'like', "%{$query}%");
+                    })
+                    ->orderBy('name')
+                    ->limit($limit)
+                    ->get();
+
+                $departments = Department::with(['university', 'college'])
+                    ->where(function ($q) use ($query) {
+                        $q->where('name', 'like', "%{$query}%")
+                            ->orWhere('code', 'like', "%{$query}%");
+                    })
+                    ->orderBy('name')
+                    ->limit($limit)
+                    ->get();
+
+                $semesters = Semester::with('university')
+                    ->where(function ($q) use ($query) {
+                        $q->where('name', 'like', "%{$query}%")
+                            ->orWhere('academic_year', 'like', "%{$query}%");
+                    })
+                    ->orderByDesc('academic_year')
+                    ->limit($limit)
+                    ->get();
+            }
+
+            if ($canSearchUsers) {
+                $users = User::where(function ($q) use ($query) {
+                    $q->where('name', 'like', "%{$query}%")
+                        ->orWhere('email', 'like', "%{$query}%");
+                })
+                    ->latest()
+                    ->limit($limit)
+                    ->get();
+            }
+        }
+
+        $totalResults =
+            $students->count() +
+            $teachers->count() +
+            $courses->count() +
+            $universities->count() +
+            $colleges->count() +
+            $departments->count() +
+            $semesters->count() +
+            $users->count();
+
+        return view('erp.search', compact(
+            'query',
+            'students',
+            'teachers',
+            'courses',
+            'universities',
+            'colleges',
+            'departments',
+            'semesters',
+            'users',
+            'totalResults',
+            'canSearchStudents',
+            'canSearchTeachers',
+            'canSearchCourses',
+            'canSearchStructure',
+            'canSearchUsers'
+        ));
+    }
+
+    public function searchSuggestions(Request $request)
+    {
+        $query = trim((string) $request->query('q', ''));
+        $user = $request->user();
+        $limit = 5;
+
+        if ($query === '' || mb_strlen($query) < 2) {
+            return response()->json(['items' => []]);
+        }
+
+        $items = [];
+
+        $canSearchStudents = $user->hasRole('super_administrator')
+            || $user->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive']);
+        $canSearchTeachers = $user->hasRole('super_administrator')
+            || $user->hasPermission('teachers.view');
+        $canSearchCourses = $user->hasRole('super_administrator')
+            || $user->hasPermission('courses.view');
+        $canSearchStructure = $user->hasAnyRole([
+            'super_administrator',
+            'university_administrator',
+            'college_administrator',
+            'department_administrator',
+            'registrar',
+        ]);
+        $canSearchUsers = $user->hasRole('super_administrator');
+
+        if ($canSearchStudents) {
+            $students = Student::where('full_name', 'like', "%{$query}%")
+                ->orWhere('student_id', 'like', "%{$query}%")
+                ->limit($limit)
+                ->get(['full_name', 'student_id']);
+
+            foreach ($students as $student) {
+                $items[] = [
+                    'type' => 'Student',
+                    'title' => $student->full_name,
+                    'meta' => $student->student_id,
+                    'url' => route('search', ['q' => $student->full_name]),
+                ];
+            }
+        }
+
+        if ($canSearchTeachers) {
+            $teachers = Teacher::where('full_name', 'like', "%{$query}%")
+                ->orWhere('staff_id', 'like', "%{$query}%")
+                ->limit($limit)
+                ->get(['full_name', 'staff_id']);
+
+            foreach ($teachers as $teacher) {
+                $items[] = [
+                    'type' => 'Teacher',
+                    'title' => $teacher->full_name,
+                    'meta' => $teacher->staff_id,
+                    'url' => route('search', ['q' => $teacher->full_name]),
+                ];
+            }
+        }
+
+        if ($canSearchCourses) {
+            $courses = Course::where('name', 'like', "%{$query}%")
+                ->orWhere('code', 'like', "%{$query}%")
+                ->limit($limit)
+                ->get(['name', 'code']);
+
+            foreach ($courses as $course) {
+                $items[] = [
+                    'type' => 'Course',
+                    'title' => $course->name,
+                    'meta' => $course->code,
+                    'url' => route('search', ['q' => $course->name]),
+                ];
+            }
+        }
+
+        if ($canSearchStructure) {
+            $universities = University::where('name', 'like', "%{$query}%")
+                ->orWhere('code', 'like', "%{$query}%")
+                ->limit($limit)
+                ->get(['name', 'code']);
+
+            foreach ($universities as $university) {
+                $items[] = [
+                    'type' => 'University',
+                    'title' => $university->name,
+                    'meta' => $university->code,
+                    'url' => route('search', ['q' => $university->name]),
+                ];
+            }
+        }
+
+        if ($canSearchUsers) {
+            $users = User::where('name', 'like', "%{$query}%")
+                ->orWhere('email', 'like', "%{$query}%")
+                ->limit($limit)
+                ->get(['name', 'email']);
+
+            foreach ($users as $row) {
+                $items[] = [
+                    'type' => 'User',
+                    'title' => $row->name,
+                    'meta' => $row->email,
+                    'url' => route('search', ['q' => $row->email]),
+                ];
+            }
+        }
+
+        return response()->json([
+            'items' => collect($items)->take(12)->values(),
+        ]);
+    }
+
+    public function accessMatrix(Request $request)
+    {
+        $this->requireAnyRole('super_administrator');
+
+        $highRiskPermissionNames = $this->highRiskPermissionNames();
+        $allPermissions = Permission::orderBy('name')->get(['id', 'name', 'display_name']);
+        $roles = Role::with('permissions:id,name')
+            ->orderBy('display_name')
+            ->get(['id', 'name', 'display_name', 'description']);
+
+        $modules = $allPermissions
+            ->map(fn (Permission $permission) => $this->accessMatrixModuleForPermission($permission->name))
+            ->unique('key')
+            ->sortBy('label')
+            ->values();
+
+        $filters = [
+            'role_id' => $request->integer('role_id') ?: null,
+            'module' => $request->input('module', 'all'),
+            'access' => in_array($request->input('access'), ['all', 'granted', 'missing'], true) ? $request->input('access') : 'all',
+            'mode' => $request->input('mode') === 'edit' ? 'edit' : 'view',
+            'q' => trim((string) $request->input('q', '')),
+        ];
+
+        $selectedRole = $filters['role_id']
+            ? $roles->firstWhere('id', $filters['role_id'])
+            : null;
+
+        $selectedPermissionNames = $selectedRole
+            ? $selectedRole->permissions->pluck('name')->all()
+            : [];
+
+        $permissions = $allPermissions->map(function (Permission $permission) use ($highRiskPermissionNames) {
+            $module = $this->accessMatrixModuleForPermission($permission->name);
+            $permission->setAttribute('module_key', $module['key']);
+            $permission->setAttribute('module_label', $module['label']);
+            $permission->setAttribute('is_high_risk', in_array($permission->name, $highRiskPermissionNames, true));
+
+            return $permission;
+        })->filter(function (Permission $permission) use ($filters, $selectedRole, $selectedPermissionNames) {
+            if ($filters['module'] !== 'all' && $permission->getAttribute('module_key') !== $filters['module']) {
+                return false;
+            }
+
+            if ($filters['q'] !== '') {
+                $haystack = strtolower($permission->name.' '.$permission->display_name);
+                if (! str_contains($haystack, strtolower($filters['q']))) {
+                    return false;
+                }
+            }
+
+            if ($selectedRole && $filters['access'] !== 'all') {
+                $isGranted = in_array($permission->name, $selectedPermissionNames, true);
+
+                if ($filters['access'] === 'granted' && ! $isGranted) {
+                    return false;
+                }
+
+                if ($filters['access'] === 'missing' && $isGranted) {
+                    return false;
+                }
+            }
+
+            return true;
+        })->values();
+
+        $permissionGroups = $permissions->groupBy(fn (Permission $permission) => $permission->getAttribute('module_label'));
+        $editableRoles = $roles->where('name', '!=', 'super_administrator')->values();
+
+        $stats = [
+            ['label' => 'Roles', 'value' => $roles->count(), 'detail' => $editableRoles->count().' editable'],
+            ['label' => 'Permissions', 'value' => $allPermissions->count(), 'detail' => $permissions->count().' in view'],
+            ['label' => 'High-risk grants', 'value' => $roles->sum(fn (Role $role) => $role->permissions->whereIn('name', $highRiskPermissionNames)->count()), 'detail' => 'Review regularly'],
+            ['label' => 'Empty roles', 'value' => $roles->filter(fn (Role $role) => $role->permissions->isEmpty())->count(), 'detail' => 'No permissions assigned'],
+        ];
+
+        return view('erp.access-matrix', compact(
+            'roles',
+            'allPermissions',
+            'permissions',
+            'permissionGroups',
+            'modules',
+            'filters',
+            'selectedRole',
+            'selectedPermissionNames',
+            'stats',
+            'editableRoles'
+        ));
+    }
+
+    public function updateRolePermissions(Request $request, Role $role, RolePermissionService $rolePermissionService)
+    {
+        $this->requireAnyRole('super_administrator');
+
+        abort_if($role->name === 'super_administrator', 403, 'Super Administrator permissions are read-only.');
+
+        $validated = $request->validate([
+            'permission_ids' => ['array'],
+            'permission_ids.*' => ['integer', Rule::exists('permissions', 'id')],
+            'confirm_permission_change' => ['accepted'],
+        ]);
+
+        $rolePermissionService->syncRolePermissions($role->id, $validated['permission_ids'] ?? []);
+
+        return redirect()
+            ->route('access-matrix', ['role_id' => $role->id, 'mode' => 'edit'])
+            ->with('status', 'Permissions updated for '.$role->display_name.'.');
+    }
+
+    private function highRiskPermissionNames(): array
+    {
+        return [
+            'users.create',
+            'users.update',
+            'users.assign_roles',
+            'users.reset_password',
+            'students.archive',
+            'teachers.archive',
+            'courses.archive',
+            'enrollments.manage',
+            'timetable.manage',
+            'finance.create_invoice',
+            'finance.record_payment',
+            'finance.approve_payment',
+            'finance.approve_expense',
+            'finance.refund',
+            'marks.enter',
+            'marks.review',
+            'marks.approve',
+            'marks.publish',
+            'reports.audit',
+        ];
+    }
+
+    private function accessMatrixModuleForPermission(string $permissionName): array
+    {
+        $prefix = str_contains($permissionName, '.')
+            ? str($permissionName)->before('.')->toString()
+            : $permissionName;
+
+        return match ($prefix) {
+            'students' => ['key' => 'students', 'label' => 'Students'],
+            'teachers' => ['key' => 'teachers', 'label' => 'Teachers'],
+            'courses' => ['key' => 'courses', 'label' => 'Courses'],
+            'enrollments' => ['key' => 'enrollments', 'label' => 'Enrollment'],
+            'timetable' => ['key' => 'timetable', 'label' => 'Timetable'],
+            'attendance' => ['key' => 'attendance', 'label' => 'Attendance'],
+            'classrooms', 'lms', 'assessments' => ['key' => 'learning', 'label' => 'Learning'],
+            'marks', 'exams', 'results' => ['key' => 'results', 'label' => 'Results'],
+            'finance' => ['key' => 'finance', 'label' => 'Finance'],
+            'reports', 'analytics' => ['key' => 'reports', 'label' => 'Reports & Analytics'],
+            'users', 'roles', 'permissions' => ['key' => 'users', 'label' => 'Users & Access'],
+            'data', 'import', 'export' => ['key' => 'data', 'label' => 'Data Exchange'],
+            default => ['key' => 'system', 'label' => 'System'],
+        };
+    }
+
+    private function modulePage(string $title, string $description, array $stats, array $items)
+    {
+        return view('erp.module', compact('title', 'description', 'stats', 'items'));
+    }
+
+    private function stageAlias(?string $stage): ?string
+    {
+        if (! $stage || $stage === '__unassigned__') {
+            return $stage;
+        }
+
+        $normalized = strtolower(trim($stage));
+
+        if (preg_match('/\d+/', $normalized, $matches)) {
+            return $matches[0];
+        }
+
+        $ordinals = [
+            'first' => '1',
+            'one' => '1',
+            'second' => '2',
+            'two' => '2',
+            'third' => '3',
+            'three' => '3',
+            'fourth' => '4',
+            'four' => '4',
+            'fifth' => '5',
+            'five' => '5',
+            'sixth' => '6',
+            'six' => '6',
+        ];
+
+        foreach ($ordinals as $word => $number) {
+            if (str_contains($normalized, $word)) {
+                return $number;
+            }
+        }
+
+        return preg_replace('/[^a-z0-9]+/', '', $normalized);
+    }
+
+    private function stageLabel(?string $alias, ?string $fallback): string
+    {
+        if ($alias === '__unassigned__') {
+            return 'Stage not specified';
+        }
+
+        if ($alias && ctype_digit((string) $alias)) {
+            return 'Stage '.$alias;
+        }
+
+        return $fallback && $fallback !== '__unassigned__' ? $fallback : 'Stage not specified';
+    }
+
+    private function stageSortValue(?string $alias, string $label): string
+    {
+        if ($alias === '__unassigned__') {
+            return '9999';
+        }
+
+        if ($alias && ctype_digit((string) $alias)) {
+            return str_pad((string) $alias, 4, '0', STR_PAD_LEFT);
+        }
+
+        return '5000-'.$label;
+    }
+}

@@ -1,0 +1,787 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Department;
+use App\Models\AppNotification;
+use App\Models\FinanceTransaction;
+use App\Models\Permission;
+use App\Models\Role;
+use App\Models\Semester;
+use App\Models\Student;
+use App\Models\University;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Tests\TestCase;
+
+class FinanceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function makeSuperAdmin(): User
+    {
+        $role = Role::create([
+            'name' => 'super_administrator',
+            'display_name' => 'Super Administrator',
+            'description' => 'Full access',
+        ]);
+
+        $user = User::factory()->create();
+        $user->roles()->attach($role->id);
+
+        return $user;
+    }
+
+    private function makeStudent(array $attributes = []): Student
+    {
+        $university = University::create(['name' => 'BND University', 'code' => 'BND']);
+        $department = Department::create(['university_id' => $university->id, 'name' => 'Computer Science']);
+
+        return Student::create(array_merge([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'student_id' => 'BND-4001',
+            'full_name' => 'Sara Finance',
+            'email' => 'sara.finance@example.com',
+            'phone' => '07701234567',
+            'status' => 'Active',
+        ], $attributes));
+    }
+
+    private function makeFinanceUser(string $roleName, array $permissionNames): User
+    {
+        $role = Role::create(['name' => $roleName, 'display_name' => str($roleName)->replace('_', ' ')->title()]);
+
+        $user = User::factory()->create();
+        $user->roles()->attach($role);
+
+        foreach ($permissionNames as $permissionName) {
+            $permission = Permission::create(['name' => $permissionName, 'display_name' => str($permissionName)->replace('.', ' ')->title()]);
+            $user->permissionOverrides()->attach($permission, ['effect' => 'grant']);
+        }
+
+        return $user;
+    }
+
+    public function test_finance_can_search_students_by_name_email_or_id(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)
+            ->get('/finance?q=sara.finance@example.com')
+            ->assertOk()
+            ->assertSee($student->full_name)
+            ->assertSee($student->student_id)
+            ->assertSee($student->email);
+    }
+
+    public function test_finance_can_record_student_transaction(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)
+            ->post('/finance/transactions', [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '1250000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'reference' => 'INV-2026-001',
+                'academic_year' => '2026/2027',
+                'transaction_date' => '2026-07-09',
+                'due_date' => '2026-08-09',
+                'notes' => 'Fall tuition',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000001',
+            'reference' => 'INV-2026-001',
+            'balance_after' => '1250000.00',
+        ]);
+
+        $this->assertSame('1250000.00', FinanceTransaction::first()->amount);
+    }
+
+    public function test_finance_can_split_tuition_invoice_by_semesters(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        $fall = Semester::create([
+            'university_id' => $student->university_id,
+            'name' => 'Fall',
+            'academic_year' => '2026/2027',
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-12-31',
+        ]);
+        $spring = Semester::create([
+            'university_id' => $student->university_id,
+            'name' => 'Spring',
+            'academic_year' => '2026/2027',
+            'start_date' => '2027-02-01',
+            'end_date' => '2027-06-30',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '1200000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'reference' => 'Annual tuition',
+                'payment_plan' => 'semester',
+                'semester_ids' => [$fall->id, $spring->id],
+                'transaction_date' => '2026-07-18',
+            ])
+            ->assertRedirect(route('finance.students.show', $student))
+            ->assertSessionHas('success', '2 semester invoices created: 600,000.00 IQD due 2026-12-31; 600,000.00 IQD due 2027-06-30.');
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '600000.00',
+            'currency' => 'IQD',
+            'reference' => 'Annual tuition - Fall 2026/2027',
+            'academic_year' => '2026/2027',
+            'due_date' => '2026-12-31 00:00:00',
+        ]);
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '600000.00',
+            'currency' => 'IQD',
+            'reference' => 'Annual tuition - Spring 2026/2027',
+            'academic_year' => '2026/2027',
+            'due_date' => '2027-06-30 00:00:00',
+            'balance_after' => '1200000.00',
+        ]);
+        $this->assertSame(2, FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->count());
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('2 semester installments: 0 paid / 2 open / 0 overdue')
+            ->assertSee('Semester tuition installment');
+    }
+
+    public function test_semester_tuition_split_requires_semester_end_dates(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        $semester = Semester::create([
+            'university_id' => $student->university_id,
+            'name' => 'Fall',
+            'academic_year' => '2026/2027',
+            'start_date' => '2026-09-01',
+            'end_date' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '600000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'reference' => 'Annual tuition',
+                'payment_plan' => 'semester',
+                'semester_ids' => [$semester->id],
+                'transaction_date' => '2026-07-18',
+            ])
+            ->assertRedirect(route('finance.students.show', $student))
+            ->assertSessionHasErrors('semester_ids');
+
+        $this->assertDatabaseMissing('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'reference' => 'Annual tuition - Fall 2026/2027',
+        ]);
+    }
+
+    public function test_finance_generates_receipts_and_updates_student_balance(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)->post('/finance/transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1250000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'transaction_date' => '2026-07-09',
+            'due_date' => '2026-08-09',
+        ]);
+
+        $this->actingAs($admin)
+            ->post('/finance/transactions', [
+                'student_id' => $student->id,
+                'type' => 'payment',
+                'amount' => '450000',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'reference' => 'Cash desk',
+                'transaction_date' => '2026-07-10',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'payment',
+            'payment_status' => 'paid',
+            'receipt_number' => 'RCT-2026-000001',
+            'balance_after' => '800000.00',
+        ]);
+    }
+
+    public function test_finance_statement_is_printable(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '750000',
+            'balance_after' => '750000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000022',
+            'transaction_date' => '2026-07-10',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('finance.statement', $student))
+            ->assertOk()
+            ->assertSee('Student Finance Statement')
+            ->assertSee('INV-2026-000022')
+            ->assertSee('750,000.00 IQD');
+    }
+
+    public function test_finance_can_export_csv_for_student(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '500000',
+            'balance_after' => '500000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000033',
+            'reference' => 'Tuition',
+            'transaction_date' => '2026-07-10',
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('finance.export', ['student_id' => $student->id]));
+
+        $response->assertOk();
+        $csv = $response->streamedContent();
+
+        $this->assertStringContainsString('Invoice Number', $csv);
+        $this->assertStringContainsString('INV-2026-000033', $csv);
+        $this->assertStringContainsString('Sara Finance', $csv);
+        $this->assertStringContainsString('500000.00', $csv);
+    }
+
+    public function test_finance_keeps_currency_balances_separate_and_filters_transactions(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '500000',
+            'balance_after' => '500000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000044',
+            'academic_year' => '2026/2027',
+            'transaction_date' => '2026-07-10',
+            'due_date' => '2026-08-10',
+        ]);
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '300',
+            'balance_after' => '300',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000045',
+            'academic_year' => '2026/2027',
+            'transaction_date' => '2026-07-11',
+            'due_date' => '2026-08-11',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('Outstanding Tuition')
+            ->assertSee('Next Due')
+            ->assertSee('Due 2026-08-10')
+            ->assertSee('Filtered balance: 500,000.00 IQD / 300.00 USD')
+            ->assertSee('500,000.00 IQD')
+            ->assertSee('300.00 USD');
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.show', [$student, 'currency' => 'USD']))
+            ->assertOk()
+            ->assertSee('300.00 USD')
+            ->assertSee('INV-2026-000045')
+            ->assertDontSee('<div class="font-medium text-gray-900">INV-2026-000044</div>', false);
+    }
+
+    public function test_finance_view_and_export_require_view_permission(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.create_invoice']);
+        $student = $this->makeStudent();
+
+        $this->actingAs($accountant)->get(route('finance'))->assertForbidden();
+        $this->actingAs($accountant)->get(route('finance.export'))->assertForbidden();
+
+        $this->actingAs($accountant)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '100000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'transaction_date' => '2026-07-09',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+    }
+
+    public function test_finance_allocates_payments_to_invoices_and_approves_pending_records(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'transaction_date' => '2026-07-09',
+            'due_date' => '2026-08-09',
+        ]);
+        $invoice = FinanceTransaction::where('type', 'invoice')->first();
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'invoice_transaction_id' => $invoice->id,
+            'type' => 'payment',
+            'amount' => '400',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'transaction_date' => '2026-07-10',
+        ]);
+        $payment = FinanceTransaction::where('type', 'payment')->first();
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.approve', $payment))
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'id' => $payment->id,
+            'status' => 'approved',
+            'payment_status' => 'paid',
+            'invoice_transaction_id' => $invoice->id,
+        ]);
+        $this->assertDatabaseHas('finance_transactions', [
+            'id' => $invoice->id,
+            'payment_status' => 'partial',
+        ]);
+    }
+
+    public function test_finance_void_creates_reversal_and_recalculates_invoice_status(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'transaction_date' => '2026-07-09',
+        ]);
+        $invoice = FinanceTransaction::where('type', 'invoice')->first();
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'invoice_transaction_id' => $invoice->id,
+            'type' => 'payment',
+            'amount' => '1000',
+            'currency' => 'USD',
+            'status' => 'paid',
+            'transaction_date' => '2026-07-10',
+        ]);
+        $payment = FinanceTransaction::where('type', 'payment')->first();
+        $this->assertSame('paid', $invoice->fresh()->payment_status);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.void', $payment), ['notes' => 'Wrong receipt'])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'id' => $payment->id,
+            'status' => 'cancelled',
+            'payment_status' => 'cancelled',
+        ]);
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'original_transaction_id' => $payment->id,
+            'type' => 'refund',
+            'amount' => '1000.00',
+            'currency' => 'USD',
+        ]);
+        $this->assertSame('open', $invoice->fresh()->payment_status);
+    }
+
+    public function test_accountant_can_send_tuition_charge_reminder_to_student(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
+        $student = $this->makeStudent();
+        $studentUser = User::factory()->create(['email' => $student->email]);
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $accountant->id,
+            'type' => 'invoice',
+            'amount' => '500000',
+            'balance_after' => '500000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000088',
+            'transaction_date' => '2026-07-18',
+        ]);
+
+        $this->actingAs($accountant)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.tuition-reminders.store'), [
+                'scope' => 'selected',
+                'student_id' => $student->id,
+                'message' => 'Please bring your tuition payment this week.',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $notification = AppNotification::where('student_id', $student->id)
+            ->where('type', 'tuition_charge_reminder')
+            ->first();
+
+        $this->assertNotNull($notification);
+        $this->assertSame($studentUser->id, $notification->user_id);
+        $this->assertSame('Tuition payment reminder', $notification->title);
+        $this->assertStringContainsString('Please bring your tuition payment this week.', $notification->body);
+        $this->assertStringContainsString('500,000.00 IQD', $notification->body);
+    }
+
+    public function test_finance_can_block_and_unblock_unpaid_student_login(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $student = $this->makeStudent();
+        $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
+        $studentUser = User::factory()->create([
+            'email' => $student->email,
+            'password' => 'Temporary123',
+        ]);
+        $studentUser->roles()->attach($studentRole);
+        $student->update(['user_id' => $studentUser->id]);
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $accountant->id,
+            'type' => 'invoice',
+            'amount' => '500000',
+            'balance_after' => '500000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000089',
+            'transaction_date' => '2026-07-18',
+        ]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('Block Account');
+
+        $this->actingAs($accountant)
+            ->post(route('finance.students.account-block.store', $student), [
+                'reason' => 'Tuition invoice is overdue.',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $studentUser->refresh();
+        $this->assertNotNull($studentUser->account_blocked_at);
+        $this->assertSame($accountant->id, $studentUser->account_blocked_by);
+        $this->assertSame('Tuition invoice is overdue.', $studentUser->account_block_reason);
+        $this->assertTrue(Hash::check('Temporary123', $studentUser->password));
+
+        auth()->logout();
+
+        $this->post(route('login'), [
+            'email' => $studentUser->email,
+            'password' => 'Temporary123',
+        ])
+            ->assertSessionHasErrors('email');
+
+        $this->assertGuest();
+
+        $this->actingAs($accountant)
+            ->delete(route('finance.students.account-block.destroy', $student))
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $studentUser->refresh();
+        $this->assertNull($studentUser->account_blocked_at);
+        $this->assertNull($studentUser->account_blocked_by);
+        $this->assertNull($studentUser->account_block_reason);
+
+        auth()->logout();
+
+        $this->post(route('login'), [
+            'email' => $studentUser->email,
+            'password' => 'Temporary123',
+        ]);
+
+        $this->assertAuthenticatedAs($studentUser);
+    }
+
+    public function test_finance_cannot_block_student_without_unpaid_balance(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $student = $this->makeStudent();
+        $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
+        $studentUser = User::factory()->create(['email' => $student->email]);
+        $studentUser->roles()->attach($studentRole);
+        $student->update(['user_id' => $studentUser->id]);
+
+        $this->actingAs($accountant)
+            ->post(route('finance.students.account-block.store', $student))
+            ->assertRedirect(route('finance.students.show', $student))
+            ->assertSessionHas('error', 'This student has no unpaid tuition balance to block.');
+
+        $this->assertNull($studentUser->fresh()->account_blocked_at);
+    }
+
+    public function test_academic_admin_can_use_student_account_block_controls(): void
+    {
+        $academicAdminRole = Role::create(['name' => 'administrator', 'display_name' => 'Academic Administrator']);
+        $academicAdmin = User::factory()->create();
+        $academicAdmin->roles()->attach($academicAdminRole);
+        $student = $this->makeStudent();
+        $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
+        $studentUser = User::factory()->create(['email' => $student->email]);
+        $studentUser->roles()->attach($studentRole);
+        $student->update(['user_id' => $studentUser->id]);
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $academicAdmin->id,
+            'type' => 'invoice',
+            'amount' => '500000',
+            'balance_after' => '500000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000090',
+            'transaction_date' => '2026-07-18',
+        ]);
+
+        $this->actingAs($academicAdmin)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('Block Account');
+
+        $this->actingAs($academicAdmin)
+            ->post(route('finance.students.account-block.store', $student), [
+                'reason' => 'Academic office approved finance hold.',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $studentUser->refresh();
+        $this->assertNotNull($studentUser->account_blocked_at);
+        $this->assertSame($academicAdmin->id, $studentUser->account_blocked_by);
+
+        $this->actingAs($academicAdmin)
+            ->delete(route('finance.students.account-block.destroy', $student))
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertNull($studentUser->fresh()->account_blocked_at);
+    }
+
+    public function test_accountant_can_send_tuition_reminders_to_checked_students(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
+        $studentOne = $this->makeStudent();
+        $studentTwo = Student::create([
+            'university_id' => $studentOne->university_id,
+            'department_id' => $studentOne->department_id,
+            'student_id' => 'BND-4002',
+            'full_name' => 'Omar Finance',
+            'email' => 'omar.finance@example.com',
+            'phone' => '07707654321',
+            'status' => 'Active',
+        ]);
+        $paidStudent = Student::create([
+            'university_id' => $studentOne->university_id,
+            'department_id' => $studentOne->department_id,
+            'student_id' => 'BND-4003',
+            'full_name' => 'Paid Student',
+            'email' => 'paid.finance@example.com',
+            'status' => 'Active',
+        ]);
+
+        User::factory()->create(['email' => $studentOne->email]);
+        User::factory()->create(['email' => $studentTwo->email]);
+        User::factory()->create(['email' => $paidStudent->email]);
+
+        foreach ([$studentOne, $studentTwo] as $student) {
+            FinanceTransaction::create([
+                'student_id' => $student->id,
+                'recorded_by' => $accountant->id,
+                'type' => 'invoice',
+                'amount' => '250000',
+                'balance_after' => '250000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'payment_status' => 'open',
+                'invoice_number' => 'INV-2026-00009'.$student->id,
+                'transaction_date' => '2026-07-18',
+            ]);
+        }
+
+        FinanceTransaction::create([
+            'student_id' => $paidStudent->id,
+            'recorded_by' => $accountant->id,
+            'type' => 'invoice',
+            'amount' => '250000',
+            'balance_after' => '0',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'payment_status' => 'paid',
+            'invoice_number' => 'INV-2026-000099',
+            'transaction_date' => '2026-07-18',
+        ]);
+
+        $this->actingAs($accountant)
+            ->post(route('finance.tuition-reminders.store'), [
+                'scope' => 'selected_students',
+                'student_ids' => [$studentOne->id, $studentTwo->id, $paidStudent->id],
+                'message' => 'Please visit accounting.',
+            ])
+            ->assertRedirect(route('finance'));
+
+        $this->assertDatabaseHas('app_notifications', [
+            'student_id' => $studentOne->id,
+            'type' => 'tuition_charge_reminder',
+        ]);
+        $this->assertDatabaseHas('app_notifications', [
+            'student_id' => $studentTwo->id,
+            'type' => 'tuition_charge_reminder',
+        ]);
+        $this->assertDatabaseMissing('app_notifications', [
+            'student_id' => $paidStudent->id,
+            'type' => 'tuition_charge_reminder',
+        ]);
+    }
+
+    public function test_tuition_reminder_page_filters_students_and_sends_back_to_page(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
+        $studentOne = $this->makeStudent();
+        $studentTwo = Student::create([
+            'university_id' => $studentOne->university_id,
+            'department_id' => $studentOne->department_id,
+            'student_id' => 'BND-4010',
+            'full_name' => 'Dollar Balance',
+            'email' => 'dollar.balance@example.com',
+            'status' => 'Active',
+        ]);
+
+        User::factory()->create(['email' => $studentTwo->email]);
+
+        FinanceTransaction::create([
+            'student_id' => $studentOne->id,
+            'recorded_by' => $accountant->id,
+            'type' => 'invoice',
+            'amount' => '300000',
+            'balance_after' => '300000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000120',
+            'academic_year' => '2026/2027',
+            'transaction_date' => '2026-07-18',
+            'due_date' => '2026-08-01',
+        ]);
+        FinanceTransaction::create([
+            'student_id' => $studentTwo->id,
+            'recorded_by' => $accountant->id,
+            'type' => 'invoice',
+            'amount' => '900',
+            'balance_after' => '900',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000121',
+            'academic_year' => '2026/2027',
+            'transaction_date' => '2026-07-18',
+            'due_date' => '2026-08-02',
+        ]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance'))
+            ->assertOk()
+            ->assertSee(route('finance.tuition-reminders.index'), false);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.tuition-reminders.index', ['currency' => 'USD']))
+            ->assertOk()
+            ->assertSee('Tuition Reminder')
+            ->assertSee('Dollar Balance')
+            ->assertSee('900.00 USD')
+            ->assertDontSee('Sara Finance');
+
+        $this->actingAs($accountant)
+            ->post(route('finance.tuition-reminders.store'), [
+                'return_to' => 'tuition-reminders',
+                'scope' => 'selected_students',
+                'student_ids' => [$studentTwo->id],
+                'currency' => 'USD',
+                'message' => 'Bring the USD tuition payment.',
+            ])
+            ->assertRedirect(route('finance.tuition-reminders.index', ['currency' => 'USD']));
+
+        $this->assertDatabaseHas('app_notifications', [
+            'student_id' => $studentTwo->id,
+            'type' => 'tuition_charge_reminder',
+            'title' => 'Tuition payment reminder',
+        ]);
+    }
+}
