@@ -276,17 +276,19 @@ class ErpController extends Controller
         $canViewStudents = $examUser?->hasRole('super_administrator') || $examUser?->hasPermission('students.view');
         $canViewCourses = $examUser?->hasRole('super_administrator') || $examUser?->hasPermission('courses.view');
         $filters = $this->resultFilterState($request);
-        $allMarks = $this->resultsMarkCollection();
-        $filteredMarks = $this->applyResultFilters($allMarks, $filters);
-        $filterOptions = $this->resultFilterOptions($allMarks);
-        $hierarchy = $this->buildResultsHierarchy($filteredMarks, $filters);
+        $filterOptions = $this->resultFilterOptions();
+        $hierarchy = $this->buildResultsHierarchy($filters);
         $missingResultsCount = $this->missingResultCount($filters);
-        $stats = $this->resultStats($filteredMarks, $missingResultsCount);
-        $sortedMarks = $this->sortResultMarks($filteredMarks, $filters['sort']);
-        $recentMarks = $this->resultRows($sortedMarks->take(12), $canOpenMarkQueue, $canViewStudents, $canViewCourses);
-        $statusBreakdown = $this->resultStatusBreakdown($filteredMarks);
-        $coursePerformance = $this->resultCoursePerformance($filteredMarks);
-        $departmentRisk = $this->resultDepartmentRisk($filteredMarks);
+        $stats = $this->resultStats($filters, $missingResultsCount);
+        $recentMarks = $this->resultRows(
+            $this->sortResultMarksQuery($this->resultsMarkQuery($filters), $filters['sort'])->limit(12)->get(),
+            $canOpenMarkQueue,
+            $canViewStudents,
+            $canViewCourses
+        );
+        $statusBreakdown = $this->resultStatusBreakdown($filters);
+        $coursePerformance = $this->resultCoursePerformance($filters);
+        $departmentRisk = $this->resultDepartmentRisk($filters);
 
         return view('erp.results-overview', compact(
             'filters',
@@ -307,10 +309,7 @@ class ErpController extends Controller
         $this->requireAnyPermission('marks.view', 'marks.review', 'marks.approve', 'marks.publish');
 
         $filters = $this->resultFilterState($request);
-        $marks = $this->sortResultMarks(
-            $this->applyResultFilters($this->resultsMarkCollection(), $filters),
-            $filters['sort']
-        );
+        $marks = $this->sortResultMarksQuery($this->resultsMarkQuery($filters), $filters['sort']);
         $filename = 'results-overview-'.now()->format('Y-m-d-His').'.csv';
 
         return response()->streamDownload(function () use ($marks) {
@@ -336,7 +335,7 @@ class ErpController extends Controller
                 'Published at',
             ]);
 
-            foreach ($marks as $mark) {
+            foreach ($marks->cursor() as $mark) {
                 $section = $mark->courseSection;
                 $course = $mark->course;
                 fputcsv($handle, [
@@ -377,6 +376,37 @@ class ErpController extends Controller
         ])
             ->latest()
             ->get();
+    }
+
+    private function resultsMarkQuery(array $filters = [], bool $withRelations = true)
+    {
+        $query = Mark::query();
+
+        if ($withRelations) {
+            $query->with([
+                'student.department.college',
+                'course.department.college',
+                'courseSection.course.department.college',
+                'courseSection.semester',
+                'courseSection.teacher',
+                'reviewer',
+            ]);
+        }
+
+        if ($filters !== []) {
+            $this->applyResultQueryFilters($query, $filters);
+        }
+
+        return $query;
+    }
+
+    private function sortResultMarksQuery($query, string $sort)
+    {
+        return match ($sort) {
+            'final_desc' => $query->orderByDesc('final_mark')->orderByDesc('updated_at')->orderByDesc('id'),
+            'final_asc' => $query->orderBy('final_mark')->orderByDesc('updated_at')->orderByDesc('id'),
+            default => $query->orderByDesc('updated_at')->orderByDesc('id'),
+        };
     }
 
     private function resultFilterState(Request $request): array
@@ -487,35 +517,140 @@ class ErpController extends Controller
         };
     }
 
+    private function applyResultQueryFilters($query, array $filters): void
+    {
+        $query
+            ->when($filters['q'] !== '', fn ($markQuery) => $markQuery->where(function ($searchQuery) use ($filters) {
+                $searchQuery->whereHas('student', fn ($studentQuery) => $studentQuery
+                    ->where('full_name', 'like', "%{$filters['q']}%")
+                    ->orWhere('student_id', 'like', "%{$filters['q']}%")
+                    ->orWhere('email', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('course', fn ($courseQuery) => $courseQuery
+                        ->where('name', 'like', "%{$filters['q']}%")
+                        ->orWhere('code', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('section_code', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('courseSection.teacher', fn ($teacherQuery) => $teacherQuery->where('full_name', 'like', "%{$filters['q']}%"));
+            }))
+            ->when($filters['college_id'], fn ($markQuery) => $markQuery->where(function ($collegeQuery) use ($filters) {
+                $collegeQuery->whereHas('courseSection.course.department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id']))
+                    ->orWhereHas('course.department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id']))
+                    ->orWhereHas('student.department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id']));
+            }))
+            ->when($filters['department_id'], fn ($markQuery) => $markQuery->where(function ($departmentQuery) use ($filters) {
+                $departmentQuery->whereHas('courseSection.course', fn ($courseQuery) => $courseQuery->where('department_id', $filters['department_id']))
+                    ->orWhereHas('course', fn ($courseQuery) => $courseQuery->where('department_id', $filters['department_id']))
+                    ->orWhereHas('student', fn ($studentQuery) => $studentQuery->where('department_id', $filters['department_id']));
+            }))
+            ->when($filters['stage'] !== '', fn ($markQuery) => $this->applyResultStageQueryFilter($markQuery, $filters['stage']))
+            ->when($filters['semester_id'], fn ($markQuery) => $markQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('semester_id', $filters['semester_id'])))
+            ->when($filters['section_id'], fn ($markQuery) => $markQuery->where('marks.course_section_id', $filters['section_id']))
+            ->when($filters['course_id'], fn ($markQuery) => $markQuery->where('marks.course_id', $filters['course_id']))
+            ->when($filters['teacher_id'], fn ($markQuery) => $markQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('teacher_id', $filters['teacher_id'])))
+            ->when($filters['submission_status'] !== '', fn ($markQuery) => $markQuery->where('submission_status', $filters['submission_status']))
+            ->when($filters['visibility_status'] !== '', fn ($markQuery) => $markQuery->where('visibility_status', $filters['visibility_status']))
+            ->when($filters['result_status'] === 'passed', fn ($markQuery) => $markQuery->whereNotNull('final_mark')->where('final_mark', '>=', 50))
+            ->when($filters['result_status'] === 'failed', fn ($markQuery) => $markQuery->whereNotNull('final_mark')->where('final_mark', '<', 50));
+    }
+
+    private function applyResultStageQueryFilter($query, string $stage): void
+    {
+        $alias = $this->stageAlias($stage);
+
+        if ($alias === '__unassigned__') {
+            $query->where(fn ($markQuery) => $markQuery
+                ->whereNull('course_section_id')
+                ->orWhereHas('courseSection', fn ($sectionQuery) => $sectionQuery
+                    ->whereNull('grade_level')
+                    ->orWhere('grade_level', '')));
+
+            return;
+        }
+
+        $gradeLevels = CourseSection::query()
+            ->whereNotNull('grade_level')
+            ->distinct()
+            ->pluck('grade_level')
+            ->filter(fn ($gradeLevel) => $this->stageAlias($gradeLevel) === $alias)
+            ->unique()
+            ->values();
+
+        $query->whereHas('courseSection', fn ($sectionQuery) => $gradeLevels->isEmpty()
+            ? $sectionQuery->whereRaw('1 = 0')
+            : $sectionQuery->whereIn('grade_level', $gradeLevels));
+    }
+
     private function missingResultCount(array $filters): int
     {
         if ($filters['submission_status'] !== '' || $filters['visibility_status'] !== '' || $filters['result_status'] !== '') {
             return 0;
         }
 
-        $enrollments = Enrollment::with([
-            'student.department.college',
-            'courseSection.course.department.college',
-            'courseSection.semester',
-            'courseSection.teacher',
-        ])
-            ->whereIn('status', ['enrolled', 'completed'])
-            ->get()
-            ->filter(fn (Enrollment $enrollment) => $this->enrollmentMatchesResultFilters($enrollment, $filters))
-            ->values();
+        $query = Enrollment::query()
+            ->whereIn('status', ['enrolled', 'completed']);
+        $this->applyEnrollmentResultQueryFilters($query, $filters);
 
-        if ($enrollments->isEmpty()) {
-            return 0;
+        return $query
+            ->whereNotExists(function ($subQuery) {
+                $subQuery->selectRaw('1')
+                    ->from('marks')
+                    ->whereColumn('marks.student_id', 'enrollments.student_id')
+                    ->whereColumn('marks.course_section_id', 'enrollments.course_section_id');
+            })
+            ->count();
+    }
+
+    private function applyEnrollmentResultQueryFilters($query, array $filters): void
+    {
+        $query
+            ->when($filters['q'] !== '', fn ($enrollmentQuery) => $enrollmentQuery->where(function ($searchQuery) use ($filters) {
+                $searchQuery->whereHas('student', fn ($studentQuery) => $studentQuery
+                    ->where('full_name', 'like', "%{$filters['q']}%")
+                    ->orWhere('student_id', 'like', "%{$filters['q']}%")
+                    ->orWhere('email', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('courseSection.course', fn ($courseQuery) => $courseQuery
+                        ->where('name', 'like', "%{$filters['q']}%")
+                        ->orWhere('code', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('section_code', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('courseSection.teacher', fn ($teacherQuery) => $teacherQuery->where('full_name', 'like', "%{$filters['q']}%"));
+            }))
+            ->when($filters['college_id'], fn ($enrollmentQuery) => $enrollmentQuery->where(function ($collegeQuery) use ($filters) {
+                $collegeQuery->whereHas('courseSection.course.department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id']))
+                    ->orWhereHas('student.department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id']));
+            }))
+            ->when($filters['department_id'], fn ($enrollmentQuery) => $enrollmentQuery->where(function ($departmentQuery) use ($filters) {
+                $departmentQuery->whereHas('courseSection.course', fn ($courseQuery) => $courseQuery->where('department_id', $filters['department_id']))
+                    ->orWhereHas('student', fn ($studentQuery) => $studentQuery->where('department_id', $filters['department_id']));
+            }))
+            ->when($filters['stage'] !== '', fn ($enrollmentQuery) => $this->applyEnrollmentStageQueryFilter($enrollmentQuery, $filters['stage']))
+            ->when($filters['semester_id'], fn ($enrollmentQuery) => $enrollmentQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('semester_id', $filters['semester_id'])))
+            ->when($filters['section_id'], fn ($enrollmentQuery) => $enrollmentQuery->where('course_section_id', $filters['section_id']))
+            ->when($filters['course_id'], fn ($enrollmentQuery) => $enrollmentQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('course_id', $filters['course_id'])))
+            ->when($filters['teacher_id'], fn ($enrollmentQuery) => $enrollmentQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('teacher_id', $filters['teacher_id'])));
+    }
+
+    private function applyEnrollmentStageQueryFilter($query, string $stage): void
+    {
+        $alias = $this->stageAlias($stage);
+
+        if ($alias === '__unassigned__') {
+            $query->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery
+                ->whereNull('grade_level')
+                ->orWhere('grade_level', ''));
+
+            return;
         }
 
-        $markKeys = Mark::query()
-            ->whereIn('course_section_id', $enrollments->pluck('course_section_id')->filter()->unique()->values())
-            ->get(['student_id', 'course_section_id'])
-            ->mapWithKeys(fn (Mark $mark) => [$mark->student_id.'-'.$mark->course_section_id => true]);
+        $gradeLevels = CourseSection::query()
+            ->whereNotNull('grade_level')
+            ->distinct()
+            ->pluck('grade_level')
+            ->filter(fn ($gradeLevel) => $this->stageAlias($gradeLevel) === $alias)
+            ->unique()
+            ->values();
 
-        return $enrollments
-            ->reject(fn (Enrollment $enrollment) => $markKeys->has($enrollment->student_id.'-'.$enrollment->course_section_id))
-            ->count();
+        $query->whereHas('courseSection', fn ($sectionQuery) => $gradeLevels->isEmpty()
+            ? $sectionQuery->whereRaw('1 = 0')
+            : $sectionQuery->whereIn('grade_level', $gradeLevels));
     }
 
     private function enrollmentMatchesResultFilters(Enrollment $enrollment, array $filters): bool
@@ -575,28 +710,56 @@ class ErpController extends Controller
         return true;
     }
 
-    private function resultFilterOptions($marks): array
+    private function resultFilterOptions(): array
     {
-        $stages = $marks
-            ->groupBy(fn (Mark $mark) => (string) $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__'))
-            ->map(fn ($stageMarks, $alias) => [
-                'key' => $alias,
-                'label' => $this->stageLabel($alias, $stageMarks->first()->courseSection?->grade_level),
+        $stages = CourseSection::whereHas('marks')
+            ->select('grade_level')
+            ->distinct()
+            ->pluck('grade_level')
+            ->map(fn ($gradeLevel) => [
+                'alias' => (string) $this->stageAlias($gradeLevel ?: '__unassigned__'),
+                'grade_level' => $gradeLevel,
             ])
+            ->unique('alias')
+            ->map(fn ($stage) => [
+                'key' => $stage['alias'],
+                'label' => $this->stageLabel($stage['alias'], $stage['grade_level']),
+            ])
+            ->when(
+                Mark::whereNull('course_section_id')->exists(),
+                fn ($stages) => $stages->push(['key' => '__unassigned__', 'label' => $this->stageLabel('__unassigned__', null)])
+            )
             ->sortBy(fn ($stage) => $this->stageSortValue($stage['key'], $stage['label']))
             ->values();
 
         return [
-            'colleges' => $marks->map(fn (Mark $mark) => $this->resultCollege($mark))->filter()->unique('id')->sortBy('name')->values(),
-            'departments' => $marks->map(fn (Mark $mark) => $this->resultDepartment($mark))->filter()->unique('id')->sortBy('name')->values(),
+            'colleges' => College::whereHas('departments.courses.marks')
+                ->orWhereHas('departments.courses.sections.marks')
+                ->orWhereHas('departments.students.marks')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']),
+            'departments' => Department::whereHas('courses.marks')
+                ->orWhereHas('courses.sections.marks')
+                ->orWhereHas('students.marks')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'college_id']),
             'stages' => $stages,
-            'semesters' => $marks->pluck('courseSection.semester')->filter()->unique('id')->sortByDesc('academic_year')->values(),
-            'courses' => $marks->pluck('course')->filter()->unique('id')->sortBy('code')->values(),
-            'teachers' => $marks->pluck('courseSection.teacher')->filter()->unique('id')->sortBy('full_name')->values(),
+            'semesters' => Semester::whereHas('courseSections.marks')
+                ->orderByDesc('academic_year')
+                ->orderBy('name')
+                ->get(['id', 'name', 'academic_year']),
+            'courses' => Course::whereHas('marks')
+                ->orWhereHas('sections.marks')
+                ->orderBy('code')
+                ->orderBy('name')
+                ->get(['id', 'code', 'name']),
+            'teachers' => Teacher::whereHas('courseSections.marks')
+                ->orderBy('full_name')
+                ->get(['id', 'full_name']),
         ];
     }
 
-    private function buildResultsHierarchy($marks, array $filters): array
+    private function buildResultsHierarchy(array $filters): array
     {
         $baseParams = collect([
             'q' => $filters['q'],
@@ -608,11 +771,11 @@ class ErpController extends Controller
             'sort' => $filters['sort'] === 'recent' ? null : $filters['sort'],
         ])->filter(fn ($value) => ! blank($value))->all();
         $url = fn (array $extra = []) => route('exams', array_filter(array_merge($baseParams, $extra), fn ($value) => ! blank($value)));
-        $selectedCollege = $filters['college_id'] ? $marks->map(fn (Mark $mark) => $this->resultCollege($mark))->filter()->firstWhere('id', $filters['college_id']) : null;
-        $selectedDepartment = $filters['department_id'] ? $marks->map(fn (Mark $mark) => $this->resultDepartment($mark))->filter()->firstWhere('id', $filters['department_id']) : null;
+        $selectedCollege = $filters['college_id'] ? College::find($filters['college_id']) : null;
+        $selectedDepartment = $filters['department_id'] ? Department::find($filters['department_id']) : null;
         $selectedStageLabel = $filters['stage'] !== '' ? $this->stageLabel($this->stageAlias($filters['stage']), $filters['stage']) : null;
-        $selectedSemester = $filters['semester_id'] ? $marks->pluck('courseSection.semester')->filter()->firstWhere('id', $filters['semester_id']) : null;
-        $selectedSection = $filters['section_id'] ? $marks->pluck('courseSection')->filter()->firstWhere('id', $filters['section_id']) : null;
+        $selectedSemester = $filters['semester_id'] ? Semester::find($filters['semester_id']) : null;
+        $selectedSection = $filters['section_id'] ? CourseSection::with('course')->find($filters['section_id']) : null;
 
         $level = match (true) {
             ! $filters['college_id'] => 'colleges',
@@ -622,89 +785,9 @@ class ErpController extends Controller
             default => 'classes',
         };
 
-        $cards = match ($level) {
-            'colleges' => $marks
-                ->groupBy(fn (Mark $mark) => $this->resultCollege($mark)?->id ?: 0)
-                ->map(function ($group, $collegeId) use ($url) {
-                    $college = $this->resultCollege($group->first());
-
-                    return $this->resultHierarchyCard(
-                        $college?->name ?? 'College not specified',
-                        $college?->code ?? 'No code',
-                        $group,
-                        $collegeId ? $url(['college_id' => $collegeId]) : null
-                    );
-                })
-                ->sortBy('title')
-                ->values(),
-            'departments' => $marks
-                ->groupBy(fn (Mark $mark) => $this->resultDepartment($mark)?->id ?: 0)
-                ->map(function ($group, $departmentId) use ($url, $filters) {
-                    $department = $this->resultDepartment($group->first());
-
-                    return $this->resultHierarchyCard(
-                        $department?->name ?? 'Department not specified',
-                        $department?->code ?? 'No code',
-                        $group,
-                        $departmentId ? $url(['college_id' => $filters['college_id'], 'department_id' => $departmentId]) : null
-                    );
-                })
-                ->sortBy('title')
-                ->values(),
-            'stages' => $marks
-                ->groupBy(fn (Mark $mark) => (string) $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__'))
-                ->map(function ($group, $stageAlias) use ($url, $filters) {
-                    $label = $this->stageLabel($stageAlias, $group->first()->courseSection?->grade_level);
-
-                    return $this->resultHierarchyCard(
-                        $label,
-                        $group->pluck('courseSection.semester_id')->filter()->unique()->count().' semesters',
-                        $group,
-                        $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $stageAlias])
-                    );
-                })
-                ->sortBy(fn ($card) => $this->stageSortValue($this->stageAlias($card['title']), $card['title']))
-                ->values(),
-            'semesters' => $marks
-                ->groupBy(fn (Mark $mark) => $mark->courseSection?->semester_id ?: 0)
-                ->map(function ($group, $semesterId) use ($url, $filters) {
-                    $semester = $group->first()->courseSection?->semester;
-
-                    return $this->resultHierarchyCard(
-                        $semester ? trim($semester->name.' '.$semester->academic_year) : 'Semester not specified',
-                        $semester?->code ?? 'No code',
-                        $group,
-                        $semesterId ? $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage'], 'semester_id' => $semesterId]) : null
-                    );
-                })
-                ->sortBy('title')
-                ->values(),
-            default => $marks
-                ->groupBy(fn (Mark $mark) => $mark->course_section_id ? 'section-'.$mark->course_section_id : 'course-'.$mark->course_id)
-                ->map(function ($group) use ($url, $filters) {
-                    $mark = $group->first();
-                    $section = $mark->courseSection;
-                    $course = $mark->course;
-                    $title = $section
-                        ? ($course?->name ?? 'Untitled course').' / Group '.$section->section_code
-                        : ($course?->name ?? 'Course not specified');
-
-                    return $this->resultHierarchyCard(
-                        $title,
-                        ($course?->code ?? 'No code').' / '.($section?->teacher?->full_name ?? 'No teacher assigned'),
-                        $group,
-                        $section ? $url([
-                            'college_id' => $filters['college_id'],
-                            'department_id' => $filters['department_id'],
-                            'stage' => $filters['stage'],
-                            'semester_id' => $filters['semester_id'],
-                            'section_id' => $section->id,
-                        ]) : null
-                    );
-                })
-                ->sortBy('title')
-                ->values(),
-        };
+        $cards = $this->resultHierarchyRows($filters, $level)
+            ->map(fn ($row) => $this->resultHierarchyCardFromRow($row, $level, $filters, $url))
+            ->values();
 
         $breadcrumbs = collect([
             ['label' => 'Results Overview', 'href' => $url()],
@@ -716,6 +799,107 @@ class ErpController extends Controller
         ])->filter()->values();
 
         return compact('level', 'cards', 'breadcrumbs');
+    }
+
+    private function resultHierarchyRows(array $filters, string $level)
+    {
+        $query = $this->resultsMarkQuery($filters, false);
+        $this->joinResultDimensions($query);
+
+        $query
+            ->selectRaw('COUNT(*) as marks_count')
+            ->selectRaw("SUM(CASE WHEN marks.submission_status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) as pending_count")
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' THEN 1 ELSE 0 END) as published_count")
+            ->selectRaw("AVG(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark IS NOT NULL THEN marks.final_mark END) as average_mark");
+
+        match ($level) {
+            'colleges' => $query
+                ->selectRaw('COALESCE(section_colleges.id, direct_colleges.id, student_colleges.id, 0) as card_id')
+                ->selectRaw("COALESCE(section_colleges.name, direct_colleges.name, student_colleges.name, 'College not specified') as title")
+                ->selectRaw("COALESCE(section_colleges.code, direct_colleges.code, student_colleges.code, 'No code') as meta")
+                ->groupBy('card_id', 'title', 'meta'),
+            'departments' => $query
+                ->selectRaw('COALESCE(section_departments.id, direct_departments.id, student_departments.id, 0) as card_id')
+                ->selectRaw("COALESCE(section_departments.name, direct_departments.name, student_departments.name, 'Department not specified') as title")
+                ->selectRaw("COALESCE(section_departments.code, direct_departments.code, student_departments.code, 'No code') as meta")
+                ->groupBy('card_id', 'title', 'meta'),
+            'stages' => $query
+                ->selectRaw("COALESCE(result_sections.grade_level, '__unassigned__') as card_id")
+                ->selectRaw("COALESCE(result_sections.grade_level, 'Stage not specified') as title")
+                ->selectRaw('COUNT(DISTINCT result_sections.semester_id) as semester_count')
+                ->groupBy('card_id', 'title'),
+            'semesters' => $query
+                ->selectRaw('COALESCE(result_semesters.id, 0) as card_id')
+                ->selectRaw("COALESCE(result_semesters.name, 'Semester not specified') as title")
+                ->selectRaw("COALESCE(result_semesters.academic_year, 'No academic year') as meta")
+                ->groupBy('card_id', 'title', 'meta'),
+            default => $query
+                ->selectRaw('COALESCE(result_sections.id, 0) as card_id')
+                ->selectRaw("COALESCE(section_courses.name, direct_courses.name, 'Course not specified') as title")
+                ->selectRaw("COALESCE(section_courses.code, direct_courses.code, 'No code') as meta")
+                ->selectRaw('result_sections.section_code as section_code')
+                ->selectRaw('result_teachers.full_name as teacher_name')
+                ->groupBy('card_id', 'title', 'meta', 'section_code', 'teacher_name'),
+        };
+
+        return $query
+            ->orderBy('title')
+            ->limit(120)
+            ->get();
+    }
+
+    private function resultHierarchyCardFromRow($row, string $level, array $filters, callable $url): array
+    {
+        $cardId = $row->card_id;
+        $href = match ($level) {
+            'colleges' => $cardId ? $url(['college_id' => $cardId]) : null,
+            'departments' => $cardId ? $url(['college_id' => $filters['college_id'], 'department_id' => $cardId]) : null,
+            'stages' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $this->stageAlias((string) $cardId)]),
+            'semesters' => $cardId ? $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage'], 'semester_id' => $cardId]) : null,
+            default => $cardId ? $url([
+                'college_id' => $filters['college_id'],
+                'department_id' => $filters['department_id'],
+                'stage' => $filters['stage'],
+                'semester_id' => $filters['semester_id'],
+                'section_id' => $cardId,
+            ]) : null,
+        };
+
+        return [
+            'title' => match ($level) {
+                'stages' => $this->stageLabel($this->stageAlias((string) $cardId), $row->title),
+                'semesters' => trim($row->title.' '.$row->meta),
+                'classes' => $row->section_code ? $row->title.' / Group '.$row->section_code : $row->title,
+                default => $row->title,
+            },
+            'meta' => match ($level) {
+                'stages' => ((int) $row->semester_count).' semesters',
+                'classes' => $row->meta.' / '.($row->teacher_name ?: 'No teacher assigned'),
+                default => $row->meta,
+            },
+            'href' => $href,
+            'marks' => (int) $row->marks_count,
+            'pending' => (int) $row->pending_count,
+            'published' => (int) $row->published_count,
+            'average' => is_null($row->average_mark) ? null : round((float) $row->average_mark, 1),
+        ];
+    }
+
+    private function joinResultDimensions($query): void
+    {
+        $query
+            ->leftJoin('students as result_students', 'marks.student_id', '=', 'result_students.id')
+            ->leftJoin('departments as student_departments', 'result_students.department_id', '=', 'student_departments.id')
+            ->leftJoin('colleges as student_colleges', 'student_departments.college_id', '=', 'student_colleges.id')
+            ->leftJoin('courses as direct_courses', 'marks.course_id', '=', 'direct_courses.id')
+            ->leftJoin('departments as direct_departments', 'direct_courses.department_id', '=', 'direct_departments.id')
+            ->leftJoin('colleges as direct_colleges', 'direct_departments.college_id', '=', 'direct_colleges.id')
+            ->leftJoin('course_sections as result_sections', 'marks.course_section_id', '=', 'result_sections.id')
+            ->leftJoin('courses as section_courses', 'result_sections.course_id', '=', 'section_courses.id')
+            ->leftJoin('departments as section_departments', 'section_courses.department_id', '=', 'section_departments.id')
+            ->leftJoin('colleges as section_colleges', 'section_departments.college_id', '=', 'section_colleges.id')
+            ->leftJoin('semesters as result_semesters', 'result_sections.semester_id', '=', 'result_semesters.id')
+            ->leftJoin('teachers as result_teachers', 'result_sections.teacher_id', '=', 'result_teachers.id');
     }
 
     private function resultHierarchyCard(string $title, string $meta, $marks, ?string $href): array
@@ -737,21 +921,28 @@ class ErpController extends Controller
         ];
     }
 
-    private function resultStats($marks, int $missingResultsCount): array
+    private function resultStats(array $filters, int $missingResultsCount): array
     {
-        $pending = $marks->whereIn('submission_status', ['submitted', 'under_review'])->count();
-        $ready = $marks->filter(fn (Mark $mark) => $mark->submission_status === 'approved' && $mark->visibility_status !== 'published')->count();
-        $publishedMarks = $marks->where('visibility_status', 'published');
-        $published = $publishedMarks->count();
-        $passed = $publishedMarks->filter(fn (Mark $mark) => $this->resultPassed($mark))->count();
-        $failed = $publishedMarks->filter(fn (Mark $mark) => $this->resultFailed($mark))->count();
-        $average = $publishedMarks->whereNotNull('final_mark')->isNotEmpty()
-            ? number_format((float) $publishedMarks->avg('final_mark'), 1)
-            : 'N/A';
+        $row = $this->resultsMarkQuery($filters, false)
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN submission_status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) as pending")
+            ->selectRaw("SUM(CASE WHEN submission_status = 'approved' AND visibility_status != 'published' THEN 1 ELSE 0 END) as ready")
+            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' THEN 1 ELSE 0 END) as published")
+            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND final_mark >= 50 THEN 1 ELSE 0 END) as passed")
+            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND final_mark < 50 THEN 1 ELSE 0 END) as failed")
+            ->selectRaw("AVG(CASE WHEN visibility_status = 'published' AND final_mark IS NOT NULL THEN final_mark END) as average")
+            ->first();
+        $total = (int) ($row->total ?? 0);
+        $pending = (int) ($row->pending ?? 0);
+        $ready = (int) ($row->ready ?? 0);
+        $published = (int) ($row->published ?? 0);
+        $passed = (int) ($row->passed ?? 0);
+        $failed = (int) ($row->failed ?? 0);
+        $average = $published > 0 && ! is_null($row->average) ? number_format((float) $row->average, 1) : 'N/A';
         $passRate = $published > 0 ? number_format(($passed / $published) * 100, 1).'%' : 'N/A';
 
         return [
-            ['label' => 'Total Marks', 'value' => number_format($marks->count()), 'detail' => 'Matching current scope'],
+            ['label' => 'Total Marks', 'value' => number_format($total), 'detail' => 'Matching current scope'],
             ['label' => 'Pending Review', 'value' => number_format($pending), 'detail' => 'Submitted or under review'],
             ['label' => 'Ready to Publish', 'value' => number_format($ready), 'detail' => 'Approved and not published'],
             ['label' => 'Published', 'value' => number_format($published), 'detail' => 'Visible to students'],
@@ -781,62 +972,80 @@ class ErpController extends Controller
         ])->values();
     }
 
-    private function resultStatusBreakdown($marks)
+    private function resultStatusBreakdown(array $filters)
     {
-        $total = max($marks->count(), 1);
+        $rows = $this->resultsMarkQuery($filters, false)
+            ->select('submission_status')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('submission_status')
+            ->pluck('total', 'submission_status');
+        $total = max((int) $rows->sum(), 1);
 
         return collect(['draft', 'submitted', 'under_review', 'approved', 'rejected'])
             ->map(fn ($status) => [
                 'label' => $this->resultStatusLabel($status),
-                'count' => $marks->where('submission_status', $status)->count(),
-                'percent' => round(($marks->where('submission_status', $status)->count() / $total) * 100, 1),
+                'count' => (int) ($rows[$status] ?? 0),
+                'percent' => round((((int) ($rows[$status] ?? 0)) / $total) * 100, 1),
             ]);
     }
 
-    private function resultCoursePerformance($marks)
+    private function resultCoursePerformance(array $filters)
     {
-        return $marks
-            ->groupBy('course_id')
-            ->map(function ($group) {
-                $course = $group->first()->course;
-                $published = $group->where('visibility_status', 'published');
-                $publishedCount = $published->count();
-                $passed = $published->filter(fn (Mark $mark) => $this->resultPassed($mark))->count();
-                $failed = $published->filter(fn (Mark $mark) => $this->resultFailed($mark))->count();
+        $query = $this->resultsMarkQuery($filters, false)
+            ->leftJoin('courses', 'marks.course_id', '=', 'courses.id')
+            ->select('marks.course_id', 'courses.code', 'courses.name')
+            ->selectRaw('COUNT(*) as marks_count')
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' THEN 1 ELSE 0 END) as published_count")
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark >= 50 THEN 1 ELSE 0 END) as passed_count")
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark < 50 THEN 1 ELSE 0 END) as failed_count")
+            ->selectRaw("AVG(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark IS NOT NULL THEN marks.final_mark END) as average_mark")
+            ->groupBy('marks.course_id', 'courses.code', 'courses.name')
+            ->orderByDesc('average_mark')
+            ->limit(8);
+
+        return $query->get()
+            ->map(function ($row) {
+                $published = (int) $row->published_count;
+                $passed = (int) $row->passed_count;
 
                 return [
-                    'course' => trim(($course?->code ? $course->code.' - ' : '').($course?->name ?? 'No course')),
-                    'marks' => $group->count(),
-                    'average' => $published->whereNotNull('final_mark')->isNotEmpty() ? round((float) $published->avg('final_mark'), 1) : null,
-                    'published' => $publishedCount,
+                    'course' => trim(($row->code ? $row->code.' - ' : '').($row->name ?? 'No course')),
+                    'marks' => (int) $row->marks_count,
+                    'average' => is_null($row->average_mark) ? null : round((float) $row->average_mark, 1),
+                    'published' => $published,
                     'passed' => $passed,
-                    'failed' => $failed,
-                    'pass_rate' => $publishedCount > 0 ? round(($passed / $publishedCount) * 100, 1) : null,
+                    'failed' => (int) $row->failed_count,
+                    'pass_rate' => $published > 0 ? round(($passed / $published) * 100, 1) : null,
                 ];
             })
-            ->sortByDesc(fn ($row) => $row['average'] ?? -1)
-            ->take(8)
             ->values();
     }
 
-    private function resultDepartmentRisk($marks)
+    private function resultDepartmentRisk(array $filters)
     {
-        return $marks
-            ->groupBy(fn (Mark $mark) => $this->resultDepartment($mark)?->id ?: 0)
-            ->map(function ($group) {
-                $department = $this->resultDepartment($group->first());
-                $pending = $group->whereIn('submission_status', ['submitted', 'under_review'])->count();
-                $unpublished = $group->where('visibility_status', 'draft')->count();
+        $query = $this->resultsMarkQuery($filters, false);
+        $this->joinResultDimensions($query);
+
+        return $query
+            ->selectRaw('COALESCE(section_departments.id, direct_departments.id, student_departments.id, 0) as department_card_id')
+            ->selectRaw("COALESCE(section_departments.name, direct_departments.name, student_departments.name, 'Department not specified') as department_name")
+            ->selectRaw("SUM(CASE WHEN marks.submission_status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) as pending_count")
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'draft' THEN 1 ELSE 0 END) as unpublished_count")
+            ->groupBy('department_card_id', 'department_name')
+            ->orderByRaw("(SUM(CASE WHEN marks.submission_status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) + SUM(CASE WHEN marks.visibility_status = 'draft' THEN 1 ELSE 0 END)) DESC")
+            ->limit(8)
+            ->get()
+            ->map(function ($row) {
+                $pending = (int) $row->pending_count;
+                $unpublished = (int) $row->unpublished_count;
 
                 return [
-                    'department' => $department?->name ?? 'Department not specified',
+                    'department' => $row->department_name,
                     'pending' => $pending,
                     'unpublished' => $unpublished,
                     'attention' => $pending + $unpublished,
                 ];
             })
-            ->sortByDesc('attention')
-            ->take(8)
             ->values();
     }
 

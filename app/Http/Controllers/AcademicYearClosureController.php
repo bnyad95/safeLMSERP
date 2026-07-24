@@ -161,7 +161,12 @@ class AcademicYearClosureController extends Controller
         $archiveSnapshot = $closureSummary['archive_snapshot'] ?? [];
 
         $optionsQuery = $this->archivedModulesForYear($semesterIds, $request->user());
-        $optionSections = $optionsQuery->get();
+        $optionSections = $optionsQuery
+            ->orderBy('semester_id')
+            ->orderBy('grade_level')
+            ->orderBy('section_code')
+            ->limit(1000)
+            ->get();
 
         $collegeId = $validated['college_id'] ?? null;
         $departmentId = $validated['department_id'] ?? null;
@@ -170,12 +175,17 @@ class AcademicYearClosureController extends Controller
         $resultStatus = $validated['result_status'] ?? null;
         $sort = $validated['sort'] ?? 'final_desc';
 
-        $sections = $this->archivedModulesForYear($semesterIds, $request->user())
+        $filteredSectionQuery = $this->archivedModulesForYear($semesterIds, $request->user())
             ->when($collegeId, fn ($query) => $query->whereHas('course.department', fn ($department) => $department->where('college_id', $collegeId)))
             ->when($departmentId, fn ($query) => $query->whereHas('course', fn ($course) => $course->where('department_id', $departmentId)))
             ->when($stage, fn ($query) => $query->where('grade_level', $stage))
             ->when($semesterId, fn ($query) => $query->where('semester_id', $semesterId))
-            ->when($q !== '', fn ($query) => $this->applyArchiveSectionSearch($query, $q))
+            ->when($q !== '', fn ($query) => $this->applyArchiveSectionSearch($query, $q));
+        $sectionIds = (clone $filteredSectionQuery)
+            ->withoutEagerLoads()
+            ->pluck('id');
+
+        $sections = (clone $filteredSectionQuery)
             ->withCount([
                 'enrollments as enrollment_count',
                 'marks',
@@ -184,9 +194,8 @@ class AcademicYearClosureController extends Controller
             ->orderBy('semester_id')
             ->orderBy('grade_level')
             ->orderBy('section_code')
+            ->when($limitResults, fn ($query) => $query->limit(500))
             ->get();
-
-        $sectionIds = $sections->pluck('id');
         $resultBaseQuery = Mark::with([
                 'student.department.college',
                 'course.department.college',
@@ -213,7 +222,16 @@ class AcademicYearClosureController extends Controller
             'failed' => (clone $resultBaseQuery)->where('final_mark', '<', 50)->count(),
         ];
 
-        $studentResultSourceRows = $this->markRowsForStudentArchive((clone $resultBaseQuery)->get());
+        $databaseStudentResultStats = $this->studentArchiveResultStats($resultBaseQuery);
+        $studentIdsForDisplay = $this->studentArchiveResultStudentIds(
+            $resultBaseQuery,
+            $resultStatus,
+            $sort,
+            $limitResults ? 500 : null
+        );
+        $studentResultSourceRows = $studentIdsForDisplay->isNotEmpty()
+            ? $this->markRowsForStudentArchive((clone $resultBaseQuery)->whereIn('student_id', $studentIdsForDisplay)->get())
+            : collect();
 
         $resultRows = (clone $resultBaseQuery)
             ->when($resultStatus === 'passed', fn ($query) => $query->where('final_mark', '>=', 50))
@@ -293,11 +311,13 @@ class AcademicYearClosureController extends Controller
             $resultStatus,
             $sort
         );
-        $studentResultStats = [
-            'students' => $studentResultRows->count(),
-            'passed' => $studentResultRows->where('result', 'Passed')->count(),
-            'failed' => $studentResultRows->where('result', 'Failed')->count(),
-        ];
+        $studentResultStats = $databaseStudentResultStats['students'] > 0 || $snapshotStudentSourceRows->isEmpty()
+            ? $databaseStudentResultStats
+            : [
+                'students' => $studentResultRows->count(),
+                'passed' => $studentResultRows->where('result', 'Passed')->count(),
+                'failed' => $studentResultRows->where('result', 'Failed')->count(),
+            ];
 
         $groupedSections = $sections
             ->groupBy(fn (CourseSection $section) => $section->course?->department?->college?->name ?? 'No college')
@@ -307,10 +327,16 @@ class AcademicYearClosureController extends Controller
                     ->groupBy(fn (CourseSection $section) => $section->grade_level ?: 'No stage')
                     ->map(fn ($stageSections) => $stageSections
                         ->groupBy(fn (CourseSection $section) => trim(($section->semester?->name ?? 'Semester').' '.($section->semester?->academic_year ?? ''))))));
+        $filteredEnrollmentCount = $sectionIds->isNotEmpty()
+            ? Enrollment::whereIn('course_section_id', $sectionIds)->count()
+            : 0;
+        $filteredMarksCount = $sectionIds->isNotEmpty()
+            ? Mark::whereIn('course_section_id', $sectionIds)->count()
+            : 0;
         $summaryStats = [
-            'modules' => $sections->count() ?: ($snapshotModules->count() ?: ($usingSnapshotFallback ? (int) ($closureSummary['section_count'] ?? $closureSummary['archived_modules'] ?? 0) : 0)),
-            'enrollments' => $sections->sum('enrollment_count') ?: ($this->snapshotCountForUser($archiveSnapshot, 'enrollments', $request->user()) ?: ($usingSnapshotFallback ? (int) ($closureSummary['enrollment_count'] ?? 0) : 0)),
-            'marks' => $sections->sum('marks_count') ?: ($this->snapshotCountForUser($archiveSnapshot, 'marks', $request->user()) ?: ($usingSnapshotFallback ? (int) ($closureSummary['entered_marks'] ?? $closureSummary['published_marks'] ?? 0) : 0)),
+            'modules' => $sectionIds->count() ?: ($snapshotModules->count() ?: ($usingSnapshotFallback ? (int) ($closureSummary['section_count'] ?? $closureSummary['archived_modules'] ?? 0) : 0)),
+            'enrollments' => $filteredEnrollmentCount ?: ($this->snapshotCountForUser($archiveSnapshot, 'enrollments', $request->user()) ?: ($usingSnapshotFallback ? (int) ($closureSummary['enrollment_count'] ?? 0) : 0)),
+            'marks' => $filteredMarksCount ?: ($this->snapshotCountForUser($archiveSnapshot, 'marks', $request->user()) ?: ($usingSnapshotFallback ? (int) ($closureSummary['entered_marks'] ?? $closureSummary['published_marks'] ?? 0) : 0)),
         ];
         $snapshotCoverage = [
             ['label' => 'Modules', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'modules', $request->user())],
@@ -1315,6 +1341,60 @@ class AcademicYearClosureController extends Controller
                 ];
             })
             ->values();
+    }
+
+    private function studentArchiveResultStats($resultBaseQuery): array
+    {
+        $studentRows = $this->studentArchiveAggregateQuery($resultBaseQuery);
+        $total = DB::query()->fromSub(clone $studentRows, 'student_results')->count();
+        $passed = DB::query()->fromSub(clone $studentRows, 'student_results')->where('failed_modules', 0)->count();
+        $failed = DB::query()->fromSub(clone $studentRows, 'student_results')->where('failed_modules', '>', 0)->count();
+
+        return [
+            'students' => $total,
+            'passed' => $passed,
+            'failed' => $failed,
+        ];
+    }
+
+    private function studentArchiveResultStudentIds($resultBaseQuery, ?string $resultStatus, string $sort, ?int $limit)
+    {
+        $query = $this->studentArchiveAggregateQuery($resultBaseQuery);
+
+        if ($resultStatus === 'passed') {
+            $query->havingRaw('SUM(CASE WHEN marks.final_mark < 50 THEN 1 ELSE 0 END) = 0');
+        }
+
+        if ($resultStatus === 'failed') {
+            $query->havingRaw('SUM(CASE WHEN marks.final_mark < 50 THEN 1 ELSE 0 END) > 0');
+        }
+
+        match ($sort) {
+            'final_asc' => $query->orderBy('average_mark')->orderBy('students.full_name'),
+            'student_asc' => $query->orderBy('students.full_name')->orderByDesc('average_mark'),
+            'student_desc' => $query->orderByDesc('students.full_name')->orderByDesc('average_mark'),
+            'course_asc' => $query->orderBy('first_course_name')->orderByDesc('average_mark'),
+            default => $query->orderByDesc('average_mark')->orderBy('students.full_name'),
+        };
+
+        if ($limit) {
+            $query->limit($limit);
+        }
+
+        return $query->pluck('marks.student_id');
+    }
+
+    private function studentArchiveAggregateQuery($resultBaseQuery)
+    {
+        return (clone $resultBaseQuery)
+            ->withoutEagerLoads()
+            ->leftJoin('students', 'marks.student_id', '=', 'students.id')
+            ->leftJoin('courses', 'marks.course_id', '=', 'courses.id')
+            ->select('marks.student_id')
+            ->selectRaw('AVG(marks.final_mark) as average_mark')
+            ->selectRaw('MIN(courses.name) as first_course_name')
+            ->selectRaw('SUM(CASE WHEN marks.final_mark < 50 THEN 1 ELSE 0 END) as failed_modules')
+            ->groupBy('marks.student_id', 'students.full_name');
     }
 
     private function studentResultsForArchive($rows, ?string $resultStatus, string $sort)

@@ -26,32 +26,11 @@ class AnalyticsController extends Controller
             : 'academic';
         abort_if($activeTab === 'finance' && ! $canViewFinanceAnalytics, 403);
 
-        $students = Student::with(['department.college', 'enrollments.courseSection.semester'])
-            ->where('status', 'Active')
-            ->tap(fn ($query) => $this->applyStudentFilters($query, $filters))
-            ->get();
-        $studentIds = $students->pluck('id');
-        $marks = Mark::with(['student', 'course.department', 'courseSection.semester'])
-            ->whereIn('student_id', $studentIds)
-            ->where('visibility_status', 'published')
-            ->whereNotNull('final_mark')
-            ->tap(fn ($query) => $this->applyMarkFilters($query, $filters))
-            ->get();
-        $attendances = Attendance::with(['student.department', 'course.department', 'courseSection.semester'])
-            ->whereIn('student_id', $studentIds)
-            ->tap(fn ($query) => $this->applyAttendanceFilters($query, $filters))
-            ->get();
-        $financeTransactions = $canViewFinanceAnalytics
-            ? FinanceTransaction::with('student.department.college')
-                ->whereIn('student_id', $studentIds)
-                ->tap(fn ($query) => $this->applyFinanceFilters($query, $filters))
-                ->get()
-            : collect();
-
-        $attendanceRisk = $this->attendanceRisk($students, $attendances);
-        $gpaTrend = $this->gpaTrend($marks);
-        $unpaidBalances = $this->unpaidBalances($financeTransactions);
-        $coursePerformance = $this->coursePerformance($marks, $attendances);
+        $markStats = $this->markStats($filters);
+        $attendanceRisk = $this->attendanceRisk($filters);
+        $gpaTrend = $this->gpaTrend($filters);
+        $unpaidBalances = $canViewFinanceAnalytics ? $this->unpaidBalances($filters) : collect();
+        $coursePerformance = $this->coursePerformance($filters);
 
         return view('analytics.index', [
             'stats' => collect([
@@ -62,7 +41,7 @@ class AnalyticsController extends Controller
                 ],
                 [
                     'label' => 'Average GPA',
-                    'value' => $marks->isNotEmpty() ? number_format($this->averageGpa($marks), 2) : 'N/A',
+                    'value' => $markStats['total'] > 0 ? number_format($markStats['average_gpa'], 2) : 'N/A',
                     'detail' => 'Published marks only',
                 ],
                 [
@@ -73,7 +52,7 @@ class AnalyticsController extends Controller
                 ],
                 [
                     'label' => 'Course Pass Rate',
-                    'value' => $marks->isNotEmpty() ? number_format(($marks->where('final_mark', '>=', 50)->count() / $marks->count()) * 100, 1).'%' : 'N/A',
+                    'value' => $markStats['total'] > 0 ? number_format(($markStats['passed'] / $markStats['total']) * 100, 1).'%' : 'N/A',
                     'detail' => 'Across published course marks',
                 ],
             ])->reject(fn ($stat) => ($stat['finance'] ?? false) && ! $canViewFinanceAnalytics)->values(),
@@ -160,99 +139,170 @@ class AnalyticsController extends Controller
             ->when($filters['academic_year'] !== '', fn ($builder) => $builder->where('academic_year', $filters['academic_year']));
     }
 
-    private function attendanceRisk($students, $attendances)
+    private function activeStudentRelation($query, array $filters): void
     {
-        return $students
-            ->map(function (Student $student) use ($attendances) {
-                $records = $attendances->where('student_id', $student->id);
-                $total = $records->count();
-                $present = $records->whereIn('status', ['present', 'late', 'excused'])->count();
-                $rate = $total > 0 ? round(($present / $total) * 100, 1) : null;
+        $query->whereHas('student', function ($student) use ($filters) {
+            $student->where('status', 'Active');
+            $this->applyStudentFilters($student, $filters);
+        });
+    }
+
+    private function publishedMarkQuery(array $filters)
+    {
+        return Mark::query()
+            ->where('visibility_status', 'published')
+            ->whereNotNull('final_mark')
+            ->tap(fn ($query) => $this->activeStudentRelation($query, $filters))
+            ->tap(fn ($query) => $this->applyMarkFilters($query, $filters));
+    }
+
+    private function attendanceQuery(array $filters)
+    {
+        return Attendance::query()
+            ->tap(fn ($query) => $this->activeStudentRelation($query, $filters))
+            ->tap(fn ($query) => $this->applyAttendanceFilters($query, $filters));
+    }
+
+    private function markStats(array $filters): array
+    {
+        $query = $this->publishedMarkQuery($filters);
+        $row = (clone $query)
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN final_mark >= 50 THEN 1 ELSE 0 END) as passed')
+            ->selectRaw('AVG('.$this->gradePointSql().') as average_gpa')
+            ->first();
+
+        return [
+            'total' => (int) ($row->total ?? 0),
+            'passed' => (int) ($row->passed ?? 0),
+            'average_gpa' => round((float) ($row->average_gpa ?? 0), 2),
+        ];
+    }
+
+    private function attendanceRisk(array $filters)
+    {
+        $presentSql = "SUM(CASE WHEN status IN ('present', 'late', 'excused') THEN 1 ELSE 0 END)";
+        $rateSql = "100.0 * {$presentSql} / COUNT(*)";
+
+        return $this->attendanceQuery($filters)
+            ->with('student.department')
+            ->select('student_id')
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN status = 'absent' THEN 1 ELSE 0 END) as absent")
+            ->selectRaw("{$rateSql} as rate")
+            ->groupBy('student_id')
+            ->havingRaw("{$rateSql} < ?", [85])
+            ->orderByRaw($rateSql)
+            ->limit(10)
+            ->get()
+            ->map(function (Attendance $row) {
+                $rate = round((float) $row->rate, 1);
 
                 return [
-                    'student' => $student,
-                    'total' => $total,
-                    'absent' => $records->where('status', 'absent')->count(),
+                    'student' => $row->student,
+                    'total' => (int) $row->total,
+                    'absent' => (int) $row->absent,
                     'rate' => $rate,
-                    'risk' => is_null($rate) ? 'No data' : ($rate < 75 ? 'High' : ($rate < 85 ? 'Watch' : 'Normal')),
+                    'risk' => $rate < 75 ? 'High' : 'Watch',
                 ];
             })
-            ->filter(fn ($row) => $row['total'] > 0 && in_array($row['risk'], ['High', 'Watch'], true))
-            ->sortBy(fn ($row) => $row['rate'])
-            ->take(10)
             ->values();
     }
 
-    private function gpaTrend($marks)
+    private function gpaTrend(array $filters)
     {
-        return $marks
-            ->groupBy(function (Mark $mark) {
-                $semester = $mark->courseSection?->semester;
+        return $this->publishedMarkQuery($filters)
+            ->leftJoin('course_sections', 'marks.course_section_id', '=', 'course_sections.id')
+            ->leftJoin('semesters', 'course_sections.semester_id', '=', 'semesters.id')
+            ->select('course_sections.semester_id', 'semesters.name as semester_name', 'semesters.academic_year')
+            ->selectRaw('COUNT(*) as marks_count')
+            ->selectRaw('AVG(final_mark) as average_mark')
+            ->selectRaw('AVG('.$this->gradePointSql().') as gpa')
+            ->groupBy('course_sections.semester_id', 'semesters.name', 'semesters.academic_year')
+            ->orderBy('semesters.academic_year')
+            ->orderBy('semesters.name')
+            ->get()
+            ->map(function ($row) {
+                $semester = $row->semester_id
+                    ? trim($row->semester_name.' '.$row->academic_year)
+                    : 'Unassigned';
 
-                return $semester ? $semester->name.' '.$semester->academic_year : 'Unassigned';
-            })
-            ->map(function ($semesterMarks, string $semester) {
                 return [
                     'semester' => $semester,
-                    'marks_count' => $semesterMarks->count(),
-                    'average_mark' => round((float) $semesterMarks->avg('final_mark'), 1),
-                    'gpa' => $this->averageGpa($semesterMarks),
+                    'marks_count' => (int) $row->marks_count,
+                    'average_mark' => round((float) $row->average_mark, 1),
+                    'gpa' => round((float) $row->gpa, 2),
                 ];
             })
-            ->sortBy('semester')
             ->values();
     }
 
-    private function unpaidBalances($financeTransactions)
+    private function unpaidBalances(array $filters)
     {
-        return $financeTransactions
-            ->groupBy(fn (FinanceTransaction $transaction) => $transaction->student_id.'|'.$transaction->currency)
-            ->map(function ($transactions) {
-                $charges = $transactions->whereIn('type', FinanceTransaction::chargeTypes())->sum(fn ($transaction) => (float) $transaction->amount);
-                $credits = $transactions->whereIn('type', FinanceTransaction::creditTypes())->sum(fn ($transaction) => (float) $transaction->amount);
-                $balance = round($charges - $credits, 2);
-                $student = $transactions->first()->student;
+        $balanceSql = "SUM(CASE WHEN type IN ('invoice', 'refund') THEN amount ELSE 0 END) - SUM(CASE WHEN type IN ('payment', 'discount', 'scholarship') THEN amount ELSE 0 END)";
 
-                return [
-                    'student' => $student,
-                    'balance' => $balance,
-                    'currency' => $transactions->first()->currency,
-                    'overdue' => $transactions
-                        ->where('type', 'invoice')
-                        ->filter(fn ($transaction) => $transaction->due_date && $transaction->due_date->isPast() && ! in_array($transaction->payment_status, ['paid', 'cancelled'], true))
-                        ->count(),
-                    'last_activity' => optional($transactions->sortByDesc('transaction_date')->first()->transaction_date)->format('Y-m-d'),
-                ];
-            })
-            ->filter(fn ($row) => $row['student'] && $row['balance'] > 0)
-            ->sortByDesc('balance')
-            ->take(10)
-            ->values();
-    }
-
-    private function coursePerformance($marks, $attendances)
-    {
-        return Course::with('department')
-            ->orderBy('code')
+        return FinanceTransaction::query()
+            ->with('student')
+            ->tap(fn ($query) => $this->activeStudentRelation($query, $filters))
+            ->tap(fn ($query) => $this->applyFinanceFilters($query, $filters))
+            ->select('student_id', 'currency')
+            ->selectRaw("{$balanceSql} as balance")
+            ->selectRaw("SUM(CASE WHEN type = 'invoice' AND due_date < ? AND payment_status NOT IN ('paid', 'cancelled') THEN 1 ELSE 0 END) as overdue", [now()->toDateString()])
+            ->selectRaw('MAX(transaction_date) as last_activity')
+            ->groupBy('student_id', 'currency')
+            ->havingRaw("{$balanceSql} > 0")
+            ->orderByRaw("{$balanceSql} DESC")
+            ->limit(10)
             ->get()
-            ->map(function (Course $course) use ($marks, $attendances) {
-                $courseMarks = $marks->where('course_id', $course->id);
-                $courseAttendance = $attendances->where('course_id', $course->id);
-                $attendanceRate = $courseAttendance->isNotEmpty()
-                    ? round(($courseAttendance->whereIn('status', ['present', 'late', 'excused'])->count() / $courseAttendance->count()) * 100, 1)
-                    : null;
+            ->map(function (FinanceTransaction $row) {
+                return [
+                    'student' => $row->student,
+                    'balance' => round((float) $row->balance, 2),
+                    'currency' => $row->currency,
+                    'overdue' => (int) $row->overdue,
+                    'last_activity' => $row->last_activity,
+                ];
+            })
+            ->values();
+    }
+
+    private function coursePerformance(array $filters)
+    {
+        $markRows = $this->publishedMarkQuery($filters)
+            ->select('course_id')
+            ->selectRaw('COUNT(*) as marks_count')
+            ->selectRaw('AVG(final_mark) as average_mark')
+            ->selectRaw('100.0 * SUM(CASE WHEN final_mark >= 50 THEN 1 ELSE 0 END) / COUNT(*) as pass_rate')
+            ->groupBy('course_id')
+            ->get()
+            ->keyBy('course_id');
+        $attendanceRows = $this->attendanceQuery($filters)
+            ->select('course_id')
+            ->selectRaw("100.0 * SUM(CASE WHEN status IN ('present', 'late', 'excused') THEN 1 ELSE 0 END) / COUNT(*) as attendance_rate")
+            ->groupBy('course_id')
+            ->get()
+            ->keyBy('course_id');
+        $courseIds = $markRows->keys()->merge($attendanceRows->keys())->filter()->unique()->values();
+
+        if ($courseIds->isEmpty()) {
+            return collect();
+        }
+
+        return Course::with('department')
+            ->whereIn('id', $courseIds)
+            ->get()
+            ->map(function (Course $course) use ($markRows, $attendanceRows) {
+                $markRow = $markRows->get($course->id);
+                $attendanceRow = $attendanceRows->get($course->id);
 
                 return [
                     'course' => $course,
-                    'marks_count' => $courseMarks->count(),
-                    'average_mark' => $courseMarks->isNotEmpty() ? round((float) $courseMarks->avg('final_mark'), 1) : null,
-                    'pass_rate' => $courseMarks->isNotEmpty()
-                        ? round(($courseMarks->where('final_mark', '>=', 50)->count() / $courseMarks->count()) * 100, 1)
-                        : null,
-                    'attendance_rate' => $attendanceRate,
+                    'marks_count' => $markRow ? (int) $markRow->marks_count : 0,
+                    'average_mark' => $markRow ? round((float) $markRow->average_mark, 1) : null,
+                    'pass_rate' => $markRow ? round((float) $markRow->pass_rate, 1) : null,
+                    'attendance_rate' => $attendanceRow ? round((float) $attendanceRow->attendance_rate, 1) : null,
                 ];
             })
-            ->filter(fn ($row) => $row['marks_count'] > 0 || ! is_null($row['attendance_rate']))
             ->sortBy(fn ($row) => $row['average_mark'] ?? 999)
             ->take(12)
             ->values();
@@ -279,6 +329,18 @@ class AnalyticsController extends Controller
         }
 
         return round($marks->avg(fn ($mark) => $this->gradePoint((float) $mark->final_mark)), 2);
+    }
+
+    private function gradePointSql(): string
+    {
+        return "CASE
+            WHEN final_mark >= 90 THEN 4.0
+            WHEN final_mark >= 80 THEN 3.5
+            WHEN final_mark >= 70 THEN 3.0
+            WHEN final_mark >= 60 THEN 2.5
+            WHEN final_mark >= 50 THEN 2.0
+            ELSE 0.0
+        END";
     }
 
     private function gradePoint(float $mark): float

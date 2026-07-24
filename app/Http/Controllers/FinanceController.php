@@ -50,11 +50,10 @@ class FinanceController extends Controller
             ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
             ->latest('transaction_date')
             ->latest();
-        $filteredTransactions = (clone $transactionQuery)->get();
         $transactions = $transactionQuery->paginate(20)->withQueryString();
 
-        $scopeTransactions = FinanceTransaction::with('student.department.college')
-            ->tap(fn ($builder) => $this->applyFinanceFilters($builder, array_merge($filters, [
+        $scopeBalanceQuery = FinanceTransaction::query();
+        $this->applyFinanceFilters($scopeBalanceQuery, array_merge($filters, [
                 'type' => '',
                 'status' => '',
                 'payment_status' => '',
@@ -62,11 +61,10 @@ class FinanceController extends Controller
                 'academic_year' => '',
                 'date_from' => '',
                 'date_to' => '',
-            ])))
-            ->get();
-        $scopeBalances = $this->balancesByCurrency($scopeTransactions);
-        $filteredBalances = $this->balancesByCurrency($filteredTransactions);
-        $selectedBalances = $selectedStudent ? $this->balancesByCurrency($selectedStudent->financeTransactions) : collect();
+        ]));
+        $scopeBalances = $this->balancesByCurrencyQuery($scopeBalanceQuery);
+        $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery);
+        $selectedBalances = $selectedStudent ? $this->balancesByCurrencyQuery($selectedStudent->financeTransactions()) : collect();
         $selectedBalance = (float) $selectedBalances->sum('balance');
         $selectedPaymentStatus = $this->paymentStatusForBalance($selectedBalance);
 
@@ -115,8 +113,6 @@ class FinanceController extends Controller
             'department.college',
             'university',
             'user.accountBlocker',
-            'financeTransactions.recorder',
-            'financeTransactions.invoice',
         ]);
 
         $transactionQuery = FinanceTransaction::with(['student.department.college', 'recorder', 'approver', 'voider', 'invoice', 'originalTransaction'])
@@ -124,14 +120,13 @@ class FinanceController extends Controller
             ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
             ->latest('transaction_date')
             ->latest();
-        $filteredTransactions = (clone $transactionQuery)->get();
         $transactions = $transactionQuery->paginate(20)->withQueryString();
-        $selectedBalances = $this->balancesByCurrency($student->financeTransactions);
-        $filteredBalances = $this->balancesByCurrency($filteredTransactions);
+        $selectedBalances = $this->balancesByCurrencyQuery($student->financeTransactions());
+        $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery);
         $selectedBalance = (float) $selectedBalances->sum('balance');
         $selectedPaymentStatus = $this->paymentStatusForBalance($selectedBalance);
-        $nextDueInvoice = $this->nextDueInvoice($student);
-        $paymentPlanSummary = $this->paymentPlanSummary($student->financeTransactions);
+        $nextDueInvoice = $this->nextDueInvoiceQuery($student);
+        $paymentPlanSummary = $this->paymentPlanSummaryQuery($student);
 
         return view('finance.show', [
             'filters' => $filters,
@@ -180,8 +175,11 @@ class FinanceController extends Controller
             $filters['payment_status'] = '';
         }
         $students = $this->tuitionReminderStudents($filters);
-        $reminderRows = $students->map(function (Student $student) {
-            $balances = $this->positiveBalances($this->balancesByCurrency($student->financeTransactions));
+        $studentIds = $students->modelKeys();
+        $balancesByStudent = $this->balanceRowsByStudentIds($studentIds);
+        $oldestDueDates = $this->oldestDueDatesByStudentIds($studentIds, $filters);
+        $reminderRows = $students->map(function (Student $student) use ($balancesByStudent, $oldestDueDates) {
+            $balances = $this->positiveBalances($balancesByStudent->get($student->id, collect()));
 
             return [
                 'student' => $student,
@@ -189,14 +187,9 @@ class FinanceController extends Controller
                 'balanceText' => $balances
                     ->map(fn ($balance) => number_format((float) $balance['balance'], 2).' '.$balance['currency'])
                     ->implode(' / '),
-                'oldestDueDate' => $student->financeTransactions
-                    ->where('type', 'invoice')
-                    ->where('status', '!=', 'cancelled')
-                    ->whereIn('payment_status', ['open', 'partial', 'overdue'])
-                    ->filter(fn ($transaction) => $transaction->due_date)
-                    ->min('due_date'),
+                'oldestDueDate' => $oldestDueDates->get($student->id),
             ];
-        });
+        })->filter(fn ($row) => $row['balances']->isNotEmpty())->values();
         $balanceTotals = $this->sumBalanceRows($reminderRows->pluck('balances')->flatten(1));
 
         return view('finance.tuition-reminders', [
@@ -340,12 +333,12 @@ class FinanceController extends Controller
     {
         $this->authorizeStudentAccountBlock($request);
 
-        $student->load(['user.roles', 'financeTransactions']);
+        $student->load(['user.roles']);
         $account = $student->user;
         abort_unless($account, 404, 'Student login account was not found.');
         abort_unless($account->roles()->where('name', 'student')->exists(), 403, 'Only student login accounts can be blocked from finance.');
 
-        $balances = $this->positiveBalances($this->balancesByCurrency($student->financeTransactions));
+        $balances = $this->positiveBalances($this->balancesByCurrencyQuery($student->financeTransactions()));
         if ($balances->isEmpty()) {
             return redirect()
                 ->route('finance.students.show', $student)
@@ -417,6 +410,7 @@ class FinanceController extends Controller
             $filters,
             $studentIds
         );
+        $balancesByStudent = $this->balanceRowsByStudentIds($students->modelKeys());
 
         if ($students->isEmpty()) {
             return $this->redirectToFinance($request)->with('error', 'No unpaid tuition charges were found for the selected scope.');
@@ -426,7 +420,7 @@ class FinanceController extends Controller
         $sent = 0;
 
         foreach ($students as $student) {
-            $balances = $this->positiveBalances($this->balancesByCurrency($student->financeTransactions));
+            $balances = $this->positiveBalances($balancesByStudent->get($student->id, collect()));
 
             if ($balances->isEmpty()) {
                 continue;
@@ -459,7 +453,7 @@ class FinanceController extends Controller
                 ->oldest('transaction_date')
                 ->oldest()
                 ->get();
-            $balances = $this->balancesByCurrency($transactions);
+            $balances = $this->balancesByCurrencyQuery($student->financeTransactions());
         }
 
         return view('finance.student', [
@@ -615,7 +609,7 @@ class FinanceController extends Controller
 
     private function tuitionReminderStudents(array $filters, array $studentIds = [])
     {
-        return Student::with(['department', 'financeTransactions'])
+        return Student::with('department')
             ->when($studentIds !== [], fn ($query) => $query->whereKey($studentIds))
             ->when($studentIds === [] && $filters['q'], function ($builder) use ($filters) {
                 $search = $filters['q'];
@@ -642,9 +636,7 @@ class FinanceController extends Controller
             })
             ->latest()
             ->limit(200)
-            ->get()
-            ->filter(fn ($student) => $this->positiveBalances($this->balancesByCurrency($student->financeTransactions))->isNotEmpty())
-            ->values();
+            ->get();
     }
 
     private function applyTuitionReminderInvoiceFilters($query, array $filters): void
@@ -766,6 +758,95 @@ class FinanceController extends Controller
             ->sortKeys();
     }
 
+    private function balancesByCurrencyQuery($query)
+    {
+        return (clone $query)
+            ->reorder()
+            ->select('currency')
+            ->selectRaw(
+                'SUM(CASE WHEN type IN (?, ?) THEN amount ELSE 0 END) as charges',
+                FinanceTransaction::chargeTypes()
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) as credits',
+                FinanceTransaction::creditTypes()
+            )
+            ->groupBy('currency')
+            ->orderBy('currency')
+            ->get()
+            ->mapWithKeys(function ($row) {
+                $currency = $row->currency ?: 'IQD';
+                $charges = (float) $row->charges;
+                $credits = (float) $row->credits;
+
+                return [
+                    $currency => [
+                        'currency' => $currency,
+                        'charges' => $charges,
+                        'credits' => $credits,
+                        'balance' => $charges - $credits,
+                    ],
+                ];
+            });
+    }
+
+    private function balanceRowsByStudentIds(array $studentIds)
+    {
+        if ($studentIds === []) {
+            return collect();
+        }
+
+        return FinanceTransaction::query()
+            ->whereIn('student_id', $studentIds)
+            ->select('student_id', 'currency')
+            ->selectRaw(
+                'SUM(CASE WHEN type IN (?, ?) THEN amount ELSE 0 END) as charges',
+                FinanceTransaction::chargeTypes()
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) as credits',
+                FinanceTransaction::creditTypes()
+            )
+            ->groupBy('student_id', 'currency')
+            ->orderBy('currency')
+            ->get()
+            ->groupBy('student_id')
+            ->map(function ($rows) {
+                return $rows->mapWithKeys(function ($row) {
+                    $currency = $row->currency ?: 'IQD';
+                    $charges = (float) $row->charges;
+                    $credits = (float) $row->credits;
+
+                    return [
+                        $currency => [
+                            'currency' => $currency,
+                            'charges' => $charges,
+                            'credits' => $credits,
+                            'balance' => $charges - $credits,
+                        ],
+                    ];
+                });
+            });
+    }
+
+    private function oldestDueDatesByStudentIds(array $studentIds, array $filters)
+    {
+        if ($studentIds === []) {
+            return collect();
+        }
+
+        $query = FinanceTransaction::query()
+            ->whereIn('student_id', $studentIds)
+            ->whereNotNull('due_date');
+        $this->applyTuitionReminderInvoiceFilters($query, $filters);
+
+        return $query
+            ->select('student_id')
+            ->selectRaw('MIN(due_date) as oldest_due_date')
+            ->groupBy('student_id')
+            ->pluck('oldest_due_date', 'student_id');
+    }
+
     private function formatCurrencyTotals($balances, string $field): string
     {
         if ($balances->isEmpty()) {
@@ -798,6 +879,18 @@ class FinanceController extends Controller
             ->first();
     }
 
+    private function nextDueInvoiceQuery(Student $student): ?FinanceTransaction
+    {
+        return $student->financeTransactions()
+            ->where('type', 'invoice')
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('payment_status', ['open', 'partial', 'overdue'])
+            ->whereNotNull('due_date')
+            ->oldest('due_date')
+            ->oldest()
+            ->first();
+    }
+
     private function paymentPlanSummary($transactions): array
     {
         $installments = collect($transactions)
@@ -810,6 +903,31 @@ class FinanceController extends Controller
         $open = $installments
             ->whereIn('payment_status', ['open', 'partial'])
             ->count();
+
+        return [
+            'total' => $total,
+            'paid' => $paid,
+            'open' => $open,
+            'overdue' => $overdue,
+            'label' => $total > 0 ? "{$paid} paid / {$open} open / {$overdue} overdue" : 'No semester payment plan',
+        ];
+    }
+
+    private function paymentPlanSummaryQuery(Student $student): array
+    {
+        $row = $student->financeTransactions()
+            ->where('type', 'invoice')
+            ->whereNotNull('reference')
+            ->where('reference', 'like', '% - %')
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN payment_status = ? THEN 1 ELSE 0 END) as paid', ['paid'])
+            ->selectRaw('SUM(CASE WHEN payment_status = ? THEN 1 ELSE 0 END) as overdue', ['overdue'])
+            ->selectRaw('SUM(CASE WHEN payment_status IN (?, ?) THEN 1 ELSE 0 END) as open', ['open', 'partial'])
+            ->first();
+        $total = (int) ($row->total ?? 0);
+        $paid = (int) ($row->paid ?? 0);
+        $overdue = (int) ($row->overdue ?? 0);
+        $open = (int) ($row->open ?? 0);
 
         return [
             'total' => $total,

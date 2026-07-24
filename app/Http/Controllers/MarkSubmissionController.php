@@ -4,8 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Course;
 use App\Models\CourseSection;
+use App\Models\College;
+use App\Models\Department;
 use App\Models\Mark;
+use App\Models\Semester;
 use App\Services\MarkSubmissionService;
+use App\Models\Teacher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -338,66 +342,99 @@ class MarkSubmissionController extends Controller
 
     private function queueFilterOptions(): array
     {
-        $marks = Mark::with([
-            'student.department.college',
-            'course.department.college',
-            'courseSection.course.department.college',
-            'courseSection.semester',
-            'courseSection.teacher',
-        ])
-            ->where(fn ($query) => $query
-                ->whereIn('submission_status', ['submitted', 'under_review'])
-                ->orWhere(fn ($approvedQuery) => $approvedQuery
-                    ->where('submission_status', 'approved')
-                    ->where('visibility_status', 'draft')))
-            ->get();
-        $stages = $marks
-            ->groupBy(fn (Mark $mark) => (string) $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__'))
-            ->map(fn ($stageMarks, $alias) => [
-                'key' => $alias,
-                'label' => $this->stageLabel($alias, $stageMarks->first()->courseSection?->grade_level),
-            ])
-            ->sortBy(fn ($stage) => $this->stageSortValue($stage['key'], $stage['label']))
-            ->values();
-
         return [
-            'colleges' => $marks->map(fn (Mark $mark) => $this->markCollege($mark))->filter()->unique('id')->sortBy('name')->values(),
-            'departments' => $marks->map(fn (Mark $mark) => $this->markDepartment($mark))->filter()->unique('id')->sortBy('name')->values(),
-            'stages' => $stages,
-            'semesters' => $marks->pluck('courseSection.semester')->filter()->unique('id')->sortByDesc('academic_year')->values(),
-            'courses' => $marks->pluck('course')->filter()->unique('id')->sortBy('code')->values(),
-            'teachers' => $marks->pluck('courseSection.teacher')->filter()->unique('id')->sortBy('full_name')->values(),
+            'colleges' => College::whereHas('departments.courses.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orWhereHas('departments.courses.sections.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orWhereHas('departments.students.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']),
+            'departments' => Department::whereHas('courses.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orWhereHas('courses.sections.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orWhereHas('students.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'college_id']),
+            'stages' => $this->stageOptionsForMarks(fn ($query) => $this->applyQueueOptionStatus($query)),
+            'semesters' => Semester::whereHas('courseSections.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orderByDesc('academic_year')
+                ->orderBy('name')
+                ->get(['id', 'name', 'academic_year']),
+            'courses' => Course::whereHas('marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orWhereHas('sections.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orderBy('code')
+                ->orderBy('name')
+                ->get(['id', 'code', 'name']),
+            'teachers' => Teacher::whereHas('courseSections.marks', fn ($query) => $this->applyQueueOptionStatus($query))
+                ->orderBy('full_name')
+                ->get(['id', 'full_name']),
         ];
     }
 
     private function finalExamFilterOptions(): array
     {
-        $marks = $this->finalExamMarkQuery($this->emptyQueueFilters())
-            ->whereNotNull('prefinal_mark')
-            ->get();
+        return [
+            'academic_years' => Semester::whereHas('courseSections.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->distinct()
+                ->orderByDesc('academic_year')
+                ->pluck('academic_year')
+                ->filter()
+                ->values(),
+            'colleges' => College::whereHas('departments.courses.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orWhereHas('departments.courses.sections.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orWhereHas('departments.students.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']),
+            'departments' => Department::whereHas('courses.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orWhereHas('courses.sections.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orWhereHas('students.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'college_id']),
+            'stages' => $this->stageOptionsForMarks(fn ($query) => $this->applyFinalExamOptionStatus($query)),
+            'semesters' => Semester::whereHas('courseSections.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orderByDesc('academic_year')
+                ->orderBy('name')
+                ->get(['id', 'name', 'academic_year']),
+            'courses' => Course::whereHas('marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orWhereHas('sections.marks', fn ($query) => $this->applyFinalExamOptionStatus($query))
+                ->orderBy('code')
+                ->orderBy('name')
+                ->get(['id', 'code', 'name']),
+        ];
+    }
 
-        $stages = $marks
-            ->groupBy(fn (Mark $mark) => (string) $this->stageAlias($mark->courseSection?->grade_level ?: '__unassigned__'))
-            ->map(fn ($stageMarks, $alias) => [
-                'key' => $alias,
-                'label' => $this->stageLabel($alias, $stageMarks->first()->courseSection?->grade_level),
+    private function applyQueueOptionStatus($query): void
+    {
+        $query->where(fn ($statusQuery) => $statusQuery
+            ->whereIn('submission_status', ['submitted', 'under_review'])
+            ->orWhere(fn ($approvedQuery) => $approvedQuery
+                ->where('submission_status', 'approved')
+                ->where('visibility_status', 'draft')));
+    }
+
+    private function applyFinalExamOptionStatus($query): void
+    {
+        $query
+            ->whereIn('submission_status', ['draft', 'rejected'])
+            ->where('visibility_status', 'draft')
+            ->whereNotNull('prefinal_mark');
+    }
+
+    private function stageOptionsForMarks(callable $markConstraint)
+    {
+        return CourseSection::whereHas('marks', $markConstraint)
+            ->select('grade_level')
+            ->distinct()
+            ->pluck('grade_level')
+            ->map(fn ($gradeLevel) => [
+                'alias' => (string) $this->stageAlias($gradeLevel ?: '__unassigned__'),
+                'grade_level' => $gradeLevel,
+            ])
+            ->unique('alias')
+            ->map(fn ($stage) => [
+                'key' => $stage['alias'],
+                'label' => $this->stageLabel($stage['alias'], $stage['grade_level']),
             ])
             ->sortBy(fn ($stage) => $this->stageSortValue($stage['key'], $stage['label']))
             ->values();
-
-        return [
-            'academic_years' => $marks
-                ->map(fn (Mark $mark) => $mark->courseSection?->semester?->academic_year)
-                ->filter()
-                ->unique()
-                ->sortDesc()
-                ->values(),
-            'colleges' => $marks->map(fn (Mark $mark) => $this->markCollege($mark))->filter()->unique('id')->sortBy('name')->values(),
-            'departments' => $marks->map(fn (Mark $mark) => $this->markDepartment($mark))->filter()->unique('id')->sortBy('name')->values(),
-            'stages' => $stages,
-            'semesters' => $marks->pluck('courseSection.semester')->filter()->unique('id')->sortByDesc('academic_year')->values(),
-            'courses' => $marks->pluck('course')->filter()->unique('id')->sortBy('code')->values(),
-        ];
     }
 
     private function applyQueueFilters($query, array $filters): void
@@ -457,17 +494,18 @@ class MarkSubmissionController extends Controller
             : $sectionQuery->whereIn('grade_level', $gradeLevels));
     }
 
-    private function finalExamMarkQuery(array $filters)
+    private function finalExamMarkQuery(array $filters, bool $withRelations = true)
     {
         $filters['submission_status'] = '';
 
-        $query = Mark::with([
-            'student.department.college',
-            'course.department.college',
-            'courseSection.course.department.college',
-            'courseSection.semester',
-            'courseSection.teacher',
-        ])
+        $query = Mark::query()
+            ->when($withRelations, fn ($query) => $query->with([
+                'student.department.college',
+                'course.department.college',
+                'courseSection.course.department.college',
+                'courseSection.semester',
+                'courseSection.teacher',
+            ]))
             ->whereIn('submission_status', ['draft', 'rejected'])
             ->where('visibility_status', 'draft');
 
@@ -478,23 +516,38 @@ class MarkSubmissionController extends Controller
 
     private function finalExamCourseCards(array $filters)
     {
-        return $this->finalExamMarkQuery($filters)
+        $rows = $this->finalExamMarkQuery($filters, false)
             ->whereNotNull('prefinal_mark')
-            ->get()
+            ->select('course_id')
+            ->selectRaw('COUNT(*) as marks_count')
+            ->selectRaw('COUNT(DISTINCT course_section_id) as section_count')
+            ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NULL THEN 1 ELSE 0 END) as waiting_first_trial')
+            ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NOT NULL AND second_trial_final_exam IS NULL AND (COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < 50 THEN 1 ELSE 0 END) as waiting_second_trial')
             ->groupBy('course_id')
-            ->map(function ($courseMarks) {
-                $course = $courseMarks->first()->course;
-                $sections = $courseMarks->pluck('courseSection')->filter()->unique('id');
-                $waitingSecondTrial = $courseMarks->filter(fn (Mark $mark) => ! is_null($mark->first_trial_final_exam)
-                    && is_null($mark->second_trial_final_exam)
-                    && ((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) < 50);
+            ->get()
+            ->keyBy('course_id');
+        $courseIds = $rows->keys()->filter()->values();
+        $courses = Course::with('department.college')
+            ->whereIn('id', $courseIds)
+            ->get()
+            ->keyBy('id');
+        $sectionsByCourse = CourseSection::with('semester')
+            ->whereIn('course_id', $courseIds)
+            ->get()
+            ->groupBy('course_id');
+
+        return $courseIds
+            ->map(function ($courseId) use ($rows, $courses, $sectionsByCourse) {
+                $row = $rows->get($courseId);
+                $course = $courses->get($courseId);
+                $sections = $sectionsByCourse->get($courseId, collect());
 
                 return [
                     'course' => $course,
-                    'marks_count' => $courseMarks->count(),
-                    'section_count' => $sections->count(),
-                    'waiting_first_trial' => $courseMarks->whereNull('first_trial_final_exam')->count(),
-                    'waiting_second_trial' => $waitingSecondTrial->count(),
+                    'marks_count' => (int) $row->marks_count,
+                    'section_count' => (int) $row->section_count,
+                    'waiting_first_trial' => (int) $row->waiting_first_trial,
+                    'waiting_second_trial' => (int) $row->waiting_second_trial,
                     'college' => $course?->department?->college,
                     'department' => $course?->department,
                     'stages' => $sections->pluck('grade_level')->filter()->unique()->sort()->values(),
@@ -517,8 +570,7 @@ class MarkSubmissionController extends Controller
                 ->whereNotNull('prefinal_mark')
                 ->whereNotNull('first_trial_final_exam')
                 ->whereNull('second_trial_final_exam')
-                ->get()
-                ->filter(fn (Mark $mark) => ((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) < 50)
+                ->whereRaw('(COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < 50')
                 ->count(),
             'ready_for_review' => $this->queueMarkQuery($filters)
                 ->where('submission_status', 'submitted')

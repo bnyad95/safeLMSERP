@@ -115,12 +115,10 @@ class AttendanceController extends Controller
             ->orderBy('date', 'desc');
 
         if ($request->get('export') === 'csv') {
-            $records = (clone $attendanceQuery)->get();
-
-            return response()->streamDownload(function () use ($records) {
+            return response()->streamDownload(function () use ($attendanceQuery) {
                 $handle = fopen('php://output', 'w');
                 fputcsv($handle, ['Date', 'Student ID', 'Student', 'Email', 'Status', 'Remarks']);
-                foreach ($records as $record) {
+                foreach ((clone $attendanceQuery)->cursor() as $record) {
                     fputcsv($handle, [
                         $record->date?->format('Y-m-d'),
                         $record->student->student_id ?? '',

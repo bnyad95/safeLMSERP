@@ -324,44 +324,65 @@ class NotificationService
     {
         $warnings = [];
 
-        // Check attendance < 75%
-        $students = Student::with(['attendances', 'marks'])->get();
+        Student::query()
+            ->select(['id', 'full_name', 'email'])
+            ->orderBy('id')
+            ->chunkById(500, function ($students) use (&$warnings) {
+                $studentIds = $students->pluck('id');
+                $studentsById = $students->keyBy('id');
+                $attendanceRows = Attendance::query()
+                    ->whereIn('student_id', $studentIds)
+                    ->select('student_id', 'course_id')
+                    ->selectRaw('COUNT(*) as total')
+                    ->selectRaw("SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present")
+                    ->groupBy('student_id', 'course_id')
+                    ->havingRaw('COUNT(*) >= ?', [5])
+                    ->havingRaw("100.0 * SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) / COUNT(*) < ?", [75])
+                    ->get();
+                $courseNames = Course::whereIn('id', $attendanceRows->pluck('course_id')->filter()->unique())
+                    ->pluck('name', 'id');
 
-        foreach ($students as $student) {
-            $attendanceGroups = $student->attendances->groupBy('course_id');
+                foreach ($attendanceRows as $row) {
+                    $student = $studentsById->get($row->student_id);
+                    if (! $student) {
+                        continue;
+                    }
 
-            foreach ($attendanceGroups as $courseId => $records) {
-                $total = $records->count();
-                $present = $records->where('status', 'present')->count();
-                $percentage = $total > 0 ? ($present / $total) * 100 : 100;
+                    $total = (int) $row->total;
+                    $present = (int) $row->present;
+                    $percentage = ($present / $total) * 100;
+                    $courseName = $courseNames[$row->course_id] ?? 'Unknown Course';
 
-                if ($total >= 5 && $percentage < 75) {
-                    $course = Course::find($courseId);
                     $this->sendPerformanceWarning($student, 'low_attendance', [
-                        'course' => $course?->name ?? 'Unknown Course',
+                        'course' => $courseName,
                         'percentage' => round($percentage, 1),
                         'present' => $present,
                         'total' => $total,
                     ]);
-                    $warnings[] = "Attendance warning sent to {$student->full_name} for course {$course?->name}";
+                    $warnings[] = "Attendance warning sent to {$student->full_name} for course {$courseName}";
                 }
-            }
 
-            // Check published marks < 50
-            $lowMarks = $student->marks()
-                ->where('visibility_status', 'published')
-                ->where('final_mark', '<', 50)
-                ->with('course')
-                ->get();
+                Mark::with('course')
+                    ->whereIn('student_id', $studentIds)
+                    ->where('visibility_status', 'published')
+                    ->where('final_mark', '<', 50)
+                    ->orderBy('student_id')
+                    ->chunk(500, function ($lowMarks) use ($studentsById, &$warnings) {
+                        foreach ($lowMarks as $mark) {
+                            $student = $studentsById->get($mark->student_id);
+                            if (! $student) {
+                                continue;
+                            }
 
-            foreach ($lowMarks as $mark) {
-                $this->sendPerformanceWarning($student, 'low_mark', [
-                    'course' => $mark->course?->name ?? 'Unknown Course',
-                    'mark' => $mark->final_mark,
-                ]);
-                $warnings[] = "Low mark warning sent to {$student->full_name} for course {$mark->course?->name}";
-            }
-        }
+                            $courseName = $mark->course?->name ?? 'Unknown Course';
+                            $this->sendPerformanceWarning($student, 'low_mark', [
+                                'course' => $courseName,
+                                'mark' => $mark->final_mark,
+                            ]);
+                            $warnings[] = "Low mark warning sent to {$student->full_name} for course {$courseName}";
+                        }
+                    });
+            });
 
         return $warnings;
     }
