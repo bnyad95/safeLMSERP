@@ -4,6 +4,8 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Session\TokenMismatchException;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase
@@ -50,5 +52,23 @@ class AuthenticationTest extends TestCase
 
         $this->assertGuest();
         $response->assertRedirect('/');
+    }
+
+    public function test_expired_web_session_redirects_to_login(): void
+    {
+        $response = $this->get('/dashboard');
+
+        $response->assertRedirect(route('login'));
+    }
+
+    public function test_expired_form_session_redirects_to_login(): void
+    {
+        Route::post('/test-expired-form-session', fn () => throw new TokenMismatchException);
+
+        $response = $this->post('/test-expired-form-session');
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('status', 'Your session has expired. Please log in again.');
     }
 }
