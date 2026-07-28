@@ -29,7 +29,15 @@ use App\Http\Controllers\TimetableController;
 use App\Http\Controllers\TranscriptController;
 use App\Http\Controllers\UniversityController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\WebInstallerController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/setup', [WebInstallerController::class, 'show'])
+    ->middleware('throttle:20,1')
+    ->name('installer.show');
+Route::post('/setup', [WebInstallerController::class, 'install'])
+    ->middleware('throttle:5,1')
+    ->name('installer.install');
 
 Route::get('/', function () {
     return auth()->check()
