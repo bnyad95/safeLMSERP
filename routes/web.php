@@ -308,6 +308,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/bologna-definition', [ErpController::class, 'bolognaDefinition'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
         ->name('bologna-definition');
+    Route::get('/bologna-definition/student-rankings', [ErpController::class, 'studentRankings'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
+        ->name('bologna-definition.student-rankings');
     Route::get('/academic-year-closing', [AcademicYearClosureController::class, 'index'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
         ->name('academic-year-closures.index');

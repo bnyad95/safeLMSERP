@@ -54,6 +54,24 @@
                 </div>
             </section>
 
+            <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <a
+                    href="{{ route('bologna-definition.student-rankings') }}"
+                    class="flex min-h-36 flex-col justify-between rounded-lg border border-gray-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:bg-blue-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-500 dark:hover:bg-gray-800"
+                >
+                    <div>
+                        <div class="flex items-start justify-between gap-3">
+                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Student Rankings</h3>
+                            <span class="rounded bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                                Passed students
+                            </span>
+                        </div>
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Open published final mark rankings by college, department, stage, and academic year.</p>
+                    </div>
+                    <span class="mt-4 text-sm font-semibold text-blue-700 dark:text-indigo-300">Open rankings</span>
+                </a>
+            </section>
+
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
                 <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">

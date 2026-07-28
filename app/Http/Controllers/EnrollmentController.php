@@ -39,19 +39,19 @@ class EnrollmentController extends Controller
         ];
 
         $directoryQuery = $this->sectionDirectoryQuery($filters);
-        $matchingSections = (clone $directoryQuery)->get();
         $sections = (clone $directoryQuery)->paginate(12)->withQueryString();
+        $classificationGroups = $this->sectionClassificationGroups($filters);
         $stats = [
-            'sections' => $matchingSections->count(),
-            'active' => $matchingSections->where('status', 'active')->count(),
-            'students' => $matchingSections->sum('enrolled_count'),
-            'waitlisted' => $matchingSections->sum('waitlisted_count'),
+            'sections' => $classificationGroups->sum('count'),
+            'active' => $classificationGroups->sum('active'),
+            'students' => $classificationGroups->sum('students'),
+            'waitlisted' => $classificationGroups->sum('waitlisted'),
         ];
 
         return view('enrollments.index', [
             'sections' => $sections,
             'stats' => $stats,
-            'classificationGroups' => $this->classifySections($matchingSections),
+            'classificationGroups' => $classificationGroups,
             'filters' => $filters,
             'colleges' => College::orderBy('name')->get(['id', 'name']),
             'departments' => Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']),
@@ -502,29 +502,76 @@ class EnrollmentController extends Controller
             ->orderByDesc('created_at');
     }
 
-    private function classifySections($sections)
+    private function sectionClassificationGroups(array $filters)
     {
-        return $sections
-            ->groupBy(fn (CourseSection $section) => $section->course->department->college->name ?? 'No college')
-            ->map(fn ($collegeSections, string $collegeName) => [
+        $enrolledCounts = Enrollment::query()
+            ->selectRaw('course_section_id, COUNT(*) as enrolled_count')
+            ->where('status', 'enrolled')
+            ->groupBy('course_section_id');
+
+        $waitlistedCounts = Enrollment::query()
+            ->selectRaw('course_section_id, COUNT(*) as waitlisted_count')
+            ->where('status', 'waitlisted')
+            ->groupBy('course_section_id');
+
+        $rows = CourseSection::query()
+            ->leftJoin('courses', 'course_sections.course_id', '=', 'courses.id')
+            ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+            ->leftJoin('colleges', 'departments.college_id', '=', 'colleges.id')
+            ->leftJoinSub($enrolledCounts, 'enrolled_counts', function ($join) {
+                $join->on('enrolled_counts.course_section_id', '=', 'course_sections.id');
+            })
+            ->leftJoinSub($waitlistedCounts, 'waitlisted_counts', function ($join) {
+                $join->on('waitlisted_counts.course_section_id', '=', 'course_sections.id');
+            })
+            ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
+                $search->where('course_sections.section_code', 'like', "%{$filters['q']}%")
+                    ->orWhere('courses.code', 'like', "%{$filters['q']}%")
+                    ->orWhere('courses.name', 'like', "%{$filters['q']}%");
+            }))
+            ->when($filters['college_id'], fn ($query, $collegeId) => $query->where('departments.college_id', $collegeId))
+            ->when($filters['department_id'], fn ($query, $departmentId) => $query->where('courses.department_id', $departmentId))
+            ->when($filters['grade_level'] !== '', fn ($query) => $query->where('course_sections.grade_level', $filters['grade_level']))
+            ->when($filters['semester_id'], fn ($query, $semesterId) => $query->where('course_sections.semester_id', $semesterId))
+            ->when($filters['group'] !== '', fn ($query) => $query->where('course_sections.section_code', $filters['group']))
+            ->when($filters['teacher_id'], fn ($query, $teacherId) => $query->where('course_sections.teacher_id', $teacherId))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('course_sections.status', $filters['status']))
+            ->selectRaw("COALESCE(colleges.name, 'No college') as college")
+            ->selectRaw("COALESCE(departments.name, 'No department') as department")
+            ->selectRaw("COALESCE(NULLIF(course_sections.grade_level, ''), 'No stage') as grade")
+            ->selectRaw('COUNT(course_sections.id) as modules_count')
+            ->selectRaw("SUM(CASE WHEN course_sections.status = 'active' THEN 1 ELSE 0 END) as active_count")
+            ->selectRaw('COALESCE(SUM(enrolled_counts.enrolled_count), 0) as students_count')
+            ->selectRaw('COALESCE(SUM(waitlisted_counts.waitlisted_count), 0) as waitlisted_count')
+            ->groupBy('college', 'department', 'grade')
+            ->orderBy('college')
+            ->orderBy('department')
+            ->orderBy('grade')
+            ->get();
+
+        return $rows
+            ->groupBy('college')
+            ->map(fn ($collegeRows, string $collegeName) => [
                 'college' => $collegeName,
-                'count' => $collegeSections->count(),
-                'students' => $collegeSections->sum('enrolled_count'),
-                'departments' => $collegeSections
-                    ->groupBy(fn (CourseSection $section) => $section->course->department->name ?? 'No department')
-                    ->map(fn ($departmentSections, string $departmentName) => [
+                'count' => $collegeRows->sum(fn ($row) => (int) $row->modules_count),
+                'active' => $collegeRows->sum(fn ($row) => (int) $row->active_count),
+                'students' => $collegeRows->sum(fn ($row) => (int) $row->students_count),
+                'waitlisted' => $collegeRows->sum(fn ($row) => (int) $row->waitlisted_count),
+                'departments' => $collegeRows
+                    ->groupBy('department')
+                    ->map(fn ($departmentRows, string $departmentName) => [
                         'department' => $departmentName,
-                        'count' => $departmentSections->count(),
-                        'students' => $departmentSections->sum('enrolled_count'),
-                        'grades' => $departmentSections
-                            ->groupBy(fn (CourseSection $section) => $section->grade_level ?: 'No stage')
-                            ->map(fn ($gradeSections, string $grade) => ['grade' => $grade, 'count' => $gradeSections->count()])
+                        'count' => $departmentRows->sum(fn ($row) => (int) $row->modules_count),
+                        'students' => $departmentRows->sum(fn ($row) => (int) $row->students_count),
+                        'grades' => $departmentRows
+                            ->map(fn ($row) => [
+                                'grade' => $row->grade,
+                                'count' => (int) $row->modules_count,
+                            ])
                             ->values(),
                     ])
-                    ->sortBy('department')
                     ->values(),
             ])
-            ->sortBy('college')
             ->values();
     }
 

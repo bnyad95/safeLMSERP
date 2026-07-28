@@ -25,15 +25,14 @@ class CourseController extends Controller
         ];
 
         $directoryQuery = $this->courseDirectoryQuery($filters);
-        $matchingCourses = (clone $directoryQuery)->get();
         $courses = (clone $directoryQuery)->paginate(15)->withQueryString();
+        $classificationGroups = $this->courseClassificationGroups($filters);
         $stats = [
-            'total' => $matchingCourses->count(),
-            'active' => $matchingCourses->where('status', 'active')->count(),
-            'inactive' => $matchingCourses->where('status', 'inactive')->count(),
-            'open_sections' => $matchingCourses->sum('open_sections_count'),
+            'total' => (clone $directoryQuery)->reorder()->count(),
+            'active' => (clone $directoryQuery)->reorder()->where('status', 'active')->count(),
+            'inactive' => (clone $directoryQuery)->reorder()->where('status', 'inactive')->count(),
+            'open_sections' => $classificationGroups->sum('open_sections'),
         ];
-        $classificationGroups = $this->classifyCourses($matchingCourses);
         $colleges = College::orderBy('name')->get(['id', 'name']);
         $departments = Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']);
         $creditOptions = Course::distinct()->orderBy('credits')->pluck('credits');
@@ -216,25 +215,47 @@ class CourseController extends Controller
             ->orderBy('code');
     }
 
-    private function classifyCourses($courses)
+    private function courseClassificationGroups(array $filters)
     {
-        return $courses
-            ->groupBy(fn (Course $course) => $course->department?->college?->name ?: 'No college')
-            ->map(fn ($collegeCourses, string $collegeName) => [
+        $rows = Course::query()
+            ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+            ->leftJoin('colleges', 'departments.college_id', '=', 'colleges.id')
+            ->leftJoin('course_sections', function ($join) {
+                $join->on('course_sections.course_id', '=', 'courses.id')
+                    ->whereIn('course_sections.status', ['planned', 'active'])
+                    ->whereNull('course_sections.deleted_at');
+            })
+            ->when($filters['q'] !== '', fn ($query) => $query->where(function ($searchQuery) use ($filters) {
+                $searchQuery->where('courses.code', 'like', "%{$filters['q']}%")
+                    ->orWhere('courses.name', 'like', "%{$filters['q']}%");
+            }))
+            ->when($filters['college_id'], fn ($query) => $query->where('departments.college_id', $filters['college_id']))
+            ->when($filters['department_id'], fn ($query) => $query->where('courses.department_id', $filters['department_id']))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('courses.status', $filters['status']))
+            ->when($filters['credits'] !== '' && ctype_digit($filters['credits']), fn ($query) => $query->where('courses.credits', (int) $filters['credits']))
+            ->selectRaw("COALESCE(colleges.name, 'No college') as college")
+            ->selectRaw("COALESCE(departments.name, 'No department') as department")
+            ->selectRaw('COUNT(DISTINCT courses.id) as courses_count')
+            ->selectRaw('COUNT(course_sections.id) as open_sections_count')
+            ->groupBy('college', 'department')
+            ->orderBy('college')
+            ->orderBy('department')
+            ->get();
+
+        return $rows
+            ->groupBy('college')
+            ->map(fn ($collegeRows, string $collegeName) => [
                 'college' => $collegeName,
-                'count' => $collegeCourses->count(),
-                'open_sections' => $collegeCourses->sum('open_sections_count'),
-                'departments' => $collegeCourses
-                    ->groupBy(fn (Course $course) => $course->department?->name ?: 'No department')
-                    ->map(fn ($departmentCourses, string $departmentName) => [
-                        'department' => $departmentName,
-                        'count' => $departmentCourses->count(),
-                        'open_sections' => $departmentCourses->sum('open_sections_count'),
+                'count' => $collegeRows->sum(fn ($row) => (int) $row->courses_count),
+                'open_sections' => $collegeRows->sum(fn ($row) => (int) $row->open_sections_count),
+                'departments' => $collegeRows
+                    ->map(fn ($row) => [
+                        'department' => $row->department,
+                        'count' => (int) $row->courses_count,
+                        'open_sections' => (int) $row->open_sections_count,
                     ])
-                    ->sortBy('department')
                     ->values(),
             ])
-            ->sortBy('college')
             ->values();
     }
 

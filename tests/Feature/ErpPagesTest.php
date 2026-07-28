@@ -103,7 +103,57 @@ class ErpPagesTest extends TestCase
         $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026']);
         $course = Course::create(['department_id' => $cs->id, 'code' => 'CS101', 'name' => 'Programming', 'credits' => 4]);
         Course::create(['department_id' => $math->id, 'code' => 'MATH101', 'name' => 'Calculus', 'credits' => 4]);
-        CourseSection::create(['course_id' => $course->id, 'semester_id' => $semester->id, 'section_code' => 'A', 'grade_level' => 'Stage 1']);
+        $section = CourseSection::create(['course_id' => $course->id, 'semester_id' => $semester->id, 'section_code' => 'A', 'grade_level' => 'Stage 1']);
+        $student = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $cs->id,
+            'student_id' => 'S-RANK-1',
+            'full_name' => 'Ranking Student',
+            'email' => 'ranking.student@example.com',
+            'status' => 'Active',
+        ]);
+        Mark::create([
+            'student_id' => $student->id,
+            'course_id' => $course->id,
+            'course_section_id' => $section->id,
+            'final_mark' => 91,
+            'visibility_status' => 'published',
+            'submission_status' => 'approved',
+        ]);
+        foreach (range(2, 6) as $index) {
+            $additionalStudent = Student::create([
+                'university_id' => $university->id,
+                'department_id' => $cs->id,
+                'student_id' => 'S-RANK-'.$index,
+                'full_name' => 'Ranking Student '.$index,
+                'email' => 'ranking.student'.$index.'@example.com',
+                'status' => 'Active',
+            ]);
+            Mark::create([
+                'student_id' => $additionalStudent->id,
+                'course_id' => $course->id,
+                'course_section_id' => $section->id,
+                'final_mark' => 90 - $index,
+                'visibility_status' => 'published',
+                'submission_status' => 'approved',
+            ]);
+        }
+        $failedStudent = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $cs->id,
+            'student_id' => 'S-FAILED-1',
+            'full_name' => 'Failed Ranking Student',
+            'email' => 'failed.ranking.student@example.com',
+            'status' => 'Active',
+        ]);
+        Mark::create([
+            'student_id' => $failedStudent->id,
+            'course_id' => $course->id,
+            'course_section_id' => $section->id,
+            'final_mark' => 49,
+            'visibility_status' => 'published',
+            'submission_status' => 'approved',
+        ]);
         $role = Role::create(['name' => 'administrator', 'display_name' => 'Academic Administrator']);
         $user = User::factory()->create();
         $user->roles()->attach($role->id);
@@ -114,8 +164,25 @@ class ErpPagesTest extends TestCase
             ->assertSee('Bologna Definition')
             ->assertSee('Add Academic Year')
             ->assertSee('Academic Setup')
+            ->assertSee('Academic Years')
+            ->assertSee('Student Rankings')
+            ->assertSee('Open rankings')
             ->assertSee('Stages And Credits')
             ->assertSee('Programming')
+            ->assertDontSee('Ranking Student')
+            ->assertDontSee('S-RANK-1')
+            ->assertSee('Stage 1');
+
+        $this->actingAs($user)
+            ->get(route('bologna-definition.student-rankings'))
+            ->assertOk()
+            ->assertSee('Back to Bologna Definition')
+            ->assertSee('Ranking Directory')
+            ->assertSee('Ranking Student')
+            ->assertSee('S-RANK-1')
+            ->assertSee('S-RANK-6')
+            ->assertSee('All passed students')
+            ->assertDontSee('S-FAILED-1')
             ->assertSee('Stage 1');
 
         $this->actingAs($user)

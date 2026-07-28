@@ -26,6 +26,7 @@ use App\Services\RolePermissionService;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ErpController extends Controller
@@ -537,9 +538,9 @@ class ErpController extends Controller
                     ->orWhereHas('student.department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id']));
             }))
             ->when($filters['department_id'], fn ($markQuery) => $markQuery->where(function ($departmentQuery) use ($filters) {
-                $departmentQuery->whereHas('courseSection.course', fn ($courseQuery) => $courseQuery->where('department_id', $filters['department_id']))
-                    ->orWhereHas('course', fn ($courseQuery) => $courseQuery->where('department_id', $filters['department_id']))
-                    ->orWhereHas('student', fn ($studentQuery) => $studentQuery->where('department_id', $filters['department_id']));
+                $departmentQuery->whereHas('courseSection.course', fn ($courseQuery) => $courseQuery->where('courses.department_id', $filters['department_id']))
+                    ->orWhereHas('course', fn ($courseQuery) => $courseQuery->where('courses.department_id', $filters['department_id']))
+                    ->orWhereHas('student', fn ($studentQuery) => $studentQuery->where('students.department_id', $filters['department_id']));
             }))
             ->when($filters['stage'] !== '', fn ($markQuery) => $this->applyResultStageQueryFilter($markQuery, $filters['stage']))
             ->when($filters['semester_id'], fn ($markQuery) => $markQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('semester_id', $filters['semester_id'])))
@@ -1595,6 +1596,10 @@ class ErpController extends Controller
         $collegeCount = (clone $collegesQuery)->count();
         $departmentCount = (clone $departmentsQuery)->count();
         $semesterCount = (clone $semestersQuery)->count();
+        $academicYearCount = (clone $semestersQuery)
+            ->reorder()
+            ->distinct()
+            ->count('academic_year');
         $courseCount = (clone $coursesQuery)->count();
         $moduleCount = (clone $sectionsQuery)->reorder()->count();
         $inactiveCourseCount = (clone $coursesQuery)->where('status', 'inactive')->count();
@@ -1680,6 +1685,7 @@ class ErpController extends Controller
         $canViewCourseCatalog = $user->hasRole('super_administrator') || $user->hasPermission('courses.view');
 
         $setupCards = [
+            ['title' => 'Academic Years', 'description' => 'Create a new academic year without redefining colleges, departments, semesters, or catalog courses.', 'route' => route('academic-years.create'), 'count' => $academicYearCount, 'enabled' => $canManageAcademicSetup],
             ['title' => 'Universities', 'description' => 'Institution records and official codes.', 'route' => route('universities.index'), 'count' => $universityCount, 'enabled' => true],
             ['title' => 'Colleges', 'description' => 'College definitions under each university.', 'route' => route('colleges.index'), 'count' => $collegeCount, 'enabled' => true],
             ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
@@ -1695,6 +1701,108 @@ class ErpController extends Controller
             'curriculumSignals',
             'canManageAcademicSetup'
         ));
+    }
+
+    public function studentRankings()
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
+
+        $sectionsQuery = CourseSection::query();
+        OrganizationScope::apply($sectionsQuery, $user, 'section');
+
+        $studentRankingHierarchy = $this->bolognaStudentRankingHierarchy($sectionsQuery);
+
+        return view('erp.student-rankings', compact('studentRankingHierarchy'));
+    }
+
+    private function bolognaStudentRankingHierarchy($sectionsQuery)
+    {
+        $studentScores = (clone $sectionsQuery)
+            ->reorder()
+            ->join('marks', 'course_sections.id', '=', 'marks.course_section_id')
+            ->join('students', 'marks.student_id', '=', 'students.id')
+            ->join('semesters', 'course_sections.semester_id', '=', 'semesters.id')
+            ->join('courses', 'course_sections.course_id', '=', 'courses.id')
+            ->join('departments', 'courses.department_id', '=', 'departments.id')
+            ->join('colleges', 'departments.college_id', '=', 'colleges.id')
+            ->where('marks.visibility_status', 'published')
+            ->whereNotNull('marks.final_mark')
+            ->whereNull('marks.deleted_at')
+            ->whereNull('students.deleted_at')
+            ->whereNull('courses.deleted_at')
+            ->selectRaw('colleges.name as college')
+            ->selectRaw('departments.name as department')
+            ->selectRaw("COALESCE(NULLIF(course_sections.grade_level, ''), 'Stage not specified') as stage")
+            ->selectRaw('semesters.academic_year as academic_year')
+            ->selectRaw('students.id as student_id')
+            ->selectRaw('students.full_name as student_name')
+            ->selectRaw('students.student_id as student_number')
+            ->selectRaw('AVG(marks.final_mark) as average_mark')
+            ->selectRaw('COUNT(marks.id) as marks_count')
+            ->selectRaw('SUM(CASE WHEN marks.final_mark >= 50 THEN 1 ELSE 0 END) as passed_count')
+            ->groupBy(
+                'colleges.name',
+                'departments.name',
+                'course_sections.grade_level',
+                'semesters.academic_year',
+                'students.id',
+                'students.full_name',
+                'students.student_id'
+            )
+            ->havingRaw('SUM(CASE WHEN marks.final_mark < 50 THEN 1 ELSE 0 END) = 0');
+
+        $rankedScores = DB::query()
+            ->fromSub($studentScores, 'student_scores')
+            ->select('student_scores.*')
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY college, department, stage, academic_year ORDER BY average_mark DESC, student_name ASC) as student_rank');
+
+        return DB::query()
+            ->fromSub($rankedScores, 'ranked_scores')
+            ->orderBy('college')
+            ->orderBy('department')
+            ->orderBy('stage')
+            ->orderByDesc('academic_year')
+            ->orderBy('student_rank')
+            ->get()
+            ->groupBy('college')
+            ->map(fn ($collegeRows, string $collegeName) => [
+                'college' => $collegeName,
+                'students' => $collegeRows->pluck('student_id')->unique()->count(),
+                'departments' => $collegeRows
+                    ->groupBy('department')
+                    ->map(fn ($departmentRows, string $departmentName) => [
+                        'department' => $departmentName,
+                        'students' => $departmentRows->pluck('student_id')->unique()->count(),
+                        'stages' => $departmentRows
+                            ->groupBy('stage')
+                            ->map(fn ($stageRows, string $stageName) => [
+                                'stage' => $stageName,
+                                'students' => $stageRows->pluck('student_id')->unique()->count(),
+                                'years' => $stageRows
+                                    ->groupBy('academic_year')
+                                    ->map(fn ($yearRows, string $academicYear) => [
+                                        'academic_year' => $academicYear,
+                                        'students' => $yearRows
+                                            ->map(fn ($row) => [
+                                                'rank' => (int) $row->student_rank,
+                                                'name' => $row->student_name,
+                                                'student_number' => $row->student_number ?: '-',
+                                                'average' => round((float) $row->average_mark, 1),
+                                                'marks' => (int) $row->marks_count,
+                                                'pass_rate' => (int) $row->marks_count > 0
+                                                    ? round(((int) $row->passed_count / (int) $row->marks_count) * 100)
+                                                    : 0,
+                                            ])
+                                            ->values(),
+                                    ])
+                                    ->values(),
+                            ])
+                            ->values(),
+                    ])
+                    ->values(),
+            ])
+            ->values();
     }
 
     public function search(Request $request)
