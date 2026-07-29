@@ -37,7 +37,7 @@ On the development computer, create the upload ZIP:
 powershell -ExecutionPolicy Bypass -File deploy/build-cpanel-package.ps1
 ```
 
-Upload and extract `dist/SafeLMS-cPanel.tar` in the application directory.
+Upload and extract `dist/SafeLMS-cPanel.zip` in the application directory.
 The archive includes `vendor` and compiled `public/build` assets, so it can also be
 used when Node.js is unavailable on cPanel.
 
@@ -51,7 +51,7 @@ powershell -ExecutionPolicy Bypass -File deploy/configure-cpanel-package.ps1 `
   -AppUrl "https://your-domain.example"
 ```
 
-This creates `dist/SafeLMS-cPanel-configured.tar` with a fresh production
+This creates `dist/SafeLMS-private-app.zip` with a fresh production
 `APP_KEY`. Treat that archive as confidential because it contains the database
 password. The generated `.env` is not retained in the project directory.
 
@@ -128,6 +128,29 @@ the administrator, signs in, and disables `/setup`. Do not delete
 The web server must be able to write to `storage` and `bootstrap/cache`. In
 cPanel File Manager, set those directories to `755` first. If the installer
 reports a permissions problem, use `775`.
+
+#### Main domain locked to public_html
+
+When cPanel does not allow changing the main domain document root:
+
+```text
+/home/CPANEL_USER/safelms_app/   Private Laravel application
+/home/CPANEL_USER/public_html/   Public web files only
+```
+
+1. Extract `SafeLMS-private-app.zip` inside `safelms_app`.
+2. Extract `SafeLMS-public_html.zip` inside `public_html`.
+3. Confirm `public_html/index.php` and `public_html/.htaccess` exist.
+4. Remove any default `index.html` from `public_html`.
+5. Open `/setup` and use the generated one-time installation code.
+
+Build the adjusted public package locally with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/build-shared-cpanel-public.ps1
+```
+
+Never extract the complete private application directly into `public_html`.
 
 ### cPanel with Terminal
 

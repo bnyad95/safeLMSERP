@@ -10,7 +10,7 @@ param(
 
     [string]$DatabaseHost = "localhost",
     [string]$AppUrl = "https://your-domain.example",
-    [string]$PackageName = "SafeLMS-cPanel-configured.tar"
+    [string]$PackageName = "SafeLMS-private-app.zip"
 )
 
 $ErrorActionPreference = "Stop"
@@ -68,18 +68,19 @@ try {
     $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($environmentPath, $configuredEnvironment, $utf8WithoutBom)
 
-    tar.exe -cf $packagePath -C $stagingRoot .
+    php (Join-Path $projectRoot "deploy\create-zip.php") $stagingRoot $packagePath
     if ($LASTEXITCODE -ne 0) {
-        throw "Configured TAR creation failed."
+        throw "Configured ZIP creation failed."
     }
 
     $instructions = @"
 SafeLMS ERP browser installation
 
-1. Upload and extract: $PackageName
-2. Point the domain document root to the public directory.
-3. Open: $AppUrl/setup
-4. Enter this one-time installation code:
+1. In cPanel File Manager, create /home/CPANEL_USER/safelms_app.
+2. Upload and extract $PackageName inside safelms_app.
+3. Upload and extract SafeLMS-public_html.zip inside public_html.
+4. Open: $AppUrl/setup
+5. Enter this one-time installation code:
 
 $installerToken
 
@@ -96,4 +97,4 @@ Super Administrator. It disables itself after installation.
 $sizeMb = [math]::Round((Get-Item -LiteralPath $packagePath).Length / 1MB, 1)
 Write-Host "Configured package ready: $packagePath ($sizeMb MB)"
 Write-Host "Browser installation instructions: $instructionsPath"
-Write-Host "Database credentials were added only to the TAR archive and were not saved in the project."
+Write-Host "Database credentials were added only to the ZIP archive and were not saved in the project."

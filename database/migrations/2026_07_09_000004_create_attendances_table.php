@@ -18,6 +18,8 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
+            $table->index('course_id');
+            $table->index('student_id');
             $table->foreign('course_id')->references('id')->on('courses')->onDelete('cascade');
             $table->foreign('student_id')->references('id')->on('students')->onDelete('cascade');
             $table->unique(['course_id', 'student_id', 'date']);

@@ -1,5 +1,5 @@
 param(
-    [string]$PackageName = "SafeLMS-cPanel.tar"
+    [string]$PackageName = "SafeLMS-cPanel.zip"
 )
 
 $ErrorActionPreference = "Stop"
@@ -100,9 +100,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "composer.json") -Destination (Join-Path $stagingRoot "composer.json") -Force
 
     Write-Host "Creating $PackageName..."
-    tar.exe -cf $packagePath -C $stagingRoot .
+    php (Join-Path $projectRoot "deploy\create-zip.php") $stagingRoot $packagePath
     if ($LASTEXITCODE -ne 0) {
-        throw "TAR creation failed."
+        throw "ZIP creation failed."
     }
 
     $sizeMb = [math]::Round((Get-Item -LiteralPath $packagePath).Length / 1MB, 1)
