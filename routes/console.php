@@ -1,15 +1,57 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
 use App\Http\Controllers\AcademicYearClosureController;
+use App\Models\AssessmentItem;
+use App\Models\AssessmentSubmission;
+use App\Models\ClassMessage;
+use App\Models\ClassStreamPost;
+use App\Models\CourseMaterial;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\NotificationService;
+use App\Services\ProtectedFileService;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('notifications:performance-warnings', function () {
+    $warnings = app(NotificationService::class)->checkAndSendPerformanceWarnings();
+    $this->info(count($warnings).' performance warning(s) processed.');
+})->purpose('Send attendance and published-mark performance warnings');
+
+Schedule::command('notifications:performance-warnings')
+    ->weeklyOn(1, '07:00')
+    ->withoutOverlapping();
+
+Artisan::command('files:migrate-protected', function () {
+    $files = app(ProtectedFileService::class);
+    $migrated = 0;
+    $definitions = [
+        [AssessmentItem::class, 'instruction_file_path'],
+        [AssessmentSubmission::class, 'attachment_path'],
+        [ClassMessage::class, 'attachment_path'],
+        [ClassStreamPost::class, 'attachment_path'],
+        [CourseMaterial::class, 'file_path'],
+    ];
+
+    foreach ($definitions as [$model, $column]) {
+        $model::withoutGlobalScopes()
+            ->whereNotNull($column)
+            ->select(['id', $column])
+            ->chunkById(250, function ($records) use ($files, $column, &$migrated) {
+                foreach ($records as $record) {
+                    $migrated += $files->migrateLegacyFile($record->{$column}) ? 1 : 0;
+                }
+            });
+    }
+
+    $this->info("Protected {$migrated} file(s). Files already private were also checked for public duplicates.");
+})->purpose('Move legacy LMS attachments from public storage to protected storage');
 
 Artisan::command('academic-years:rebuild-archive {academic_year? : Rebuild one academic year, for example 2026/2027} {--force : Rebuild even when a snapshot already exists}', function (?string $academic_year = null) {
     $result = app(AcademicYearClosureController::class)

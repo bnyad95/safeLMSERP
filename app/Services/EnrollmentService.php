@@ -168,7 +168,7 @@ class EnrollmentService
         });
     }
 
-    private function hasTimetableConflict(Student $student, CourseSection $target): bool
+    public function hasTimetableConflict(Student $student, CourseSection $target): bool
     {
         $targetEntries = $target->timetables->where('status', 'scheduled');
 

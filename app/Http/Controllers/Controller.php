@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 abstract class Controller
 {
-    protected function safeUploadRules(string $presence = 'nullable', int $maxKilobytes = 51200): array
+    protected function safeUploadRules(string $presence = 'nullable', int $maxKilobytes = 25600): array
     {
         return [
             $presence,

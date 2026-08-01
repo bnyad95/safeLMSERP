@@ -21,6 +21,11 @@ class University extends Model
         return $this->hasMany(Semester::class);
     }
 
+    public function academicYears()
+    {
+        return $this->hasMany(AcademicYear::class);
+    }
+
     public function departments()
     {
         return $this->hasMany(Department::class);
@@ -29,5 +34,10 @@ class University extends Model
     public function students()
     {
         return $this->hasMany(Student::class);
+    }
+
+    public function teachers()
+    {
+        return $this->hasMany(Teacher::class);
     }
 }

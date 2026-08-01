@@ -9,9 +9,12 @@ use App\Models\Department;
 use App\Models\Enrollment;
 use App\Models\EnrollmentEvent;
 use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
+use App\Models\User;
 use App\Services\EnrollmentService;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -38,9 +41,9 @@ class EnrollmentController extends Controller
                 : '',
         ];
 
-        $directoryQuery = $this->sectionDirectoryQuery($filters);
+        $directoryQuery = $this->sectionDirectoryQuery($filters, $request->user());
         $sections = (clone $directoryQuery)->paginate(12)->withQueryString();
-        $classificationGroups = $this->sectionClassificationGroups($filters);
+        $classificationGroups = $this->sectionClassificationGroups($filters, $request->user());
         $stats = [
             'sections' => $classificationGroups->sum('count'),
             'active' => $classificationGroups->sum('active'),
@@ -48,19 +51,21 @@ class EnrollmentController extends Controller
             'waitlisted' => $classificationGroups->sum('waitlisted'),
         ];
 
+        $options = $this->directoryOptions($request->user());
+
         return view('enrollments.index', [
             'sections' => $sections,
             'stats' => $stats,
             'classificationGroups' => $classificationGroups,
             'filters' => $filters,
-            'colleges' => College::orderBy('name')->get(['id', 'name']),
-            'departments' => Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']),
-            'semesters' => Semester::orderByDesc('academic_year')->orderBy('name')->get(),
-            'teachers' => Teacher::where('status', 'Active')->orderBy('full_name')->get(['id', 'full_name']),
-            'gradeOptions' => CourseSection::whereNotNull('grade_level')->distinct()->orderBy('grade_level')->pluck('grade_level'),
-            'groupOptions' => CourseSection::distinct()->orderBy('section_code')->pluck('section_code'),
+            'colleges' => $options['colleges'],
+            'departments' => $options['departments'],
+            'semesters' => $options['semesters'],
+            'teachers' => $options['teachers'],
+            'gradeOptions' => $options['gradeOptions'],
+            'groupOptions' => $options['groupOptions'],
             'abilities' => $this->abilities($request),
-            'archivedCount' => CourseSection::onlyTrashed()->count(),
+            'archivedCount' => $options['archivedCount'],
         ]);
     }
 
@@ -76,9 +81,18 @@ class EnrollmentController extends Controller
         ];
         $canAssignTeachers = $this->canAssignTeachers($request);
 
+        $courseQuery = Course::with('department.college')->where('status', 'active');
+        OrganizationScope::apply($courseQuery, $request->user(), 'course');
+        $semesterQuery = Semester::orderByDesc('academic_year')->orderBy('name');
+        OrganizationScope::apply($semesterQuery, $request->user(), 'semester');
+        $teacherQuery = Teacher::where('status', 'Active');
+        OrganizationScope::apply($teacherQuery, $request->user(), 'teacher');
+        $stageQuery = Stage::with('department')->orderBy('department_id')->orderBy('sequence');
+        OrganizationScope::apply($stageQuery, $request->user(), 'stage');
+        [$colleges, $departments] = $this->organizationOptions($request->user());
+
         return view('enrollments.create-section', [
-            'courses' => Course::with('department.college')
-                ->where('status', 'active')
+            'courses' => $courseQuery
                 ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
                     $search->where('code', 'like', "%{$filters['q']}%")
                         ->orWhere('name', 'like', "%{$filters['q']}%");
@@ -88,9 +102,10 @@ class EnrollmentController extends Controller
                 ->orderBy('code')
                 ->limit(100)
                 ->get(),
-            'semesters' => Semester::orderByDesc('academic_year')->orderBy('name')->get(),
+            'semesters' => $semesterQuery->get(),
+            'stages' => $stageQuery->get(),
             'teachers' => $canAssignTeachers
-                ? Teacher::where('status', 'Active')
+                ? $teacherQuery
                     ->when($filters['teacher_q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
                         $search->where('full_name', 'like', "%{$filters['teacher_q']}%")
                             ->orWhere('staff_id', 'like', "%{$filters['teacher_q']}%");
@@ -99,8 +114,8 @@ class EnrollmentController extends Controller
                     ->limit(100)
                     ->get()
                 : collect(),
-            'colleges' => College::orderBy('name')->get(['id', 'name']),
-            'departments' => Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']),
+            'colleges' => $colleges,
+            'departments' => $departments,
             'filters' => $filters,
             'canAssignTeachers' => $canAssignTeachers,
         ]);
@@ -109,6 +124,7 @@ class EnrollmentController extends Controller
     public function show(Request $request, CourseSection $courseSection)
     {
         $this->requireAnyPermission('enrollments.view');
+        $this->authorizeSection($courseSection, $request->user());
 
         $courseSection->load(['course.department.college', 'semester', 'teacher', 'timetables.classroom'])
             ->loadCount([
@@ -138,7 +154,7 @@ class EnrollmentController extends Controller
         $studentCandidates = collect();
 
         if ($studentSearch !== '' && $this->canManage($request)) {
-            $studentCandidates = Student::with('department')
+            $studentQuery = Student::with('department')
                 ->where('status', 'Active')
                 ->where(function ($query) use ($studentSearch) {
                     $query->where('full_name', 'like', "%{$studentSearch}%")
@@ -148,7 +164,9 @@ class EnrollmentController extends Controller
                 ->whereDoesntHave('enrollments', fn ($query) => $query
                     ->where('course_section_id', $courseSection->id)
                     ->whereIn('status', ['enrolled', 'waitlisted']))
-                ->orderBy('full_name')
+                ->orderBy('full_name');
+            OrganizationScope::apply($studentQuery, $request->user(), 'student');
+            $studentCandidates = $studentQuery
                 ->limit(25)
                 ->get();
         }
@@ -161,6 +179,10 @@ class EnrollmentController extends Controller
             ->whereKeyNot($courseSection->id)
             ->orderBy('section_code')
             ->get();
+        $stageQuery = Stage::where('department_id', $courseSection->course?->department_id)->orderBy('sequence');
+        $teacherQuery = Teacher::where('status', 'Active')->orderBy('full_name');
+        OrganizationScope::apply($stageQuery, $request->user(), 'stage');
+        OrganizationScope::apply($teacherQuery, $request->user(), 'teacher');
 
         return view('enrollments.show', [
             'section' => $courseSection,
@@ -170,6 +192,8 @@ class EnrollmentController extends Controller
             'studentSearch' => $studentSearch,
             'studentCandidates' => $studentCandidates,
             'transferTargets' => $transferTargets,
+            'stages' => $stageQuery->get(),
+            'teachers' => $teacherQuery->get(['id', 'full_name', 'staff_id']),
             'abilities' => $this->abilities($request),
         ]);
     }
@@ -185,6 +209,7 @@ class EnrollmentController extends Controller
         $validated = $request->validate([
             'course_id' => ['required', 'exists:courses,id'],
             'semester_id' => ['required', 'exists:semesters,id'],
+            'stage_id' => ['nullable', 'exists:stages,id'],
             'teacher_id' => ['nullable', 'exists:teachers,id'],
             'section_code' => [
                 'required',
@@ -200,10 +225,13 @@ class EnrollmentController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $course = Course::with('department')->findOrFail($validated['course_id']);
-        $semester = Semester::findOrFail($validated['semester_id']);
-        $teacher = ! empty($validated['teacher_id']) ? Teacher::findOrFail($validated['teacher_id']) : null;
+        $course = $this->scopedCourse((int) $validated['course_id'], $request->user());
+        $semester = $this->scopedSemester((int) $validated['semester_id'], $request->user());
+        $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
         $this->validateSectionOrganization($course, $semester, $teacher);
+        $stage = $this->resolveStage($course, $validated, $request->user());
+        $validated['stage_id'] = $stage?->id;
+        $validated['grade_level'] = $stage?->name ?? ($validated['grade_level'] ?? null);
 
         if ($course->status !== 'active') {
             throw ValidationException::withMessages(['course_id' => 'Only active catalog courses can receive new modules.']);
@@ -223,6 +251,7 @@ class EnrollmentController extends Controller
     public function updateSection(Request $request, CourseSection $courseSection)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeSection($courseSection, $request->user());
 
         if ($request->has('teacher_id') && ! $this->canAssignTeachers($request)) {
             abort(403);
@@ -230,13 +259,18 @@ class EnrollmentController extends Controller
 
         $validated = $request->validate([
             'teacher_id' => ['nullable', 'exists:teachers,id'],
+            'stage_id' => ['nullable', 'exists:stages,id'],
             'grade_level' => ['nullable', 'string', 'max:50'],
             'capacity' => ['required', 'integer', 'min:1', 'max:500'],
             'status' => ['required', Rule::in(['planned', 'active', 'closed'])],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
-        $teacher = ! empty($validated['teacher_id']) ? Teacher::findOrFail($validated['teacher_id']) : null;
-        $this->validateSectionOrganization($courseSection->course()->with('department')->firstOrFail(), $courseSection->semester, $teacher);
+        $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
+        $course = $courseSection->course()->with('department')->firstOrFail();
+        $this->validateSectionOrganization($course, $courseSection->semester, $teacher);
+        $stage = $this->resolveStage($course, $validated, $request->user());
+        $validated['stage_id'] = $stage?->id;
+        $validated['grade_level'] = $stage?->name ?? ($validated['grade_level'] ?? null);
 
         if ($teacher && $teacher->status !== 'Active') {
             throw ValidationException::withMessages(['teacher_id' => 'Only active teachers can be assigned to a module.']);
@@ -261,9 +295,11 @@ class EnrollmentController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        $student = $this->scopedStudent((int) $validated['student_id'], $request->user());
+        $section = $this->scopedSection((int) $validated['course_section_id'], $request->user());
         $result = $this->enrollmentService->place(
-            Student::findOrFail($validated['student_id']),
-            CourseSection::findOrFail($validated['course_section_id']),
+            $student,
+            $section,
             $validated['action'] ?? 'enroll',
             $validated['enrolled_at'],
             $validated['notes'] ?? null,
@@ -276,6 +312,7 @@ class EnrollmentController extends Controller
     public function bulkEnroll(Request $request, CourseSection $courseSection)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeSection($courseSection, $request->user());
         $validated = $request->validate([
             'student_ids' => ['required', 'array', 'min:1', 'max:200'],
             'student_ids.*' => ['integer', 'exists:students,id'],
@@ -287,7 +324,7 @@ class EnrollmentController extends Controller
         $failures = [];
 
         foreach (array_unique($validated['student_ids']) as $studentId) {
-            $student = Student::findOrFail($studentId);
+            $student = $this->scopedStudent((int) $studentId, $request->user());
             $result = $this->enrollmentService->place($student, $courseSection, $validated['action'], $validated['enrolled_at'], $validated['notes'] ?? null, $request->user());
             if ($result['ok']) {
                 $success++;
@@ -308,6 +345,7 @@ class EnrollmentController extends Controller
     public function importRoster(Request $request, CourseSection $courseSection)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeSection($courseSection, $request->user());
         $validated = $request->validate([
             'csv_file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
             'action' => ['required', Rule::in(['enroll', 'waitlist'])],
@@ -336,10 +374,12 @@ class EnrollmentController extends Controller
 
                 continue;
             }
-            $student = Student::where(function ($query) use ($row) {
+            $studentQuery = Student::where(function ($query) use ($row) {
                 $query->when(! empty($row['student_id']), fn ($builder) => $builder->orWhere('student_id', $row['student_id']))
                     ->when(! empty($row['email']), fn ($builder) => $builder->orWhere('email', $row['email']));
-            })->first();
+            });
+            OrganizationScope::apply($studentQuery, $request->user(), 'student');
+            $student = $studentQuery->first();
 
             if (! $student) {
                 $failures++;
@@ -359,6 +399,7 @@ class EnrollmentController extends Controller
     public function exportRoster(CourseSection $courseSection): StreamedResponse
     {
         $this->requireAnyPermission('enrollments.view');
+        $this->authorizeSection($courseSection, auth()->user());
         $filename = $courseSection->course->code.'-'.$courseSection->section_code.'-roster.csv';
 
         return response()->streamDownload(function () use ($courseSection) {
@@ -385,6 +426,7 @@ class EnrollmentController extends Controller
     public function dropEnrollment(Request $request, Enrollment $enrollment)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeEnrollment($enrollment, $request->user());
         $validated = $request->validate(['drop_reason' => ['required', 'string', 'max:2000']]);
         $result = $this->enrollmentService->drop($enrollment, $validated['drop_reason'], $request->user());
 
@@ -395,6 +437,7 @@ class EnrollmentController extends Controller
     public function promoteWaitlist(Request $request, Enrollment $enrollment)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeEnrollment($enrollment, $request->user());
         $result = $this->enrollmentService->place(
             $enrollment->student,
             $enrollment->courseSection,
@@ -411,11 +454,13 @@ class EnrollmentController extends Controller
     public function transferEnrollment(Request $request, Enrollment $enrollment)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeEnrollment($enrollment, $request->user());
         $validated = $request->validate([
             'target_section_id' => ['required', 'exists:course_sections,id'],
             'reason' => ['required', 'string', 'max:2000'],
         ]);
-        $result = $this->enrollmentService->transfer($enrollment, CourseSection::findOrFail($validated['target_section_id']), $validated['reason'], $request->user());
+        $targetSection = $this->scopedSection((int) $validated['target_section_id'], $request->user());
+        $result = $this->enrollmentService->transfer($enrollment, $targetSection, $validated['reason'], $request->user());
 
         return redirect()->route('course-sections.show', $enrollment->course_section_id)
             ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? 'Student transferred successfully.' : $result['message']);
@@ -424,6 +469,7 @@ class EnrollmentController extends Controller
     public function destroySection(CourseSection $courseSection)
     {
         $this->requireAnyPermission('enrollments.manage');
+        $this->authorizeSection($courseSection, auth()->user());
 
         if ($courseSection->status !== 'closed') {
             return back()->with('error', 'Close the module before archiving it.');
@@ -441,13 +487,15 @@ class EnrollmentController extends Controller
     {
         $this->requireAnyPermission('enrollments.manage');
         $search = trim((string) $request->query('q', ''));
-        $sections = CourseSection::onlyTrashed()
+        $sectionsQuery = CourseSection::onlyTrashed()
             ->with(['course.department', 'semester', 'teacher'])
             ->when($search !== '', fn ($query) => $query->where(function ($searchQuery) use ($search) {
                 $searchQuery->where('section_code', 'like', "%{$search}%")
                     ->orWhereHas('course', fn ($course) => $course->where('code', 'like', "%{$search}%")->orWhere('name', 'like', "%{$search}%"));
             }))
-            ->orderByDesc('deleted_at')
+            ->orderByDesc('deleted_at');
+        OrganizationScope::apply($sectionsQuery, $request->user(), 'section');
+        $sections = $sectionsQuery
             ->paginate(15)
             ->withQueryString();
 
@@ -457,7 +505,9 @@ class EnrollmentController extends Controller
     public function restoreSection(int $sectionId)
     {
         $this->requireAnyPermission('enrollments.manage');
-        $section = CourseSection::withTrashed()->findOrFail($sectionId);
+        $query = CourseSection::withTrashed()->whereKey($sectionId);
+        OrganizationScope::apply($query, request()->user(), 'section');
+        $section = $query->firstOrFail();
         abort_unless($section->trashed(), 404);
         $section->restore();
 
@@ -479,9 +529,9 @@ class EnrollmentController extends Controller
         return redirect($destination)->with('success', $message);
     }
 
-    private function sectionDirectoryQuery(array $filters)
+    private function sectionDirectoryQuery(array $filters, User $user)
     {
-        return CourseSection::with(['course.department.college', 'semester', 'teacher'])
+        $query = CourseSection::with(['course.department.college', 'semester', 'teacher', 'stage'])
             ->withCount([
                 'activeEnrollments as enrolled_count',
                 'waitlistedEnrollments as waitlisted_count',
@@ -498,11 +548,13 @@ class EnrollmentController extends Controller
             ->when($filters['semester_id'], fn ($query, $semesterId) => $query->where('semester_id', $semesterId))
             ->when($filters['group'] !== '', fn ($query) => $query->where('section_code', $filters['group']))
             ->when($filters['teacher_id'], fn ($query, $teacherId) => $query->where('teacher_id', $teacherId))
-            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
-            ->orderByDesc('created_at');
+            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']));
+        OrganizationScope::apply($query, $user, 'section');
+
+        return $query->orderByDesc('created_at');
     }
 
-    private function sectionClassificationGroups(array $filters)
+    private function sectionClassificationGroups(array $filters, User $user)
     {
         $enrolledCounts = Enrollment::query()
             ->selectRaw('course_section_id, COUNT(*) as enrolled_count')
@@ -514,7 +566,7 @@ class EnrollmentController extends Controller
             ->where('status', 'waitlisted')
             ->groupBy('course_section_id');
 
-        $rows = CourseSection::query()
+        $rowsQuery = CourseSection::query()
             ->leftJoin('courses', 'course_sections.course_id', '=', 'courses.id')
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
             ->leftJoin('colleges', 'departments.college_id', '=', 'colleges.id')
@@ -535,7 +587,9 @@ class EnrollmentController extends Controller
             ->when($filters['semester_id'], fn ($query, $semesterId) => $query->where('course_sections.semester_id', $semesterId))
             ->when($filters['group'] !== '', fn ($query) => $query->where('course_sections.section_code', $filters['group']))
             ->when($filters['teacher_id'], fn ($query, $teacherId) => $query->where('course_sections.teacher_id', $teacherId))
-            ->when($filters['status'] !== '', fn ($query) => $query->where('course_sections.status', $filters['status']))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('course_sections.status', $filters['status']));
+        OrganizationScope::apply($rowsQuery, $user, 'section');
+        $rows = $rowsQuery
             ->selectRaw("COALESCE(colleges.name, 'No college') as college")
             ->selectRaw("COALESCE(departments.name, 'No department') as department")
             ->selectRaw("COALESCE(NULLIF(course_sections.grade_level, ''), 'No stage') as grade")
@@ -573,6 +627,121 @@ class EnrollmentController extends Controller
                     ->values(),
             ])
             ->values();
+    }
+
+    private function directoryOptions(User $user): array
+    {
+        [$colleges, $departments] = $this->organizationOptions($user);
+        $semesterQuery = Semester::orderByDesc('academic_year')->orderBy('name');
+        $teacherQuery = Teacher::where('status', 'Active')->orderBy('full_name');
+        $sectionQuery = CourseSection::query();
+        $archivedQuery = CourseSection::onlyTrashed();
+        OrganizationScope::apply($semesterQuery, $user, 'semester');
+        OrganizationScope::apply($teacherQuery, $user, 'teacher');
+        OrganizationScope::apply($sectionQuery, $user, 'section');
+        OrganizationScope::apply($archivedQuery, $user, 'section');
+
+        return [
+            'colleges' => $colleges,
+            'departments' => $departments,
+            'semesters' => $semesterQuery->get(),
+            'teachers' => $teacherQuery->get(['id', 'full_name']),
+            'gradeOptions' => (clone $sectionQuery)->whereNotNull('grade_level')->distinct()->orderBy('grade_level')->pluck('grade_level'),
+            'groupOptions' => (clone $sectionQuery)->distinct()->orderBy('section_code')->pluck('section_code'),
+            'archivedCount' => $archivedQuery->count(),
+        ];
+    }
+
+    private function organizationOptions(User $user): array
+    {
+        $collegeQuery = College::orderBy('name');
+        $departmentQuery = Department::with('college')->orderBy('name');
+        OrganizationScope::apply($collegeQuery, $user, 'college');
+        OrganizationScope::apply($departmentQuery, $user, 'department');
+
+        return [
+            $collegeQuery->get(['id', 'name']),
+            $departmentQuery->get(['id', 'name', 'college_id']),
+        ];
+    }
+
+    private function scopedCourse(int $courseId, User $user): Course
+    {
+        $query = Course::with('department')->whereKey($courseId);
+        OrganizationScope::apply($query, $user, 'course');
+
+        return $query->firstOrFail();
+    }
+
+    private function scopedSemester(int $semesterId, User $user): Semester
+    {
+        $query = Semester::whereKey($semesterId);
+        OrganizationScope::apply($query, $user, 'semester');
+
+        return $query->firstOrFail();
+    }
+
+    private function scopedTeacher(int $teacherId, User $user): Teacher
+    {
+        $query = Teacher::whereKey($teacherId);
+        OrganizationScope::apply($query, $user, 'teacher');
+
+        return $query->firstOrFail();
+    }
+
+    private function scopedStudent(int $studentId, User $user): Student
+    {
+        $query = Student::whereKey($studentId);
+        OrganizationScope::apply($query, $user, 'student');
+
+        return $query->firstOrFail();
+    }
+
+    private function scopedSection(int $sectionId, User $user): CourseSection
+    {
+        $query = CourseSection::whereKey($sectionId);
+        OrganizationScope::apply($query, $user, 'section');
+
+        return $query->firstOrFail();
+    }
+
+    private function authorizeSection(CourseSection $section, User $user): void
+    {
+        $query = CourseSection::withTrashed()->whereKey($section->id);
+        OrganizationScope::apply($query, $user, 'section');
+        abort_unless($query->exists(), 403);
+    }
+
+    private function authorizeEnrollment(Enrollment $enrollment, User $user): void
+    {
+        $query = Enrollment::whereKey($enrollment->id);
+        OrganizationScope::apply($query, $user, 'section_record');
+        abort_unless($query->exists(), 403);
+    }
+
+    private function resolveStage(Course $course, array $validated, User $user): ?Stage
+    {
+        if (! empty($validated['stage_id'])) {
+            $query = Stage::whereKey($validated['stage_id']);
+            OrganizationScope::apply($query, $user, 'stage');
+            $stage = $query->firstOrFail();
+            abort_unless((int) $stage->department_id === (int) $course->department_id, 422);
+
+            return $stage;
+        }
+
+        $name = trim((string) ($validated['grade_level'] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+
+        return Stage::firstOrCreate(
+            ['department_id' => $course->department_id, 'name' => $name],
+            [
+                'university_id' => $course->department->university_id,
+                'sequence' => ((int) Stage::where('department_id', $course->department_id)->max('sequence')) + 1,
+            ]
+        );
     }
 
     private function validateSectionOrganization(Course $course, Semester $semester, ?Teacher $teacher): void

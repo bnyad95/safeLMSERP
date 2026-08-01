@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\College;
 use App\Models\Course;
 use App\Models\Department;
+use App\Models\User;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -13,6 +15,7 @@ class CourseController extends Controller
     public function index(Request $request)
     {
         $this->requireAnyPermission('courses.view');
+        $user = $request->user();
 
         $filters = [
             'q' => trim((string) $request->query('q', '')),
@@ -24,20 +27,23 @@ class CourseController extends Controller
             'credits' => $request->filled('credits') ? (string) $request->query('credits') : '',
         ];
 
-        $directoryQuery = $this->courseDirectoryQuery($filters);
+        $directoryQuery = $this->courseDirectoryQuery($filters, $user);
         $courses = (clone $directoryQuery)->paginate(15)->withQueryString();
-        $classificationGroups = $this->courseClassificationGroups($filters);
+        $classificationGroups = $this->courseClassificationGroups($filters, $user);
         $stats = [
             'total' => (clone $directoryQuery)->reorder()->count(),
             'active' => (clone $directoryQuery)->reorder()->where('status', 'active')->count(),
             'inactive' => (clone $directoryQuery)->reorder()->where('status', 'inactive')->count(),
             'open_sections' => $classificationGroups->sum('open_sections'),
         ];
-        $colleges = College::orderBy('name')->get(['id', 'name']);
-        $departments = Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']);
-        $creditOptions = Course::distinct()->orderBy('credits')->pluck('credits');
+        [$colleges, $departments] = $this->organizationOptions($user);
+        $creditQuery = Course::query();
+        OrganizationScope::apply($creditQuery, $user, 'course');
+        $creditOptions = $creditQuery->distinct()->orderBy('credits')->pluck('credits');
         $abilities = $this->courseAbilities($request);
-        $archivedCount = Course::onlyTrashed()->count();
+        $archivedQuery = Course::onlyTrashed();
+        OrganizationScope::apply($archivedQuery, $user, 'course');
+        $archivedCount = $archivedQuery->count();
 
         return view('courses.index', compact(
             'courses',
@@ -56,8 +62,7 @@ class CourseController extends Controller
     {
         $this->requireAnyPermission('courses.create');
 
-        $colleges = College::orderBy('name')->get(['id', 'name']);
-        $departments = Department::with('college')->orderBy('name')->get();
+        [$colleges, $departments] = $this->organizationOptions(request()->user());
 
         return view('courses.create', compact('colleges', 'departments'));
     }
@@ -67,7 +72,7 @@ class CourseController extends Controller
         $this->requireAnyPermission('courses.create');
 
         $validated = $this->validateCourse($request);
-        $department = Department::findOrFail($validated['department_id']);
+        $department = $this->scopedDepartment((int) $validated['department_id'], $request->user());
         $this->validateCode($request, $department->university_id);
         unset($validated['college_id']);
 
@@ -79,6 +84,7 @@ class CourseController extends Controller
     public function show(Request $request, Course $course)
     {
         $this->requireAnyPermission('courses.view');
+        $this->authorizeCourse($course, $request->user());
 
         $course->load([
             'university',
@@ -103,9 +109,9 @@ class CourseController extends Controller
     public function edit(Course $course)
     {
         $this->requireAnyPermission('courses.update');
+        $this->authorizeCourse($course, request()->user());
 
-        $colleges = College::orderBy('name')->get(['id', 'name']);
-        $departments = Department::with('college')->orderBy('name')->get();
+        [$colleges, $departments] = $this->organizationOptions(request()->user());
 
         return view('courses.edit', compact('course', 'colleges', 'departments'));
     }
@@ -113,9 +119,10 @@ class CourseController extends Controller
     public function update(Request $request, Course $course)
     {
         $this->requireAnyPermission('courses.update');
+        $this->authorizeCourse($course, $request->user());
 
         $validated = $this->validateCourse($request);
-        $department = Department::findOrFail($validated['department_id']);
+        $department = $this->scopedDepartment((int) $validated['department_id'], $request->user());
         $this->validateCode($request, $department->university_id, $course);
         unset($validated['college_id']);
 
@@ -127,6 +134,7 @@ class CourseController extends Controller
     public function destroy(Course $course)
     {
         $this->requireAnyPermission('courses.archive');
+        $this->authorizeCourse($course, request()->user());
 
         if ($course->sections()->whereIn('status', ['planned', 'active'])->exists()) {
             return back()->with('error', 'Close all planned and active sections before archiving this course.');
@@ -142,7 +150,7 @@ class CourseController extends Controller
         $this->requireAnyPermission('courses.archive');
 
         $search = trim((string) $request->query('q', ''));
-        $courses = Course::onlyTrashed()
+        $coursesQuery = Course::onlyTrashed()
             ->with(['university', 'department.college'])
             ->when($search !== '', fn ($query) => $query->where(function ($searchQuery) use ($search) {
                 $searchQuery->where('code', 'like', "%{$search}%")
@@ -150,7 +158,9 @@ class CourseController extends Controller
                     ->orWhereHas('department', fn ($department) => $department
                         ->where('name', 'like', "%{$search}%"));
             }))
-            ->orderByDesc('deleted_at')
+            ->orderByDesc('deleted_at');
+        OrganizationScope::apply($coursesQuery, $request->user(), 'course');
+        $courses = $coursesQuery
             ->paginate(15)
             ->withQueryString();
 
@@ -161,7 +171,9 @@ class CourseController extends Controller
     {
         $this->requireAnyPermission('courses.archive');
 
-        $course = Course::withTrashed()->findOrFail($courseId);
+        $query = Course::withTrashed()->whereKey($courseId);
+        OrganizationScope::apply($query, request()->user(), 'course');
+        $course = $query->firstOrFail();
         abort_unless($course->trashed(), 404);
         $course->restore();
 
@@ -197,9 +209,9 @@ class CourseController extends Controller
         ]);
     }
 
-    private function courseDirectoryQuery(array $filters)
+    private function courseDirectoryQuery(array $filters, User $user)
     {
-        return Course::with(['university', 'department.college'])
+        $query = Course::with(['university', 'department.college'])
             ->withCount([
                 'sections',
                 'sections as open_sections_count' => fn ($query) => $query->whereIn('status', ['planned', 'active']),
@@ -211,13 +223,15 @@ class CourseController extends Controller
             ->when($filters['college_id'], fn ($query) => $query->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($query) => $query->where('department_id', $filters['department_id']))
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
-            ->when($filters['credits'] !== '' && ctype_digit($filters['credits']), fn ($query) => $query->where('credits', (int) $filters['credits']))
-            ->orderBy('code');
+            ->when($filters['credits'] !== '' && ctype_digit($filters['credits']), fn ($query) => $query->where('credits', (int) $filters['credits']));
+        OrganizationScope::apply($query, $user, 'course');
+
+        return $query->orderBy('code');
     }
 
-    private function courseClassificationGroups(array $filters)
+    private function courseClassificationGroups(array $filters, User $user)
     {
-        $rows = Course::query()
+        $rowsQuery = Course::query()
             ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
             ->leftJoin('colleges', 'departments.college_id', '=', 'colleges.id')
             ->leftJoin('course_sections', function ($join) {
@@ -232,7 +246,9 @@ class CourseController extends Controller
             ->when($filters['college_id'], fn ($query) => $query->where('departments.college_id', $filters['college_id']))
             ->when($filters['department_id'], fn ($query) => $query->where('courses.department_id', $filters['department_id']))
             ->when($filters['status'] !== '', fn ($query) => $query->where('courses.status', $filters['status']))
-            ->when($filters['credits'] !== '' && ctype_digit($filters['credits']), fn ($query) => $query->where('courses.credits', (int) $filters['credits']))
+            ->when($filters['credits'] !== '' && ctype_digit($filters['credits']), fn ($query) => $query->where('courses.credits', (int) $filters['credits']));
+        OrganizationScope::apply($rowsQuery, $user, 'course');
+        $rows = $rowsQuery
             ->selectRaw("COALESCE(colleges.name, 'No college') as college")
             ->selectRaw("COALESCE(departments.name, 'No department') as department")
             ->selectRaw('COUNT(DISTINCT courses.id) as courses_count')
@@ -257,6 +273,34 @@ class CourseController extends Controller
                     ->values(),
             ])
             ->values();
+    }
+
+    private function organizationOptions(User $user): array
+    {
+        $collegeQuery = College::orderBy('name');
+        $departmentQuery = Department::with('college')->orderBy('name');
+        OrganizationScope::apply($collegeQuery, $user, 'college');
+        OrganizationScope::apply($departmentQuery, $user, 'department');
+
+        return [
+            $collegeQuery->get(['id', 'name']),
+            $departmentQuery->get(['id', 'name', 'college_id']),
+        ];
+    }
+
+    private function scopedDepartment(int $departmentId, User $user): Department
+    {
+        $query = Department::whereKey($departmentId);
+        OrganizationScope::apply($query, $user, 'department');
+
+        return $query->firstOrFail();
+    }
+
+    private function authorizeCourse(Course $course, User $user): void
+    {
+        $query = Course::withTrashed()->whereKey($course->id);
+        OrganizationScope::apply($query, $user, 'course');
+        abort_unless($query->exists(), 403);
     }
 
     private function courseAbilities(Request $request): array

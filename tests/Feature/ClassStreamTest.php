@@ -38,6 +38,7 @@ class ClassStreamTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Storage::fake('local');
         Storage::fake('public');
 
         $teacherRole = Role::create(['name' => 'teacher', 'display_name' => 'Teacher']);
@@ -111,7 +112,7 @@ class ClassStreamTest extends TestCase
         $post = ClassStreamPost::firstOrFail();
         $this->assertSame($this->section->id, $post->course_section_id);
         $this->assertSame('lesson-notes.pdf', $post->attachment_name);
-        Storage::disk('public')->assertExists($post->attachment_path);
+        Storage::disk('local')->assertExists($post->attachment_path);
 
         $this->actingAs($this->studentUser)
             ->get(route('class-stream.show', $this->section))
@@ -144,7 +145,7 @@ class ClassStreamTest extends TestCase
 
     public function test_academic_admin_can_read_stream_attachments_but_cannot_interact(): void
     {
-        Storage::disk('public')->put('class-stream/oversight.pdf', 'oversight file');
+        Storage::disk('local')->put('class-stream/oversight.pdf', 'oversight file');
         $post = ClassStreamPost::create([
             'course_section_id' => $this->section->id,
             'user_id' => $this->teacherUser->id,

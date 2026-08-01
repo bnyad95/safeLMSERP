@@ -11,8 +11,8 @@ use App\Models\Mark;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
+use App\Services\ProtectedFileService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class ClassStreamController extends Controller
 {
@@ -83,7 +83,7 @@ class ClassStreamController extends Controller
             'course_section_id' => $courseSection->id,
             'user_id' => $request->user()->id,
             'body' => $validated['body'] ?? null,
-            'attachment_path' => $attachment?->store('class-stream', 'public'),
+            'attachment_path' => $attachment ? app(ProtectedFileService::class)->store($attachment, 'class-stream') : null,
             'attachment_name' => $attachment?->getClientOriginalName(),
             'attachment_mime' => $attachment?->getClientMimeType(),
         ]);
@@ -136,9 +136,10 @@ class ClassStreamController extends Controller
             $this->authorizeClassMember($request, $courseSection);
         }
         $this->ensurePostBelongsToSection($courseSection, $post);
-        abort_unless($post->attachment_path && Storage::disk('public')->exists($post->attachment_path), 404);
+        $files = app(ProtectedFileService::class);
+        abort_unless($post->attachment_path && $files->exists($post->attachment_path), 404);
 
-        return Storage::disk('public')->download($post->attachment_path, $post->attachment_name);
+        return $files->download($post->attachment_path, $post->attachment_name);
     }
 
     public function destroy(Request $request, CourseSection $courseSection, ClassStreamPost $post)
@@ -148,7 +149,7 @@ class ClassStreamController extends Controller
         abort_unless($this->canTeachClass($request, $courseSection) || $post->user_id === $request->user()->id, 403);
 
         if ($post->attachment_path) {
-            Storage::disk('public')->delete($post->attachment_path);
+            app(ProtectedFileService::class)->delete($post->attachment_path);
         }
         $post->delete();
 

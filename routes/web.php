@@ -1,8 +1,8 @@
 <?php
 
 use App\Http\Controllers\AcademicYearClosureController;
-use App\Http\Controllers\ArchivedClassController;
 use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\ArchivedClassController;
 use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\ClassMessageController;
@@ -21,6 +21,7 @@ use App\Http\Controllers\NotificationCenterController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RoleWorkspaceController;
 use App\Http\Controllers\SemesterController;
+use App\Http\Controllers\StageController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TeacherDashboardController;
@@ -212,6 +213,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('semesters', SemesterController::class)
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage');
+    Route::get('/academic-years', [SemesterController::class, 'academicYears'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
+        ->name('academic-years.index');
     Route::get('/academic-years/create', [SemesterController::class, 'createAcademicYear'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
         ->name('academic-years.create');
@@ -222,6 +226,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage');
     Route::resource('departments', DepartmentController::class)
+        ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage');
+    Route::resource('stages', StageController::class)
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage');
     Route::get('/users/archived', [UserManagementController::class, 'archived'])
@@ -368,11 +375,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('role.any:teacher,student,administrator,super_administrator,university_administrator,college_administrator,department_administrator,registrar')
         ->middleware('permission.any:attendance.view,attendance.create,attendance.update')
         ->group(function () {
-        Route::get('/', [AttendanceController::class, 'index'])->name('index');
-        Route::post('/', [AttendanceController::class, 'store'])->name('store');
-        Route::get('/report', [AttendanceController::class, 'report'])->name('report');
-        Route::get('/history', [AttendanceController::class, 'history'])->name('history');
-        Route::get('/student/{student}/report', [AttendanceController::class, 'studentReport'])->name('student-report');
+            Route::get('/', [AttendanceController::class, 'index'])->name('index');
+            Route::post('/', [AttendanceController::class, 'store'])->name('store');
+            Route::get('/report', [AttendanceController::class, 'report'])->name('report');
+            Route::get('/history', [AttendanceController::class, 'history'])->name('history');
+            Route::get('/student/{student}/report', [AttendanceController::class, 'studentReport'])->name('student-report');
         });
 
     // Course Materials Routes

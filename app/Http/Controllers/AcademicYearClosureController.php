@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicYear;
 use App\Models\AcademicYearClosure;
 use App\Models\AssessmentItem;
 use App\Models\Attendance;
@@ -197,11 +198,11 @@ class AcademicYearClosureController extends Controller
             ->when($limitResults, fn ($query) => $query->limit(500))
             ->get();
         $resultBaseQuery = Mark::with([
-                'student.department.college',
-                'course.department.college',
-                'courseSection.semester',
-                'courseSection.course.department.college',
-            ])
+            'student.department.college',
+            'course.department.college',
+            'courseSection.semester',
+            'courseSection.course.department.college',
+        ])
             ->where('visibility_status', 'published')
             ->whereNotNull('final_mark');
 
@@ -413,7 +414,7 @@ class AcademicYearClosureController extends Controller
                 continue;
             }
 
-            $summary = $this->buildSummary($year);
+            $summary = $this->buildSummary($year, true);
 
             AcademicYearClosure::where('academic_year', $year)->update([
                 'summary' => $summary['snapshot'],
@@ -462,7 +463,7 @@ class AcademicYearClosureController extends Controller
                     ->delete();
             }
 
-            $closureSummary = $this->buildSummary($validated['academic_year']);
+            $closureSummary = $this->buildSummary($validated['academic_year'], true);
 
             foreach ($closureSummary['university_ids'] as $universityId) {
                 AcademicYearClosure::updateOrCreate(
@@ -477,6 +478,10 @@ class AcademicYearClosureController extends Controller
                         'summary' => $closureSummary['snapshot'],
                     ]
                 );
+
+                AcademicYear::where('university_id', $universityId)
+                    ->where('name', $validated['academic_year'])
+                    ->update(['status' => 'closed']);
             }
         });
 
@@ -485,7 +490,7 @@ class AcademicYearClosureController extends Controller
             ->with('success', 'Academic year closed. Current rosters were completed, waitlists were cleared, old modules were archived, and finance balances remain visible for follow-up.');
     }
 
-    private function buildSummary(string $academicYear): array
+    private function buildSummary(string $academicYear, bool $includeArchiveSnapshot = false): array
     {
         $semesters = Semester::with('university')
             ->where('academic_year', $academicYear)
@@ -531,7 +536,7 @@ class AcademicYearClosureController extends Controller
         $closures = AcademicYearClosure::with(['university', 'closedBy'])
             ->where('academic_year', $academicYear)
             ->get();
-        $archiveSnapshot = $this->buildArchiveSnapshot($academicYear, $sections);
+        $archiveSnapshot = $includeArchiveSnapshot ? $this->buildArchiveSnapshot($academicYear, $sections) : [];
 
         $blockers = collect([
             [
@@ -604,7 +609,9 @@ class AcademicYearClosureController extends Controller
         if ($sectionIds->isEmpty()) {
             return [
                 'version' => 2,
+                'storage' => 'inline',
                 'captured_at' => now()->toIso8601String(),
+                'counts' => [],
                 'modules' => [],
                 'enrollments' => [],
                 'marks' => [],
@@ -716,6 +723,38 @@ class AcademicYearClosureController extends Controller
             })
             ->values()
             ->all();
+
+        $recordCounts = [
+            'modules' => count($moduleSnapshots),
+            'enrollments' => Enrollment::whereIn('course_section_id', $sectionIds)->count(),
+            'marks' => Mark::whereIn('course_section_id', $sectionIds)->count(),
+            'assessments' => AssessmentItem::whereIn('course_section_id', $sectionIds)->count(),
+            'attendance' => Attendance::whereIn('course_section_id', $sectionIds)->count(),
+            'timetable' => Timetable::whereIn('course_section_id', $sectionIds)->count(),
+            'materials' => CourseMaterial::whereIn('course_section_id', $sectionIds)->count(),
+            'stream_posts' => ClassStreamPost::whereIn('course_section_id', $sectionIds)->count(),
+            'class_messages' => ClassMessage::whereIn('course_section_id', $sectionIds)->count(),
+            'finance_transactions' => FinanceTransaction::where('academic_year', $academicYear)->count(),
+        ];
+
+        if (array_sum($recordCounts) > config('academics.archive_inline_record_limit', 5000)) {
+            return [
+                'version' => 3,
+                'storage' => 'relational',
+                'captured_at' => now()->toIso8601String(),
+                'counts' => $recordCounts,
+                'modules' => $moduleSnapshots,
+                'enrollments' => [],
+                'marks' => [],
+                'assessments' => [],
+                'attendance' => [],
+                'timetable' => [],
+                'materials' => [],
+                'stream_posts' => [],
+                'class_messages' => [],
+                'finance_transactions' => [],
+            ];
+        }
 
         $enrollments = Enrollment::with(['student.department.college', 'courseSection'])
             ->whereIn('course_section_id', $sectionIds)
@@ -897,8 +936,10 @@ class AcademicYearClosureController extends Controller
             ->all();
 
         return [
-            'version' => 2,
+            'version' => 3,
+            'storage' => 'inline',
             'captured_at' => now()->toIso8601String(),
+            'counts' => $recordCounts,
             'modules' => $moduleSnapshots,
             'enrollments' => $enrollments,
             'marks' => $marks,
@@ -953,46 +994,45 @@ class AcademicYearClosureController extends Controller
     private function archiveCurrentEnrollments(Request $request, array $summary): void
     {
         $now = now();
-        $enrollments = Enrollment::whereIn('course_section_id', $summary['section_ids'])
+        Enrollment::whereIn('course_section_id', $summary['section_ids'])
             ->whereIn('status', ['enrolled', 'waitlisted'])
-            ->get();
+            ->orderBy('id')
+            ->chunkById(500, function ($enrollments) use ($request, $summary, $now): void {
+                $events = [];
 
-        if ($enrollments->isEmpty()) {
-            return;
-        }
+                foreach ($enrollments as $enrollment) {
+                    $previousStatus = $enrollment->status;
+                    $newStatus = $previousStatus === 'waitlisted' ? 'dropped' : 'completed';
+                    $notes = $previousStatus === 'waitlisted'
+                        ? 'Waitlist cleared during academic year closing.'
+                        : 'Completed during academic year closing.';
 
-        $events = [];
+                    $enrollment->forceFill([
+                        'status' => $newStatus,
+                        'dropped_at' => $previousStatus === 'waitlisted' ? today() : $enrollment->dropped_at,
+                        'drop_reason' => $previousStatus === 'waitlisted' ? 'Academic year closed before seat assignment.' : $enrollment->drop_reason,
+                        'notes' => trim((string) $enrollment->notes."\n".$notes),
+                        'updated_at' => $now,
+                    ])->save();
 
-        foreach ($enrollments as $enrollment) {
-            $previousStatus = $enrollment->status;
-            $newStatus = $previousStatus === 'waitlisted' ? 'dropped' : 'completed';
-            $notes = $previousStatus === 'waitlisted'
-                ? 'Waitlist cleared during academic year closing.'
-                : 'Completed during academic year closing.';
+                    $events[] = [
+                        'enrollment_id' => $enrollment->id,
+                        'student_id' => $enrollment->student_id,
+                        'course_section_id' => $enrollment->course_section_id,
+                        'actor_id' => $request->user()->id,
+                        'action' => $newStatus === 'completed' ? 'completed_by_year_closure' : 'waitlist_cleared_by_year_closure',
+                        'notes' => $notes,
+                        'metadata' => json_encode(['academic_year' => $summary['academic_year']]),
+                        'occurred_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
 
-            $enrollment->forceFill([
-                'status' => $newStatus,
-                'dropped_at' => $previousStatus === 'waitlisted' ? today() : $enrollment->dropped_at,
-                'drop_reason' => $previousStatus === 'waitlisted' ? 'Academic year closed before seat assignment.' : $enrollment->drop_reason,
-                'notes' => trim((string) $enrollment->notes."\n".$notes),
-                'updated_at' => $now,
-            ])->save();
-
-            $events[] = [
-                'enrollment_id' => $enrollment->id,
-                'student_id' => $enrollment->student_id,
-                'course_section_id' => $enrollment->course_section_id,
-                'actor_id' => $request->user()->id,
-                'action' => $newStatus === 'completed' ? 'completed_by_year_closure' : 'waitlist_cleared_by_year_closure',
-                'notes' => $notes,
-                'metadata' => json_encode(['academic_year' => $summary['academic_year']]),
-                'occurred_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
-        }
-
-        EnrollmentEvent::insert($events);
+                if ($events !== []) {
+                    EnrollmentEvent::insert($events);
+                }
+            });
     }
 
     private function emptySummary(): array
@@ -1235,7 +1275,7 @@ class AcademicYearClosureController extends Controller
 
     private function snapshotCount(array $snapshot, string $key): int
     {
-        return count($snapshot[$key] ?? []);
+        return (int) ($snapshot['counts'][$key] ?? count($snapshot[$key] ?? []));
     }
 
     private function snapshotCountForUser(array $snapshot, string $key, User $user): int

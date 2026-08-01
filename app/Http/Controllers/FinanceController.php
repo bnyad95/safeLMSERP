@@ -33,11 +33,9 @@ class FinanceController extends Controller
             ->when($query !== '', function ($builder) use ($query) {
                 $builder->where(function ($q) use ($query) {
                     $q->where('full_name', 'like', "%{$query}%")
-                        ->orWhere('name', 'like', "%{$query}%")
                         ->orWhere('email', 'like', "%{$query}%")
                         ->orWhere('student_id', 'like', "%{$query}%")
-                        ->orWhere('phone', 'like', "%{$query}%")
-                        ->orWhere('roll_number', 'like', "%{$query}%");
+                        ->orWhere('phone', 'like', "%{$query}%");
                 });
             })
             ->when($filters['college_id'], fn ($builder) => $builder->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
@@ -54,13 +52,13 @@ class FinanceController extends Controller
 
         $scopeBalanceQuery = FinanceTransaction::query();
         $this->applyFinanceFilters($scopeBalanceQuery, array_merge($filters, [
-                'type' => '',
-                'status' => '',
-                'payment_status' => '',
-                'currency' => '',
-                'academic_year' => '',
-                'date_from' => '',
-                'date_to' => '',
+            'type' => '',
+            'status' => '',
+            'payment_status' => '',
+            'currency' => '',
+            'academic_year' => '',
+            'date_from' => '',
+            'date_to' => '',
         ]));
         $scopeBalances = $this->balancesByCurrencyQuery($scopeBalanceQuery);
         $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery);
@@ -228,14 +226,16 @@ class FinanceController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $validated['invoice_transaction_id'] = $this->validatedInvoiceAllocation($validated);
         $validated['recorded_by'] = $request->user()->id;
-        $validated['invoice_number'] = $this->documentNumber($validated, 'invoice_number');
-        $validated['receipt_number'] = $this->documentNumber($validated, 'receipt_number');
-        $validated['balance_after'] = $this->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency']);
-        $validated['payment_status'] = $this->paymentStatusForTransaction($validated);
 
-        $transactions = DB::transaction(function () use ($validated) {
+        $transactions = DB::transaction(function () use (&$validated) {
+            Student::whereKey($validated['student_id'])->lockForUpdate()->firstOrFail();
+            $validated['invoice_transaction_id'] = $this->validatedInvoiceAllocation($validated);
+            $isSemesterPlan = $validated['type'] === 'invoice' && ($validated['payment_plan'] ?? 'full') === 'semester';
+            $validated['invoice_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'invoice_number');
+            $validated['receipt_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'receipt_number');
+            $validated['balance_after'] = $this->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency']);
+            $validated['payment_status'] = $this->paymentStatusForTransaction($validated);
             $transactions = $this->createFinanceTransactions($validated);
 
             if ($transactions->isNotEmpty()) {
@@ -288,6 +288,8 @@ class FinanceController extends Controller
         ]);
 
         DB::transaction(function () use ($request, $financeTransaction, $validated) {
+            Student::whereKey($financeTransaction->student_id)->lockForUpdate()->firstOrFail();
+            $financeTransaction->refresh();
             $reversalType = $this->reversalType($financeTransaction->type);
             $reversal = FinanceTransaction::create([
                 'student_id' => $financeTransaction->student_id,
@@ -616,11 +618,9 @@ class FinanceController extends Controller
                 $builder->where(function ($query) use ($search) {
                     $query
                         ->where('full_name', 'like', "%{$search}%")
-                        ->orWhere('name', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%")
                         ->orWhere('student_id', 'like', "%{$search}%")
-                        ->orWhere('phone', 'like', "%{$search}%")
-                        ->orWhere('roll_number', 'like', "%{$search}%");
+                        ->orWhere('phone', 'like', "%{$search}%");
                 });
             })
             ->when($studentIds === [] && $filters['college_id'], fn ($builder) => $builder->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
@@ -1134,15 +1134,32 @@ class FinanceController extends Controller
         $prefix = $isInvoice ? 'INV' : 'RCT';
         $year = date('Y', strtotime($transaction['transaction_date']));
         $base = "{$prefix}-{$year}-";
-        $next = FinanceTransaction::whereNotNull($column)
-            ->where($column, 'like', $base.'%')
-            ->count() + 1;
+        DB::table('finance_document_sequences')->insertOrIgnore([
+            'document_type' => $prefix,
+            'document_year' => (int) $year,
+            'next_number' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $sequence = DB::table('finance_document_sequences')
+            ->where('document_type', $prefix)
+            ->where('document_year', (int) $year)
+            ->lockForUpdate()
+            ->first();
+        $next = (int) $sequence->next_number;
 
         do {
             $number = $base.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
-            $exists = FinanceTransaction::where($column, $number)->exists();
             $next++;
-        } while ($exists);
+        } while (FinanceTransaction::where($column, $number)->exists());
+
+        DB::table('finance_document_sequences')
+            ->where('id', $sequence->id)
+            ->update([
+                'next_number' => $next,
+                'updated_at' => now(),
+            ]);
 
         return $number;
     }
@@ -1169,7 +1186,7 @@ class FinanceController extends Controller
             ->where('currency', $currency)
             ->oldest('transaction_date')
             ->oldest()
-            ->get()
+            ->lazy(500)
             ->each(function (FinanceTransaction $transaction) use (&$balance) {
                 $balance += $transaction->signedAmount();
                 $transaction->timestamps = false;

@@ -125,6 +125,11 @@ The browser installer runs migrations, installs roles and permissions, creates
 the administrator, signs in, and disables `/setup`. Do not delete
 `storage/app/private/installed`.
 
+Immediately after installation, set `INSTALLER_ENABLED=false` in `.env`, delete
+the uploaded installation ZIP, and delete the local private ZIP and installation
+code file. If credentials were shared through chat, screenshots, or email,
+rotate the database password in cPanel and update `.env` before adding real data.
+
 The web server must be able to write to `storage` and `bootstrap/cache`. In
 cPanel File Manager, set those directories to `755` first. If the installer
 reports a permissions problem, use `775`.
@@ -191,10 +196,15 @@ host to enable symlinks.
 
 ## 6. Cron and queues
 
-The cPanel template uses `QUEUE_CONNECTION=sync`, so a permanent queue worker
-is not required.
+The default cPanel package can use `QUEUE_CONNECTION=sync` when no worker is
+available. For better response times, use `QUEUE_CONNECTION=database` and add a
+cPanel cron entry that drains queued work once per minute:
 
-Add this cron job if scheduled tasks are added:
+```cron
+* * * * * cd /home/CPANEL_USER/safelms && /usr/local/bin/php artisan queue:work --stop-when-empty --tries=3 >> /dev/null 2>&1
+```
+
+Add this cron job for scheduled performance warnings and other scheduled tasks:
 
 ```cron
 * * * * * cd /home/CPANEL_USER/safelms && /usr/local/bin/php artisan schedule:run >> /dev/null 2>&1
@@ -232,5 +242,24 @@ php artisan migrate --force
 php artisan optimize
 php artisan up
 ```
+
+### Shared cPanel without Terminal
+
+1. Back up the production database and the private application's `.env` and
+   `storage/app` directories.
+2. Extract the new private package over the existing private application. The
+   package does not contain `.env`, so the production settings remain in place.
+3. Extract the new public package over `public_html`.
+4. In cPanel **Cron Jobs**, add this command temporarily (replace the account
+   path and PHP binary when cPanel shows different values):
+
+```bash
+cd /home/CPANEL_USER/safelms_app && /usr/local/bin/php artisan migrate --force && /usr/local/bin/php artisan files:migrate-protected && /usr/local/bin/php artisan optimize
+```
+
+Set it to run once at the next available minute. After it runs, confirm the
+site opens and inspect `storage/logs/laravel.log`, then delete this temporary
+cron entry. Keep the normal scheduler and queue-worker cron entries described
+above.
 
 Do not run `migrate:fresh` on production. It deletes all cPanel database data.

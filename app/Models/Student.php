@@ -20,7 +20,6 @@ class Student extends Model
         'name',
         'email',
         'phone',
-        'roll_number',
         'status',
         'admission_status',
         'admission_date',

@@ -9,10 +9,11 @@ use App\Models\Rubric;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Services\NotificationService;
+use App\Services\ProtectedFileService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AssessmentController extends Controller
 {
@@ -249,9 +250,11 @@ class AssessmentController extends Controller
         $validated['created_by'] = Auth::id();
         $validated['allow_submissions'] = $request->boolean('allow_submissions', true);
         abort_unless($this->canManageSection($request, (int) $validated['course_section_id']), 403);
+        $this->validateAssessmentWeight((int) $validated['course_section_id'], (float) $validated['weight_percent']);
 
         if ($request->hasFile('instruction_file')) {
-            $validated['instruction_file_path'] = $request->file('instruction_file')->store('assessment-instructions', 'public');
+            $validated['instruction_file_path'] = app(ProtectedFileService::class)
+                ->store($request->file('instruction_file'), 'assessment-instructions');
         }
 
         unset($validated['instruction_file']);
@@ -298,13 +301,15 @@ class AssessmentController extends Controller
         $validated['allow_submissions'] = $request->boolean('allow_submissions');
         abort_unless($this->canManageAssessment($request, $assessmentItem), 403);
         abort_unless($this->canManageSection($request, (int) $validated['course_section_id']), 403);
+        $this->validateAssessmentWeight((int) $validated['course_section_id'], (float) $validated['weight_percent'], $assessmentItem->id);
 
         if ($request->hasFile('instruction_file')) {
             if ($assessmentItem->instruction_file_path) {
-                Storage::disk('public')->delete($assessmentItem->instruction_file_path);
+                app(ProtectedFileService::class)->delete($assessmentItem->instruction_file_path);
             }
 
-            $validated['instruction_file_path'] = $request->file('instruction_file')->store('assessment-instructions', 'public');
+            $validated['instruction_file_path'] = app(ProtectedFileService::class)
+                ->store($request->file('instruction_file'), 'assessment-instructions');
         }
 
         unset($validated['instruction_file']);
@@ -340,12 +345,20 @@ class AssessmentController extends Controller
             ->values()
             ->all();
 
+        $rubricTotal = collect($criteria)->sum(fn ($criterion) => (float) ($criterion['points'] ?? 0));
+        if (collect($criteria)->contains(fn ($criterion) => is_null($criterion['points']) || $criterion['points'] < 0)) {
+            throw ValidationException::withMessages(['criteria_text' => 'Each rubric line must include non-negative points after the | character.']);
+        }
+        if (abs($rubricTotal - (float) $assessmentItem->max_score) > 0.01) {
+            throw ValidationException::withMessages(['criteria_text' => 'Rubric points must total the assessment maximum score.']);
+        }
+
         Rubric::updateOrCreate(
             ['assessment_item_id' => $assessmentItem->id],
             [
                 'title' => $validated['title'],
                 'criteria' => $criteria,
-                'total_points' => collect($criteria)->sum(fn ($criterion) => (float) ($criterion['points'] ?? 0)) ?: $assessmentItem->max_score,
+                'total_points' => $rubricTotal,
             ]
         );
 
@@ -373,9 +386,18 @@ class AssessmentController extends Controller
             'submission_file' => $this->safeUploadRules('required_without:content'),
         ]);
 
+        $existingSubmission = AssessmentSubmission::where('assessment_item_id', $assessmentItem->id)
+            ->where('student_id', $student->id)
+            ->first();
         $attachmentPath = $request->hasFile('submission_file')
-            ? $request->file('submission_file')->store('assessment-submissions', 'public')
+            ? app(ProtectedFileService::class)->store($request->file('submission_file'), 'assessment-submissions')
             : null;
+
+        if ($request->hasFile('submission_file') && $existingSubmission?->attachment_path) {
+            app(ProtectedFileService::class)->delete($existingSubmission->attachment_path);
+        } elseif (! $request->hasFile('submission_file')) {
+            $attachmentPath = $existingSubmission?->attachment_path;
+        }
 
         $submission = AssessmentSubmission::updateOrCreate(
             [
@@ -403,9 +425,10 @@ class AssessmentController extends Controller
     {
         abort_unless($assessmentItem->instruction_file_path, 404);
         abort_unless($this->canAccessAssessment($request, $assessmentItem), 403);
-        abort_unless(Storage::disk('public')->exists($assessmentItem->instruction_file_path), 404);
+        $files = app(ProtectedFileService::class);
+        abort_unless($files->exists($assessmentItem->instruction_file_path), 404);
 
-        return Storage::disk('public')->download($assessmentItem->instruction_file_path);
+        return $files->download($assessmentItem->instruction_file_path);
     }
 
     public function downloadSubmissionFile(Request $request, AssessmentSubmission $submission)
@@ -419,9 +442,10 @@ class AssessmentController extends Controller
             || ($user->hasAnyPermission(['lms.grade_assignment', 'marks.enter']) && $this->canManageAssessment($request, $submission->assessmentItem));
 
         abort_unless($canDownload, 403);
-        abort_unless(Storage::disk('public')->exists($submission->attachment_path), 404);
+        $files = app(ProtectedFileService::class);
+        abort_unless($files->exists($submission->attachment_path), 404);
 
-        return Storage::disk('public')->download($submission->attachment_path);
+        return $files->download($submission->attachment_path);
     }
 
     public function gradeSubmission(Request $request, AssessmentSubmission $submission)
@@ -812,6 +836,19 @@ class AssessmentController extends Controller
             ->whereIn('status', ['planned', 'active'])
             ->where('teacher_id', $this->teacherFor($request)?->id)
             ->exists();
+    }
+
+    private function validateAssessmentWeight(int $sectionId, float $weight, ?int $exceptAssessmentId = null): void
+    {
+        $assignedWeight = (float) AssessmentItem::where('course_section_id', $sectionId)
+            ->when($exceptAssessmentId, fn ($query) => $query->whereKeyNot($exceptAssessmentId))
+            ->sum('weight_percent');
+
+        if ($assignedWeight + $weight > 100.001) {
+            throw ValidationException::withMessages([
+                'weight_percent' => 'Assessment weights for a module cannot exceed 100%.',
+            ]);
+        }
     }
 
     private function shouldScopeTeacher(Request $request): bool

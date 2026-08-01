@@ -36,6 +36,7 @@ class ClassMessageTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Storage::fake('local');
         Storage::fake('public');
 
         $teacherRole = Role::create(['name' => 'teacher', 'display_name' => 'Teacher']);
@@ -120,7 +121,7 @@ class ClassMessageTest extends TestCase
             ->assertRedirect(route('class-messages.index', ['courseSection' => $this->section, 'recipient_id' => $this->studentUser->id]));
 
         $message = ClassMessage::firstOrFail();
-        Storage::disk('public')->assertExists($message->attachment_path);
+        Storage::disk('local')->assertExists($message->attachment_path);
         $this->actingAs($this->studentUser)
             ->get(route('class-messages.index', $this->section))
             ->assertOk()
@@ -176,7 +177,7 @@ class ClassMessageTest extends TestCase
 
     public function test_message_and_attachment_are_private_to_thread_members(): void
     {
-        $path = UploadedFile::fake()->create('private.pdf', 50)->store('class-messages', 'public');
+        $path = UploadedFile::fake()->create('private.pdf', 50)->store('class-messages', 'local');
         $message = ClassMessage::create([
             'course_section_id' => $this->section->id,
             'sender_id' => $this->teacherUser->id,

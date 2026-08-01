@@ -8,8 +8,8 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\University;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -22,6 +22,11 @@ class UserManagementController extends Controller
         'college_administrator',
         'department_administrator',
         'chief_accountant',
+        'accountant',
+        'registrar',
+        'admission_officer',
+        'hr_manager',
+        'lms_administrator',
         'examination_administrator',
         'examination_committee',
     ];
@@ -168,7 +173,10 @@ class UserManagementController extends Controller
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        $user->update(['password' => $validated['password']]);
+        $user->update([
+            'password' => $validated['password'],
+            'must_change_password' => true,
+        ]);
 
         return redirect()->route('users.edit', $user)->with('success', 'Password reset successfully.');
     }

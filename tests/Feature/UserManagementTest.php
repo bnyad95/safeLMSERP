@@ -165,6 +165,7 @@ class UserManagementTest extends TestCase
             ->assertRedirect(route('users.edit', $teacher));
 
         $this->assertTrue(Hash::check('NewPassword123', $teacher->fresh()->password));
+        $this->assertTrue($teacher->fresh()->must_change_password);
 
         $this->actingAs($admin)
             ->delete(route('users.destroy', $teacher))
@@ -194,6 +195,7 @@ class UserManagementTest extends TestCase
         }
         $teacherRole = Role::create(['name' => 'teacher', 'display_name' => 'Instructor']);
         $superRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $accountantRole = Role::create(['name' => 'accountant', 'display_name' => 'Accountant']);
 
         $support = User::factory()->create();
         $support->roles()->attach($supportRole);
@@ -223,6 +225,16 @@ class UserManagementTest extends TestCase
                 'password' => 'Password123',
                 'password_confirmation' => 'Password123',
                 'roles' => [$superRole->id],
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($support)
+            ->post(route('users.store'), [
+                'name' => 'Blocked Accountant',
+                'email' => 'blocked-accountant@example.com',
+                'password' => 'Password123',
+                'password_confirmation' => 'Password123',
+                'roles' => [$accountantRole->id],
             ])
             ->assertForbidden();
 

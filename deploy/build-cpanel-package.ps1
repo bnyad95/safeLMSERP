@@ -85,12 +85,7 @@ try {
     Write-Host "Installing production PHP dependencies..."
     Push-Location $stagingRoot
     try {
-        composer config optimize-autoloader false
-        if ($LASTEXITCODE -ne 0) {
-            throw "Could not prepare Composer for packaging."
-        }
-
-        composer install --no-dev --prefer-dist --no-interaction --no-scripts
+        composer install --no-dev --prefer-dist --no-interaction --no-scripts --optimize-autoloader
         if ($LASTEXITCODE -ne 0) {
             throw "Composer production install failed."
         }

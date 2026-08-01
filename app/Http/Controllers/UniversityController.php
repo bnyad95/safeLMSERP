@@ -76,6 +76,17 @@ class UniversityController extends Controller
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
         $this->authorizeUniversityScope($university);
 
+        $hasAcademicData = $university->colleges()->exists()
+            || $university->departments()->withTrashed()->exists()
+            || $university->semesters()->exists()
+            || $university->students()->withTrashed()->exists()
+            || $university->teachers()->withTrashed()->exists()
+            || $university->academicYears()->exists();
+
+        if ($hasAcademicData) {
+            return back()->with('error', 'This university contains academic or historical records and cannot be deleted.');
+        }
+
         $university->delete();
 
         return redirect()->route('universities.index')->with('success', 'University deleted successfully.');

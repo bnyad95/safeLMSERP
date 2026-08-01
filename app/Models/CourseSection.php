@@ -13,6 +13,7 @@ class CourseSection extends Model
     protected $fillable = [
         'course_id',
         'semester_id',
+        'stage_id',
         'teacher_id',
         'section_code',
         'grade_level',
@@ -26,6 +27,33 @@ class CourseSection extends Model
         'students_can_post_stream' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (CourseSection $section) {
+            if ($section->stage_id) {
+                $stage = Stage::find($section->stage_id);
+                if ($stage) {
+                    $section->grade_level = $stage->name;
+                }
+
+                return;
+            }
+
+            $stageName = trim((string) $section->grade_level);
+            $course = $section->course_id ? Course::withTrashed()->find($section->course_id) : null;
+            if ($stageName !== '' && $course) {
+                $stage = Stage::firstOrCreate(
+                    ['department_id' => $course->department_id, 'name' => $stageName],
+                    [
+                        'university_id' => $course->university_id,
+                        'sequence' => ((int) Stage::where('department_id', $course->department_id)->max('sequence')) + 1,
+                    ]
+                );
+                $section->stage_id = $stage->id;
+            }
+        });
+    }
+
     public function course()
     {
         return $this->belongsTo(Course::class)->withTrashed();
@@ -34,6 +62,11 @@ class CourseSection extends Model
     public function semester()
     {
         return $this->belongsTo(Semester::class);
+    }
+
+    public function stage()
+    {
+        return $this->belongsTo(Stage::class);
     }
 
     public function teacher()

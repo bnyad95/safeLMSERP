@@ -36,4 +36,9 @@ class Department extends Model
     {
         return $this->hasMany(Course::class);
     }
+
+    public function stages()
+    {
+        return $this->hasMany(Stage::class);
+    }
 }

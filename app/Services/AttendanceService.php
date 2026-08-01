@@ -52,7 +52,8 @@ class AttendanceService
         $late = $attendances->where('status', 'late')->count();
         $excused = $attendances->where('status', 'excused')->count();
 
-        $percentage = $total > 0 ? round(($present / $total) * 100, 2) : 0;
+        $attended = $present + $late + $excused;
+        $percentage = $total > 0 ? round(($attended / $total) * 100, 2) : 0;
 
         return [
             'total_classes' => $total,
@@ -77,7 +78,8 @@ class AttendanceService
         foreach ($attendances as $studentId => $records) {
             $total = $records->count();
             $present = $records->where('status', 'present')->count();
-            $percentage = $total > 0 ? round(($present / $total) * 100, 2) : 0;
+            $attended = $records->whereIn('status', ['present', 'late', 'excused'])->count();
+            $percentage = $total > 0 ? round(($attended / $total) * 100, 2) : 0;
 
             $stats[] = [
                 'student_id' => $studentId,

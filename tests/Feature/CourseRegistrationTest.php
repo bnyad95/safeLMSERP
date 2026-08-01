@@ -14,6 +14,7 @@ use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\Teacher;
+use App\Models\Timetable;
 use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -132,7 +133,7 @@ class CourseRegistrationTest extends TestCase
             ->where('type', 'course_registration')
             ->firstOrFail();
         $this->assertSame(route('class-stream.show', $setup['section']), $notification->action_url);
-        Mail::assertSent(EnrollmentConfirmation::class, fn ($mail) => $mail->hasTo($setup['student']->email));
+        Mail::assertQueued(EnrollmentConfirmation::class, fn ($mail) => $mail->hasTo($setup['student']->email));
 
         $this->actingAs($user)
             ->get(route('course-registration.index'))
@@ -367,6 +368,61 @@ class CourseRegistrationTest extends TestCase
             ->post(route('course-registration.store'), ['course_section_id' => $setup['section']->id])
             ->assertRedirect()
             ->assertSessionHas('error', 'Only active students can register for courses.');
+
+        $this->assertDatabaseMissing('enrollments', [
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $setup['section']->id,
+        ]);
+    }
+
+    public function test_student_cannot_register_for_a_timetable_conflict(): void
+    {
+        $setup = $this->makeAcademicSetup();
+        $user = $this->makeStudentUser($setup['student']);
+        $currentCourse = Course::create([
+            'department_id' => $setup['department']->id,
+            'semester_id' => $setup['semester']->id,
+            'code' => 'CS220',
+            'name' => 'Current Scheduled Module',
+            'credits' => 3,
+        ]);
+        $currentSection = CourseSection::create([
+            'course_id' => $currentCourse->id,
+            'semester_id' => $setup['semester']->id,
+            'section_code' => 'C1',
+            'capacity' => 30,
+            'status' => 'active',
+        ]);
+        Enrollment::create([
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $currentSection->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now(),
+        ]);
+        Timetable::create([
+            'course_id' => $currentCourse->id,
+            'course_section_id' => $currentSection->id,
+            'day_of_week' => 'Monday',
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'type' => 'lecture',
+            'status' => 'scheduled',
+        ]);
+        Timetable::create([
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'day_of_week' => 'Monday',
+            'start_time' => '09:30',
+            'end_time' => '10:30',
+            'type' => 'lecture',
+            'status' => 'scheduled',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('course-registration.index'))
+            ->post(route('course-registration.store'), ['course_section_id' => $setup['section']->id])
+            ->assertRedirect(route('course-registration.index'))
+            ->assertSessionHas('error', 'This module conflicts with another class in your timetable.');
 
         $this->assertDatabaseMissing('enrollments', [
             'student_id' => $setup['student']->id,

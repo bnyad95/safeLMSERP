@@ -6,6 +6,7 @@ use App\Models\CourseSection;
 use App\Models\Enrollment;
 use App\Models\Mark;
 use App\Models\Student;
+use App\Services\EnrollmentService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,15 @@ class CourseRegistrationController extends Controller
                 ->get();
             $registeredSectionIds = $registrations->pluck('course_section_id');
             $registeredCourseIds = $registrations->pluck('courseSection.course_id')->filter();
+            $priorMarksByCourse = Mark::with(['courseSection.semester'])
+                ->where('student_id', $student->id)
+                ->where('visibility_status', 'published')
+                ->whereNotNull('final_mark')
+                ->whereHas('courseSection.semester')
+                ->orderByDesc('published_at')
+                ->orderByDesc('created_at')
+                ->get()
+                ->groupBy('course_id');
 
             $eligibleSections = CourseSection::with(['course.department', 'semester', 'teacher'])
                 ->withCount(['activeEnrollments as registered_count'])
@@ -73,8 +83,8 @@ class CourseRegistrationController extends Controller
                 ->orderBy('section_code')
                 ->get()
                 ->filter(fn (CourseSection $section) => $section->registered_count < $section->capacity)
-                ->map(function (CourseSection $section) use ($student) {
-                    $context = $this->registrationContext($student, $section);
+                ->map(function (CourseSection $section) use ($student, $priorMarksByCourse) {
+                    $context = $this->registrationContext($student, $section, $priorMarksByCourse->get($section->course_id, collect()));
                     $section->setAttribute('is_retake_registration', $context['is_retake']);
                     $section->setAttribute('retake_reason', $context['retake_reason']);
 
@@ -132,6 +142,11 @@ class CourseRegistrationController extends Controller
                 return $context['retake_reason'];
             }
 
+            $section->loadMissing('timetables');
+            if (app(EnrollmentService::class)->hasTimetableConflict($student, $section)) {
+                return 'This module conflicts with another class in your timetable.';
+            }
+
             $registration = Enrollment::withTrashed()
                 ->where('student_id', $student->id)
                 ->where('course_section_id', $section->id)
@@ -179,9 +194,9 @@ class CourseRegistrationController extends Controller
         return redirect()->route('course-registration.index')->with('success', 'Course registration completed.');
     }
 
-    private function registrationContext(Student $student, CourseSection $section): array
+    private function registrationContext(Student $student, CourseSection $section, $priorMarks = null): array
     {
-        $priorMarks = Mark::with(['courseSection.semester'])
+        $priorMarks ??= Mark::with(['courseSection.semester'])
             ->where('student_id', $student->id)
             ->where('course_id', $section->course_id)
             ->where('visibility_status', 'published')

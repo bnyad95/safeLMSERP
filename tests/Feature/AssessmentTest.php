@@ -146,7 +146,7 @@ class AssessmentTest extends TestCase
 
     public function test_admin_can_create_assessment_item_with_grade_weight(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $admin = $this->makeSuperAdmin();
         $setup = $this->makeSetup();
@@ -175,7 +175,8 @@ class AssessmentTest extends TestCase
             'weight_percent' => 30,
             'status' => 'published',
         ]);
-        Storage::disk('public')->assertExists($assessment->instruction_file_path);
+        Storage::disk('local')->assertExists($assessment->instruction_file_path);
+        Storage::disk('public')->assertMissing($assessment->instruction_file_path);
     }
 
     public function test_admin_can_add_rubric(): void
@@ -206,8 +207,59 @@ class AssessmentTest extends TestCase
         ]);
     }
 
+    public function test_assessment_weights_cannot_exceed_one_hundred_percent(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeSetup();
+        AssessmentItem::create([
+            'course_section_id' => $setup['section']->id,
+            'created_by' => $admin->id,
+            'title' => 'Existing Work',
+            'type' => 'assignment',
+            'max_score' => 100,
+            'weight_percent' => 80,
+            'status' => 'published',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('assessment-items.store'), [
+                'course_section_id' => $setup['section']->id,
+                'title' => 'Too Much Weight',
+                'type' => 'exam',
+                'max_score' => 100,
+                'weight_percent' => 25,
+                'status' => 'draft',
+            ])
+            ->assertSessionHasErrors('weight_percent');
+    }
+
+    public function test_rubric_points_must_match_assessment_maximum_score(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeSetup();
+        $assessment = AssessmentItem::create([
+            'course_section_id' => $setup['section']->id,
+            'created_by' => $admin->id,
+            'title' => 'Rubric Validation',
+            'type' => 'project',
+            'max_score' => 100,
+            'weight_percent' => 20,
+            'status' => 'published',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('assessment-items.rubric.store', $assessment), [
+                'title' => 'Incomplete Rubric',
+                'criteria_text' => "Correctness|50\nClarity|20",
+            ])
+            ->assertSessionHasErrors('criteria_text');
+
+        $this->assertDatabaseMissing('rubrics', ['assessment_item_id' => $assessment->id]);
+    }
+
     public function test_teacher_can_edit_assessment_item(): void
     {
+        Storage::fake('local');
         Storage::fake('public');
 
         $teacher = $this->makeTeacherUser();
@@ -251,11 +303,13 @@ class AssessmentTest extends TestCase
         $this->assertSame('published', $assessment->status);
         $this->assertSame('75.00', $assessment->max_score);
         $this->assertSame('15.00', $assessment->weight_percent);
-        Storage::disk('public')->assertExists($assessment->instruction_file_path);
+        Storage::disk('local')->assertExists($assessment->instruction_file_path);
+        Storage::disk('public')->assertMissing($assessment->instruction_file_path);
     }
 
     public function test_enrolled_student_can_submit_published_assessment(): void
     {
+        Storage::fake('local');
         Storage::fake('public');
 
         $teacherUser = $this->makeTeacherUser();
@@ -291,7 +345,7 @@ class AssessmentTest extends TestCase
             'type' => 'assessment_submission',
             'title' => 'New submission: Homework 1',
         ]);
-        Storage::disk('public')->assertExists($submission->attachment_path);
+        Storage::disk('local')->assertExists($submission->attachment_path);
     }
 
     public function test_enrolled_student_can_open_assessments_page(): void

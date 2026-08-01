@@ -25,11 +25,20 @@
                     </div>
                 </div>
 
+                <form method="GET" class="grid gap-3 border-b border-gray-200 p-5 sm:grid-cols-2 xl:grid-cols-6 dark:border-gray-800">
+                    <div class="sm:col-span-2"><label class="text-sm font-medium text-gray-700 dark:text-gray-300">Student</label><input name="q" value="{{ $rankingFilters['q'] }}" placeholder="Name or student ID" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-950"></div>
+                    <div><label class="text-sm font-medium text-gray-700 dark:text-gray-300">College</label><select name="college_id" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-950"><option value="">All colleges</option>@foreach($rankingOptions['colleges'] as $option)<option value="{{ $option->college_id }}" @selected($rankingFilters['college_id'] === (int) $option->college_id)>{{ $option->college }}</option>@endforeach</select></div>
+                    <div><label class="text-sm font-medium text-gray-700 dark:text-gray-300">Department</label><select name="department_id" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-950"><option value="">All departments</option>@foreach($rankingOptions['departments'] as $option)<option value="{{ $option->department_id }}" @selected($rankingFilters['department_id'] === (int) $option->department_id)>{{ $option->department }}</option>@endforeach</select></div>
+                    <div><label class="text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label><select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-950"><option value="">All stages</option>@foreach($rankingOptions['stages'] as $option)@if((int) $option->stage_id > 0)<option value="{{ $option->stage_id }}" @selected($rankingFilters['stage_id'] === (int) $option->stage_id)>{{ $option->stage }}</option>@endif @endforeach</select></div>
+                    <div><label class="text-sm font-medium text-gray-700 dark:text-gray-300">Academic Year</label><select name="academic_year" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-950"><option value="">All years</option>@foreach($rankingOptions['academicYears'] as $year)<option value="{{ $year }}" @selected($rankingFilters['academic_year'] === $year)>{{ $year }}</option>@endforeach</select></div>
+                    <div class="flex gap-2 sm:col-span-2 xl:col-span-6 xl:justify-end"><a href="{{ route('bologna-definition.student-rankings') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">Reset</a><button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white dark:bg-indigo-600">Apply</button></div>
+                </form>
+
                 <div class="divide-y divide-gray-100 dark:divide-gray-800">
                     @forelse($studentRankingHierarchy as $college)
                         <details class="group" @if($studentRankingHierarchy->count() === 1) open @endif>
                             <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800">
-                                <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $college['college'] }}</span>
+                                <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $college['university'] }} / {{ $college['college'] }}</span>
                                 <span class="text-sm text-gray-500 dark:text-gray-400">{{ $college['students'] }} passed</span>
                             </summary>
                             <div class="space-y-3 border-t border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950">
@@ -98,6 +107,7 @@
                     @endforelse
                 </div>
             </section>
+            <div class="mt-5">{{ $rankings->links() }}</div>
         </div>
     </div>
 </x-app-layout>

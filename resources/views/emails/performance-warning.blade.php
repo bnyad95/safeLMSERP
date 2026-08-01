@@ -9,7 +9,7 @@
         <p>We are writing to inform you that your attendance in <strong>{{ $details['course'] }}</strong> has fallen below the required 75% threshold.</p>
         <div style="background: #fff5f5; border-left: 4px solid #dc2626; padding: 16px; margin: 16px 0;">
             <strong>Course:</strong> {{ $details['course'] }}<br>
-            <strong>Attendance:</strong> {{ $details['percentage'] }}% ({{ $details['present'] }}/{{ $details['total'] }} classes)
+            <strong>Attendance:</strong> {{ $details['percentage'] }}% ({{ $details['attended'] }}/{{ $details['total'] }} classes attended)
         </div>
         <p>Please ensure regular attendance to avoid academic penalties.</p>
     @elseif($reason === 'low_mark')

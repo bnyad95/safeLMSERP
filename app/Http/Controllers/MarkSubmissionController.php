@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseSection;
-use App\Models\College;
 use App\Models\Department;
 use App\Models\Mark;
 use App\Models\Semester;
-use App\Services\MarkSubmissionService;
 use App\Models\Teacher;
+use App\Services\MarkSubmissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -171,7 +171,7 @@ class MarkSubmissionController extends Controller
         $validated = $request->validate([
             'mark_id' => 'required|integer|exists:marks,id',
             'trial' => 'required|in:first,second',
-            'score' => 'required|numeric|min:0|max:100',
+            'score' => 'required|numeric|min:0|max:'.config('academics.final_exam_mark_max', 100),
         ]);
 
         $mark = Mark::whereKey($validated['mark_id'])->firstOrFail();
@@ -189,7 +189,7 @@ class MarkSubmissionController extends Controller
                 return back()->withErrors(['score' => 'Enter first trial final exam before second trial.']);
             }
 
-            if (((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) >= 50) {
+            if (((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) >= (float) config('academics.pass_mark', 50)) {
                 return back()->withErrors(['score' => 'Second trial is only available for students who failed the first trial.']);
             }
         }
@@ -202,7 +202,7 @@ class MarkSubmissionController extends Controller
         }
 
         $mark->recalculateFinalMark();
-        $firstTrialFailed = $validated['trial'] === 'first' && (float) $mark->final_mark < 50;
+        $firstTrialFailed = $validated['trial'] === 'first' && (float) $mark->final_mark < (float) config('academics.pass_mark', 50);
         $mark->submission_status = $firstTrialFailed ? 'draft' : 'submitted';
         $mark->visibility_status = 'draft';
         $mark->submitted_at = $firstTrialFailed ? null : now();
@@ -522,7 +522,7 @@ class MarkSubmissionController extends Controller
             ->selectRaw('COUNT(*) as marks_count')
             ->selectRaw('COUNT(DISTINCT course_section_id) as section_count')
             ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NULL THEN 1 ELSE 0 END) as waiting_first_trial')
-            ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NOT NULL AND second_trial_final_exam IS NULL AND (COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < 50 THEN 1 ELSE 0 END) as waiting_second_trial')
+            ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NOT NULL AND second_trial_final_exam IS NULL AND (COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < ? THEN 1 ELSE 0 END) as waiting_second_trial', [config('academics.pass_mark', 50)])
             ->groupBy('course_id')
             ->get()
             ->keyBy('course_id');
@@ -570,7 +570,7 @@ class MarkSubmissionController extends Controller
                 ->whereNotNull('prefinal_mark')
                 ->whereNotNull('first_trial_final_exam')
                 ->whereNull('second_trial_final_exam')
-                ->whereRaw('(COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < 50')
+                ->whereRaw('(COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < ?', [config('academics.pass_mark', 50)])
                 ->count(),
             'ready_for_review' => $this->queueMarkQuery($filters)
                 ->where('submission_status', 'submitted')

@@ -360,7 +360,7 @@
                                                         @if($canManageClassroom)
                                                             <span x-show="! editing" class="text-sm font-semibold text-gray-800">{{ is_null($mark?->prefinal_mark) ? '-' : number_format((float) $mark->prefinal_mark, 2) }}</span>
                                                             <div x-show="editing" x-cloak>
-                                                                <input type="number" name="prefinal_marks[{{ $student->id }}]" value="{{ old('prefinal_marks.'.$student->id, $mark?->prefinal_mark) }}" min="0" max="100" step="0.01" @disabled($locked) class="w-28 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500">
+                                                                <input type="number" name="prefinal_marks[{{ $student->id }}]" value="{{ old('prefinal_marks.'.$student->id, $mark?->prefinal_mark) }}" min="0" max="{{ config('academics.prefinal_mark_max', 100) }}" step="0.01" @disabled($locked) class="w-28 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500">
                                                                 @if($locked)<p class="mt-1 text-xs text-gray-500">Locked</p>@endif
                                                             </div>
                                                         @else

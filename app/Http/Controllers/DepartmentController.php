@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\University;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class DepartmentController extends Controller
 {
@@ -39,10 +40,10 @@ class DepartmentController extends Controller
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['nullable', 'string', 'max:50'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('departments', 'name')->where(fn ($query) => $query->where('college_id', $request->integer('college_id'))->whereNull('deleted_at'))],
+            'code' => ['nullable', 'string', 'max:50', Rule::unique('departments', 'code')->where(fn ($query) => $query->where('college_id', $request->integer('college_id'))->whereNull('deleted_at'))],
             'university_id' => ['required', 'exists:universities,id'],
-            'college_id' => ['nullable', 'exists:colleges,id'],
+            'college_id' => ['required', 'exists:colleges,id'],
         ]);
         $this->authorizeUniversityId($validated['university_id']);
         $this->authorizeDepartmentAssignment($validated);
@@ -69,10 +70,10 @@ class DepartmentController extends Controller
         $this->authorizeDepartmentScope($department);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['nullable', 'string', 'max:50'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('departments', 'name')->where(fn ($query) => $query->where('college_id', $request->integer('college_id'))->whereNull('deleted_at'))->ignore($department->id)],
+            'code' => ['nullable', 'string', 'max:50', Rule::unique('departments', 'code')->where(fn ($query) => $query->where('college_id', $request->integer('college_id'))->whereNull('deleted_at'))->ignore($department->id)],
             'university_id' => ['required', 'exists:universities,id'],
-            'college_id' => ['nullable', 'exists:colleges,id'],
+            'college_id' => ['required', 'exists:colleges,id'],
         ]);
         $this->authorizeUniversityId($validated['university_id']);
         $this->authorizeDepartmentAssignment($validated);
@@ -86,6 +87,13 @@ class DepartmentController extends Controller
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
         $this->authorizeDepartmentScope($department);
+
+        if ($department->students()->withTrashed()->exists()
+            || $department->teachers()->withTrashed()->exists()
+            || $department->courses()->withTrashed()->exists()
+            || $department->stages()->exists()) {
+            return back()->with('error', 'This department contains academic or historical records and cannot be archived.');
+        }
 
         $department->delete();
 

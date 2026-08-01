@@ -46,14 +46,14 @@ class Mark extends Model
         }
 
         $this->final_exam = $activeFinalExam;
-        $this->final_mark = min(100, (float) $this->prefinal_mark + $activeFinalExam);
+        $this->final_mark = min((float) config('academics.total_mark_max', 100), (float) $this->prefinal_mark + $activeFinalExam);
     }
 
     public function passedFirstTrial(): bool
     {
         return ! is_null($this->first_trial_final_exam)
             && is_null($this->second_trial_final_exam)
-            && ((float) $this->prefinal_mark + (float) $this->first_trial_final_exam) >= 50;
+            && ((float) $this->prefinal_mark + (float) $this->first_trial_final_exam) >= (float) config('academics.pass_mark', 50);
     }
 
     public function student()

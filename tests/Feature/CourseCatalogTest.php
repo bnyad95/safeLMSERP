@@ -156,6 +156,33 @@ class CourseCatalogTest extends TestCase
         $this->assertDatabaseHas('course_sections', ['course_id' => $course->id, 'teacher_id' => $teacher->id]);
     }
 
+    public function test_department_administrator_only_sees_courses_in_their_department(): void
+    {
+        [$university, $college, $ownDepartment] = $this->organization('SCOPED');
+        $otherDepartment = Department::create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'name' => 'Other Department',
+            'code' => 'OTHER',
+        ]);
+        $ownCourse = Course::create(['department_id' => $ownDepartment->id, 'code' => 'OWN101', 'name' => 'Visible Catalog Course', 'credits' => 3]);
+        $otherCourse = Course::create(['department_id' => $otherDepartment->id, 'code' => 'OTHER101', 'name' => 'Hidden Catalog Course', 'credits' => 3]);
+        $user = $this->userWithPermissions('department_administrator', ['courses.view']);
+        $user->update([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $ownDepartment->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('course-records.index'))
+            ->assertOk()
+            ->assertSee($ownCourse->name)
+            ->assertDontSee($otherCourse->name);
+
+        $this->actingAs($user)->get(route('course-records.show', $otherCourse))->assertNotFound();
+    }
+
     private function superAdmin(): User
     {
         $role = Role::firstOrCreate(['name' => 'super_administrator'], ['display_name' => 'Super Administrator']);

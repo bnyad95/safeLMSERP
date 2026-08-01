@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="text-xl font-semibold text-gray-800">Edit Semester</h2>
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Edit Semester</h2>
     </x-slot>
 
     <div class="py-10">

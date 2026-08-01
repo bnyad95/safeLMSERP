@@ -8,9 +8,9 @@ use App\Models\CourseSection;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Services\CourseMaterialService;
+use App\Services\ProtectedFileService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 
 class CourseMaterialController extends Controller
 {
@@ -51,7 +51,7 @@ class CourseMaterialController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'file' => $this->safeUploadRules('nullable', 51200),
+            'file' => $this->safeUploadRules(),
             'file_type' => 'required|in:pdf,doc,video,image,presentation,other',
             'visibility' => 'required|in:draft,published',
         ]);
@@ -82,7 +82,7 @@ class CourseMaterialController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'file' => $this->safeUploadRules('nullable', 51200),
+            'file' => $this->safeUploadRules(),
             'file_type' => 'required|in:pdf,doc,video,image,presentation,other',
             'visibility' => 'required|in:draft,published',
         ]);
@@ -122,9 +122,10 @@ class CourseMaterialController extends Controller
         if (! $material->file_path) {
             abort(404, 'File not found');
         }
-        abort_unless(Storage::disk('public')->exists($material->file_path), 404);
+        $files = app(ProtectedFileService::class);
+        abort_unless($files->exists($material->file_path), 404);
 
-        return Storage::disk('public')->download($material->file_path);
+        return $files->download($material->file_path);
     }
 
     public function publish(Request $request, Course $course, CourseMaterial $material)

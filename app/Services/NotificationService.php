@@ -301,7 +301,7 @@ class NotificationService
         }
 
         try {
-            Mail::to($student->email)->send(new EnrollmentConfirmation($student, $course));
+            Mail::to($student->email)->queue(new EnrollmentConfirmation($student, $course));
         } catch (\Exception $e) {
             Log::warning("Failed to send enrollment confirmation to {$student->email}: ".$e->getMessage());
         }
@@ -314,7 +314,7 @@ class NotificationService
         }
 
         try {
-            Mail::to($student->email)->send(new PerformanceWarning($student, $reason, $details));
+            Mail::to($student->email)->queue(new PerformanceWarning($student, $reason, $details));
         } catch (\Exception $e) {
             Log::warning("Failed to send performance warning to {$student->email}: ".$e->getMessage());
         }
@@ -334,10 +334,10 @@ class NotificationService
                     ->whereIn('student_id', $studentIds)
                     ->select('student_id', 'course_id')
                     ->selectRaw('COUNT(*) as total')
-                    ->selectRaw("SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present")
+                    ->selectRaw("SUM(CASE WHEN status IN ('present', 'late', 'excused') THEN 1 ELSE 0 END) as attended")
                     ->groupBy('student_id', 'course_id')
                     ->havingRaw('COUNT(*) >= ?', [5])
-                    ->havingRaw("100.0 * SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) / COUNT(*) < ?", [75])
+                    ->havingRaw("100.0 * SUM(CASE WHEN status IN ('present', 'late', 'excused') THEN 1 ELSE 0 END) / COUNT(*) < ?", [75])
                     ->get();
                 $courseNames = Course::whereIn('id', $attendanceRows->pluck('course_id')->filter()->unique())
                     ->pluck('name', 'id');
@@ -349,14 +349,14 @@ class NotificationService
                     }
 
                     $total = (int) $row->total;
-                    $present = (int) $row->present;
-                    $percentage = ($present / $total) * 100;
+                    $attended = (int) $row->attended;
+                    $percentage = ($attended / $total) * 100;
                     $courseName = $courseNames[$row->course_id] ?? 'Unknown Course';
 
                     $this->sendPerformanceWarning($student, 'low_attendance', [
                         'course' => $courseName,
                         'percentage' => round($percentage, 1),
-                        'present' => $present,
+                        'attended' => $attended,
                         'total' => $total,
                     ]);
                     $warnings[] = "Attendance warning sent to {$student->full_name} for course {$courseName}";

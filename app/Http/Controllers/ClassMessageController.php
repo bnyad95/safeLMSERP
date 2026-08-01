@@ -9,8 +9,8 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\ProtectedFileService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class ClassMessageController extends Controller
 {
@@ -70,7 +70,7 @@ class ClassMessageController extends Controller
             'sender_id' => $request->user()->id,
             'recipient_id' => $recipient->id,
             'body' => $validated['body'] ?? null,
-            'attachment_path' => $attachment?->store('class-messages', 'public'),
+            'attachment_path' => $attachment ? app(ProtectedFileService::class)->store($attachment, 'class-messages') : null,
             'attachment_name' => $attachment?->getClientOriginalName(),
             'attachment_mime' => $attachment?->getClientMimeType(),
         ]);
@@ -89,9 +89,10 @@ class ClassMessageController extends Controller
         $this->authorizeMember($request, $courseSection);
         abort_unless($message->course_section_id === $courseSection->id, 404);
         abort_unless(in_array($request->user()->id, [$message->sender_id, $message->recipient_id], true), 403);
-        abort_unless($message->attachment_path && Storage::disk('public')->exists($message->attachment_path), 404);
+        $files = app(ProtectedFileService::class);
+        abort_unless($message->attachment_path && $files->exists($message->attachment_path), 404);
 
-        return Storage::disk('public')->download($message->attachment_path, $message->attachment_name);
+        return $files->download($message->attachment_path, $message->attachment_name);
     }
 
     private function participants(Request $request, CourseSection $courseSection)

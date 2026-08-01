@@ -15,7 +15,7 @@ class TeacherMarkController extends Controller
         $this->authorizeTeacher($request, $courseSection);
         $validated = $request->validate([
             'prefinal_marks' => ['required', 'array'],
-            'prefinal_marks.*' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'prefinal_marks.*' => ['nullable', 'numeric', 'min:0', 'max:'.config('academics.prefinal_mark_max', 100)],
         ]);
 
         $studentIds = $courseSection->activeEnrollments()->pluck('student_id');

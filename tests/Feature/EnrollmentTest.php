@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Enrollment;
 use App\Models\EnrollmentEvent;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Student;
@@ -463,5 +465,37 @@ class EnrollmentTest extends TestCase
             'id' => $section->id,
             'deleted_at' => null,
         ]);
+    }
+
+    public function test_department_administrator_only_sees_modules_in_their_department(): void
+    {
+        $university = University::create(['name' => 'Scoped University', 'code' => 'SU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Scoped College', 'code' => 'SC']);
+        $ownDepartment = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Own Department', 'code' => 'OWN']);
+        $otherDepartment = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Other Department', 'code' => 'OTHER']);
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2027/2028']);
+        $ownCourse = Course::create(['department_id' => $ownDepartment->id, 'code' => 'OWN101', 'name' => 'Visible Module', 'credits' => 3]);
+        $otherCourse = Course::create(['department_id' => $otherDepartment->id, 'code' => 'OTHER101', 'name' => 'Hidden Module', 'credits' => 3]);
+        $ownSection = CourseSection::create(['course_id' => $ownCourse->id, 'semester_id' => $semester->id, 'section_code' => 'A']);
+        $otherSection = CourseSection::create(['course_id' => $otherCourse->id, 'semester_id' => $semester->id, 'section_code' => 'B']);
+
+        $permission = Permission::create(['name' => 'enrollments.view', 'display_name' => 'View enrollments']);
+        $role = Role::create(['name' => 'department_administrator', 'display_name' => 'Department Administrator']);
+        $role->permissions()->attach($permission);
+        $user = User::factory()->create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $ownDepartment->id,
+        ]);
+        $user->roles()->attach($role);
+
+        $this->actingAs($user)
+            ->get(route('enrollments.index'))
+            ->assertOk()
+            ->assertSee($ownCourse->name)
+            ->assertDontSee($otherCourse->name);
+
+        $this->actingAs($user)->get(route('course-sections.show', $ownSection))->assertOk();
+        $this->actingAs($user)->get(route('course-sections.show', $otherSection))->assertNotFound();
     }
 }

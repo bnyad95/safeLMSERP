@@ -2,8 +2,8 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-xl font-semibold text-gray-800">Add Course</h2>
-                <p class="text-sm text-gray-600">Add a reusable course to the academic catalog.</p>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Add Course Catalog Record</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Add a reusable course definition to the catalog.</p>
             </div>
         </div>
     </x-slot>

@@ -237,13 +237,23 @@
                             <div class="mt-4 space-y-4">
                                 @if($abilities['assign_teacher'])
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700">Teacher ID</label>
-                                        <input type="number" name="teacher_id" value="{{ old('teacher_id', $section->teacher_id) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <label class="block text-sm font-medium text-gray-700">Teacher</label>
+                                        <select name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                            <option value="">Unassigned</option>
+                                            @foreach($teachers as $teacher)
+                                                <option value="{{ $teacher->id }}" @selected(old('teacher_id', $section->teacher_id) == $teacher->id)>{{ $teacher->full_name }} / {{ $teacher->staff_id }}</option>
+                                            @endforeach
+                                        </select>
                                     </div>
                                 @endif
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Stage</label>
-                                    <input name="grade_level" value="{{ old('grade_level', $section->grade_level) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="">No managed stage</option>
+                                        @foreach($stages as $stage)
+                                            <option value="{{ $stage->id }}" @selected(old('stage_id', $section->stage_id) == $stage->id)>{{ $stage->name }}</option>
+                                        @endforeach
+                                    </select>
                                 </div>
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>

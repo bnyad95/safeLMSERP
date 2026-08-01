@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\CourseMaterial;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 
 class CourseMaterialService
 {
@@ -12,7 +11,7 @@ class CourseMaterialService
     {
         $filePath = null;
         if (isset($data['file'])) {
-            $filePath = $data['file']->store('course-materials', 'public');
+            $filePath = app(ProtectedFileService::class)->store($data['file'], 'course-materials');
         }
 
         return CourseMaterial::create([
@@ -38,9 +37,9 @@ class CourseMaterialService
 
         if (isset($data['file'])) {
             if ($material->file_path) {
-                Storage::disk('public')->delete($material->file_path);
+                app(ProtectedFileService::class)->delete($material->file_path);
             }
-            $updateData['file_path'] = $data['file']->store('course-materials', 'public');
+            $updateData['file_path'] = app(ProtectedFileService::class)->store($data['file'], 'course-materials');
         }
 
         $material->update($updateData);
@@ -51,7 +50,7 @@ class CourseMaterialService
     public function deleteMaterial(CourseMaterial $material, bool $force = false): bool
     {
         if ($material->file_path) {
-            Storage::disk('public')->delete($material->file_path);
+            app(ProtectedFileService::class)->delete($material->file_path);
         }
 
         if ($force) {

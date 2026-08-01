@@ -6,6 +6,7 @@ use App\Models\College;
 use App\Models\University;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CollegeController extends Controller
 {
@@ -37,8 +38,8 @@ class CollegeController extends Controller
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['nullable', 'string', 'max:50'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('colleges', 'name')->where(fn ($query) => $query->where('university_id', $request->integer('university_id')))],
+            'code' => ['nullable', 'string', 'max:50', Rule::unique('colleges', 'code')->where(fn ($query) => $query->where('university_id', $request->integer('university_id')))],
             'university_id' => ['required', 'exists:universities,id'],
         ]);
         $this->authorizeUniversityId($validated['university_id']);
@@ -64,8 +65,8 @@ class CollegeController extends Controller
         $this->authorizeCollegeScope($college);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'code' => ['nullable', 'string', 'max:50'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('colleges', 'name')->where(fn ($query) => $query->where('university_id', $request->integer('university_id')))->ignore($college->id)],
+            'code' => ['nullable', 'string', 'max:50', Rule::unique('colleges', 'code')->where(fn ($query) => $query->where('university_id', $request->integer('university_id')))->ignore($college->id)],
             'university_id' => ['required', 'exists:universities,id'],
         ]);
         $this->authorizeUniversityId($validated['university_id']);
@@ -79,6 +80,10 @@ class CollegeController extends Controller
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
         $this->authorizeCollegeScope($college);
+
+        if ($college->departments()->withTrashed()->exists()) {
+            return back()->with('error', 'This college contains departments and cannot be deleted.');
+        }
 
         $college->delete();
 

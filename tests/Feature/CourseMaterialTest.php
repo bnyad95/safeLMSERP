@@ -26,6 +26,7 @@ class CourseMaterialTest extends TestCase
     {
         parent::setUp();
 
+        Storage::fake('local');
         Storage::fake('public');
 
         $this->department = Department::factory()->create();
@@ -236,7 +237,7 @@ class CourseMaterialTest extends TestCase
 
     public function test_course_material_service_uploads_material()
     {
-        Storage::fake('public');
+        Storage::fake('local');
         $service = new CourseMaterialService;
 
         $file = UploadedFile::fake()->create('test.pdf', 1024);

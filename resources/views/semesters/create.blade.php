@@ -1,8 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
         <div>
-            <h2 class="text-xl font-semibold text-gray-800">Add Extra Semester</h2>
-            <p class="text-sm text-gray-600">Use this only for special periods after the academic year is already created.</p>
+            <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Add Extra Semester</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Use this only for special periods after the academic year is already created.</p>
         </div>
     </x-slot>
 

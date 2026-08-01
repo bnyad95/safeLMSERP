@@ -181,7 +181,7 @@
 
                     @if($canStructure)
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Academic Setup</p>
-                        <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition')">{{ __('Bologna Definition') }}</x-nav-link>
+                        <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*')">{{ __('Bologna Definition') }}</x-nav-link>
                         <x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>
                         <x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>
                     @endif

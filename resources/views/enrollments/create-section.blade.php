@@ -57,7 +57,7 @@
                         <select name="course_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                             <option value="">Select active course</option>
                             @foreach($courses as $course)
-                                <option value="{{ $course->id }}" @selected(old('course_id') == $course->id)>{{ $course->code }} - {{ $course->name }} / {{ $course->department->name ?? 'No department' }}</option>
+                                <option value="{{ $course->id }}" data-department-id="{{ $course->department_id }}" @selected(old('course_id') == $course->id)>{{ $course->code }} - {{ $course->name }} / {{ $course->department->name ?? 'No department' }}</option>
                             @endforeach
                         </select>
                         @error('course_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
@@ -95,8 +95,13 @@
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Stage</label>
-                        <input name="grade_level" value="{{ old('grade_level') }}" maxlength="50" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                        @error('grade_level') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        <select id="module-stage" name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">Select a managed stage</option>
+                            @foreach($stages as $stage)
+                                <option value="{{ $stage->id }}" data-department-id="{{ $stage->department_id }}" @selected(old('stage_id') == $stage->id)>{{ $stage->name }}</option>
+                            @endforeach
+                        </select>
+                        @error('stage_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                     </div>
 
                     <div>
@@ -127,4 +132,21 @@
             </form>
         </div>
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const course = document.querySelector('select[name="course_id"]');
+            const stage = document.getElementById('module-stage');
+            if (!course || !stage) return;
+            const filterStages = () => {
+                const departmentId = course.selectedOptions[0]?.dataset.departmentId || '';
+                Array.from(stage.options).forEach((option) => {
+                    if (!option.value) return;
+                    option.hidden = departmentId !== '' && option.dataset.departmentId !== departmentId;
+                    if (option.selected && option.hidden) stage.value = '';
+                });
+            };
+            course.addEventListener('change', filterStages);
+            filterStages();
+        });
+    </script>
 </x-app-layout>

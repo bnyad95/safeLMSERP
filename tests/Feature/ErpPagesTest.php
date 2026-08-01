@@ -11,6 +11,7 @@ use App\Models\Mark;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\University;
@@ -77,6 +78,14 @@ class ErpPagesTest extends TestCase
             ->assertOk();
 
         $this->actingAs($user)
+            ->get(route('academic-years.index'))
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->get(route('stages.index'))
+            ->assertOk();
+
+        $this->actingAs($user)
             ->get('/bologna-definition')
             ->assertOk();
 
@@ -120,6 +129,12 @@ class ErpPagesTest extends TestCase
             'visibility_status' => 'published',
             'submission_status' => 'approved',
         ]);
+        Enrollment::create([
+            'student_id' => $student->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now()->toDateString(),
+        ]);
         foreach (range(2, 6) as $index) {
             $additionalStudent = Student::create([
                 'university_id' => $university->id,
@@ -136,6 +151,12 @@ class ErpPagesTest extends TestCase
                 'final_mark' => 90 - $index,
                 'visibility_status' => 'published',
                 'submission_status' => 'approved',
+            ]);
+            Enrollment::create([
+                'student_id' => $additionalStudent->id,
+                'course_section_id' => $section->id,
+                'status' => 'enrolled',
+                'enrolled_at' => now()->toDateString(),
             ]);
         }
         $failedStudent = Student::create([
@@ -154,6 +175,12 @@ class ErpPagesTest extends TestCase
             'visibility_status' => 'published',
             'submission_status' => 'approved',
         ]);
+        Enrollment::create([
+            'student_id' => $failedStudent->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now()->toDateString(),
+        ]);
         $role = Role::create(['name' => 'administrator', 'display_name' => 'Academic Administrator']);
         $user = User::factory()->create();
         $user->roles()->attach($role->id);
@@ -162,7 +189,6 @@ class ErpPagesTest extends TestCase
             ->get(route('bologna-definition'))
             ->assertOk()
             ->assertSee('Bologna Definition')
-            ->assertSee('Add Academic Year')
             ->assertSee('Academic Setup')
             ->assertSee('Academic Years')
             ->assertSee('Student Rankings')
@@ -194,6 +220,71 @@ class ErpPagesTest extends TestCase
         $this->actingAs($user)->get(route('departments.create'))->assertOk();
         $this->actingAs($user)->get(route('colleges.create'))->assertOk();
         $this->actingAs($user)->get(route('semesters.create'))->assertOk();
+    }
+
+    public function test_bologna_definition_is_available_without_academic_data(): void
+    {
+        $user = $this->makeSuperAdmin();
+
+        $this->actingAs($user)
+            ->get(route('bologna-definition'))
+            ->assertOk()
+            ->assertSee('Bologna Definition');
+    }
+
+    public function test_rankings_only_include_students_who_passed_every_enrolled_module(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Ranking University', 'code' => 'RU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Ranking College', 'code' => 'RC']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Ranking Department', 'code' => 'RD']);
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2027/2028']);
+        $firstCourse = Course::create(['department_id' => $department->id, 'code' => 'R101', 'name' => 'Weighted Major', 'credits' => 4]);
+        $secondCourse = Course::create(['department_id' => $department->id, 'code' => 'R102', 'name' => 'Weighted Minor', 'credits' => 2]);
+        $firstSection = CourseSection::create(['course_id' => $firstCourse->id, 'semester_id' => $semester->id, 'section_code' => 'A', 'grade_level' => 'Stage 1']);
+        $secondSection = CourseSection::create(['course_id' => $secondCourse->id, 'semester_id' => $semester->id, 'section_code' => 'A', 'grade_level' => 'Stage 1']);
+
+        $students = collect([
+            ['id' => 'R-1', 'name' => 'Weighted Winner', 'marks' => [100, 50]],
+            ['id' => 'R-2', 'name' => 'Complete Student', 'marks' => [80, 80]],
+            ['id' => 'R-3', 'name' => 'Missing Result Student', 'marks' => [95, null]],
+            ['id' => 'R-4', 'name' => 'Failed Module Student', 'marks' => [95, 49]],
+        ])->map(function (array $record) use ($university, $department, $firstCourse, $secondCourse, $firstSection, $secondSection) {
+            $student = Student::create([
+                'university_id' => $university->id,
+                'department_id' => $department->id,
+                'student_id' => $record['id'],
+                'full_name' => $record['name'],
+                'email' => strtolower(str_replace(' ', '.', $record['name'])).'@example.com',
+                'status' => 'Active',
+            ]);
+
+            foreach ([[$firstCourse, $firstSection], [$secondCourse, $secondSection]] as $index => [$course, $section]) {
+                Enrollment::create(['student_id' => $student->id, 'course_section_id' => $section->id, 'status' => 'enrolled', 'enrolled_at' => now()]);
+                if (! is_null($record['marks'][$index])) {
+                    Mark::create([
+                        'student_id' => $student->id,
+                        'course_id' => $course->id,
+                        'course_section_id' => $section->id,
+                        'final_mark' => $record['marks'][$index],
+                        'visibility_status' => 'published',
+                        'submission_status' => 'approved',
+                    ]);
+                }
+            }
+
+            return $student;
+        });
+
+        $secondSection->delete();
+
+        $this->actingAs($admin)
+            ->get(route('bologna-definition.student-rankings'))
+            ->assertOk()
+            ->assertSeeInOrder(['Weighted Winner', 'Complete Student'])
+            ->assertSee('83.3')
+            ->assertDontSee($students[2]->full_name)
+            ->assertDontSee($students[3]->full_name);
     }
 
     public function test_academic_administrator_can_open_new_academic_year_without_redefining_structure(): void
@@ -232,7 +323,13 @@ class ErpPagesTest extends TestCase
                 'first_semester_start_date' => '2027-09-01',
                 'semester_length_months' => 5,
             ])
-            ->assertRedirect(route('bologna-definition'));
+            ->assertRedirect(route('academic-years.index'));
+
+        $this->assertDatabaseHas('academic_years', [
+            'university_id' => $university->id,
+            'name' => '2027/2028',
+            'status' => 'active',
+        ]);
 
         $this->assertDatabaseHas('semesters', [
             'university_id' => $university->id,
@@ -252,6 +349,70 @@ class ErpPagesTest extends TestCase
         $this->assertSame(1, College::count());
         $this->assertSame(1, Department::count());
         $this->assertSame(1, Course::count());
+    }
+
+    public function test_academic_year_and_stage_validation_protects_the_structure(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Structure University', 'code' => 'STRU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Engineering', 'code' => 'ENG']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Software', 'code' => 'SWE']);
+
+        $this->actingAs($admin)
+            ->post(route('academic-years.store'), [
+                'academic_year' => '2027/2029',
+                'university_ids' => [$university->id],
+                'semester_names' => 'Semester 1',
+            ])
+            ->assertSessionHasErrors('academic_year');
+
+        $this->actingAs($admin)
+            ->post(route('stages.store'), [
+                'college_id' => $college->id,
+                'department_id' => $department->id,
+                'name' => 'Stage 1',
+                'code' => 'S1',
+                'sequence' => 1,
+            ])
+            ->assertRedirect(route('stages.index'));
+
+        $stage = Stage::firstOrFail();
+        $this->assertSame($university->id, $stage->university_id);
+
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Semester 1', 'academic_year' => '2027/2028']);
+        $course = Course::create(['department_id' => $department->id, 'code' => 'SWE101', 'name' => 'Software Design', 'credits' => 3]);
+        CourseSection::create([
+            'course_id' => $course->id,
+            'semester_id' => $semester->id,
+            'stage_id' => $stage->id,
+            'section_code' => 'A',
+        ]);
+
+        $this->actingAs($admin)
+            ->delete(route('stages.destroy', $stage))
+            ->assertSessionHas('error', 'This stage is used by modules and cannot be deleted.');
+        $this->assertDatabaseHas('stages', ['id' => $stage->id]);
+    }
+
+    public function test_parent_academic_records_with_children_cannot_be_deleted(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Protected University', 'code' => 'PROT']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Protected College', 'code' => 'PC']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Protected Department', 'code' => 'PD']);
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2027/2028']);
+        $course = Course::create(['department_id' => $department->id, 'code' => 'PRO101', 'name' => 'Protected Module', 'credits' => 3]);
+        CourseSection::create(['course_id' => $course->id, 'semester_id' => $semester->id, 'section_code' => 'A']);
+
+        $this->actingAs($admin)->delete(route('universities.destroy', $university))->assertSessionHas('error');
+        $this->actingAs($admin)->delete(route('colleges.destroy', $college))->assertSessionHas('error');
+        $this->actingAs($admin)->delete(route('departments.destroy', $department))->assertSessionHas('error');
+        $this->actingAs($admin)->delete(route('semesters.destroy', $semester))->assertSessionHas('error');
+
+        $this->assertDatabaseHas('universities', ['id' => $university->id]);
+        $this->assertDatabaseHas('colleges', ['id' => $college->id]);
+        $this->assertDatabaseHas('departments', ['id' => $department->id, 'deleted_at' => null]);
+        $this->assertDatabaseHas('semesters', ['id' => $semester->id]);
     }
 
     public function test_college_administrator_cannot_open_academic_setup_without_direct_permission(): void

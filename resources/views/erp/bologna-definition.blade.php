@@ -6,11 +6,6 @@
                 <p class="text-sm text-gray-600 dark:text-gray-400">Academic structure, stages, semesters, modules, credits, and curriculum readiness.</p>
             </div>
             <div class="flex gap-2">
-                @if($canManageAcademicSetup)
-                    <a href="{{ route('academic-years.create') }}" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">
-                        Add Academic Year
-                    </a>
-                @endif
                 <a href="{{ route('dashboard') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                     Back to Dashboard
                 </a>
@@ -35,7 +30,7 @@
                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Academic Setup</h3>
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Use these records as the base before opening modules, enrollment, timetable, attendance, and results.</p>
                 </div>
-                <div class="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
+                <div class="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
                     @foreach($setupCards as $card)
                         <a
                             @if($card['enabled']) href="{{ $card['route'] }}" @else aria-disabled="true" @endif

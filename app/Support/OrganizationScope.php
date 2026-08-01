@@ -41,10 +41,11 @@ class OrganizationScope
             'student', 'teacher' => self::scopeDirectDepartment($query, $user, $scope),
             'course' => self::scopeThroughDepartment($query, $user, $scope),
             'section' => self::scopeThroughCourse($query, $user, $scope),
+            'stage' => self::scopeThroughDepartment($query, $user, $scope),
             'course_record' => self::scopeRecordThroughCourse($query, $user, $scope),
             'student_record' => self::scopeThroughStudent($query, $user, $scope),
             'section_record' => self::scopeThroughSection($query, $user, $scope),
-            'semester' => $query->where('university_id', $user->university_id),
+            'semester', 'academic_year' => $query->where('university_id', $user->university_id),
             default => null,
         };
     }
