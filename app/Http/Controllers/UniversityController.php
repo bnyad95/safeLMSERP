@@ -37,6 +37,7 @@ class UniversityController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', 'unique:universities,code'],
+            'institution_type' => ['required', Rule::in(['university', 'institute'])],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
         ]);
@@ -62,6 +63,7 @@ class UniversityController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', Rule::unique('universities', 'code')->ignore($university->id)],
+            'institution_type' => ['required', Rule::in(['university', 'institute'])],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
         ]);

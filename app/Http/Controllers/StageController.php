@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\College;
 use App\Models\Department;
 use App\Models\Stage;
+use App\Models\University;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class StageController extends Controller
 {
@@ -48,6 +50,8 @@ class StageController extends Controller
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
         $validated = $this->validateStage($request);
         $department = $this->scopedDepartment((int) $validated['department_id']);
+        $university = University::findOrFail($department->university_id);
+        $this->ensureStageSequenceWithinInstitutionRule($university, (int) $validated['sequence']);
         unset($validated['college_id']);
 
         Stage::create($validated + ['university_id' => $department->university_id]);
@@ -69,6 +73,8 @@ class StageController extends Controller
         $this->authorizeStage($stage);
         $validated = $this->validateStage($request, $stage);
         $department = $this->scopedDepartment((int) $validated['department_id']);
+        $university = University::findOrFail($department->university_id);
+        $this->ensureStageSequenceWithinInstitutionRule($university, (int) $validated['sequence']);
 
         if ((int) $stage->department_id !== $department->id && $stage->courseSections()->withTrashed()->exists()) {
             return back()->withInput()->with('error', 'A stage with modules cannot be moved to another department.');
@@ -150,5 +156,16 @@ class StageController extends Controller
         $query = Stage::whereKey($stage->id);
         OrganizationScope::apply($query, auth()->user(), 'stage');
         abort_unless($query->exists(), 403);
+    }
+
+    private function ensureStageSequenceWithinInstitutionRule(University $university, int $sequence): void
+    {
+        $maxStages = $university->expectedStageCount();
+
+        if ($sequence > $maxStages) {
+            throw ValidationException::withMessages([
+                'sequence' => "{$university->name} is configured as ".($university->isInstitute() ? 'an institute' : 'a university')." and supports only {$maxStages} stages.",
+            ]);
+        }
     }
 }

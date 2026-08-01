@@ -18,6 +18,7 @@ use App\Models\Mark;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
+use App\Models\SemesterCreditPolicy;
 use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
@@ -1603,6 +1604,9 @@ class ErpController extends Controller
         $departmentCount = (clone $departmentsQuery)->count();
         $semesterCount = (clone $semestersQuery)->count();
         $academicYearCount = (clone $academicYearsQuery)->count();
+        $semesterCreditPolicyCount = SemesterCreditPolicy::query()
+            ->whereIn('university_id', (clone $universitiesQuery)->select('id'))
+            ->count();
         $stageCount = (clone $stagesQuery)->count();
         $courseCount = (clone $coursesQuery)->count();
         $moduleCount = (clone $sectionsQuery)->reorder()->count();
@@ -1662,7 +1666,59 @@ class ErpController extends Controller
                 'credits' => $section->course?->credits ?? 0,
             ]);
 
+        $universityScopeQuery = University::query()->orderBy('name');
+        OrganizationScope::apply($universityScopeQuery, $user, 'university');
+        $scopedUniversities = $universityScopeQuery->get(['id', 'institution_type']);
+
+        $academicYearSemesterCountsQuery = AcademicYear::query()
+            ->leftJoin('semesters', 'semesters.academic_year_id', '=', 'academic_years.id')
+            ->selectRaw('academic_years.university_id as university_id')
+            ->selectRaw('academic_years.id as academic_year_id')
+            ->selectRaw('COUNT(semesters.id) as semester_count')
+            ->groupBy('academic_years.university_id', 'academic_years.id');
+        OrganizationScope::apply($academicYearSemesterCountsQuery, $user, 'academic_year');
+        $academicYearSemesterCounts = $academicYearSemesterCountsQuery->get();
+
+        $institutionSemesterRuleViolations = $academicYearSemesterCounts
+            ->filter(function ($academicYear) use ($scopedUniversities) {
+                $university = $scopedUniversities->firstWhere('id', (int) $academicYear->university_id);
+                if (! $university) {
+                    return false;
+                }
+
+                $expectedSemesters = $university->isInstitute() ? 4 : 8;
+
+                return (int) $academicYear->semester_count !== $expectedSemesters;
+            })
+            ->count();
+
+        $stageCountsByUniversityQuery = Stage::query()
+            ->selectRaw('university_id, COUNT(DISTINCT sequence) as stage_count')
+            ->groupBy('university_id');
+        OrganizationScope::apply($stageCountsByUniversityQuery, $user, 'stage');
+        $stageCountsByUniversity = $stageCountsByUniversityQuery
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->university_id => (int) $row->stage_count]);
+
+        $institutionStageRuleViolations = $scopedUniversities
+            ->filter(function (University $university) use ($stageCountsByUniversity) {
+                $actualStageCount = (int) ($stageCountsByUniversity[$university->id] ?? 0);
+
+                return $actualStageCount !== $university->expectedStageCount();
+            })
+            ->count();
+
         $curriculumSignals = collect([
+            [
+                'label' => 'Institution semester rule mismatch',
+                'value' => $institutionSemesterRuleViolations,
+                'detail' => 'Universities require 8 semesters; institutes require 4 semesters per academic year.',
+            ],
+            [
+                'label' => 'Institution stage rule mismatch',
+                'value' => $institutionStageRuleViolations,
+                'detail' => 'Universities require 4 stages; institutes require 2 stages.',
+            ],
             [
                 'label' => 'Missing stage',
                 'value' => (clone $sectionsQuery)
@@ -1698,6 +1754,7 @@ class ErpController extends Controller
             ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
             ['title' => 'Stages', 'description' => 'Reusable study stages defined for each department.', 'route' => route('stages.index'), 'count' => $stageCount, 'enabled' => true],
             ['title' => 'Semesters', 'description' => 'Academic periods with year and date range.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
+            ['title' => 'Semester Credit Policy', 'description' => 'Set semester ECTS/credits and passing credits required.', 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => $canManageAcademicSetup],
             ['title' => 'Course Catalog', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
         ];
 
@@ -1709,6 +1766,71 @@ class ErpController extends Controller
             'curriculumSignals',
             'canManageAcademicSetup'
         ));
+    }
+
+    public function semesterCreditPolicy()
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
+
+        $universitiesQuery = University::query()->orderBy('name');
+        OrganizationScope::apply($universitiesQuery, $user, 'university');
+        $universities = $universitiesQuery->get(['id', 'name', 'institution_type']);
+
+        $policies = SemesterCreditPolicy::query()
+            ->whereIn('university_id', $universities->pluck('id'))
+            ->get()
+            ->keyBy('university_id');
+
+        return view('erp.semester-credit-policy', compact('universities', 'policies'));
+    }
+
+    public function storeSemesterCreditPolicy(Request $request)
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+
+        $universitiesQuery = University::query()->orderBy('name');
+        OrganizationScope::apply($universitiesQuery, $user, 'university');
+        $universities = $universitiesQuery->get(['id', 'name']);
+
+        $validated = $request->validate([
+            'policies' => ['required', 'array'],
+        ]);
+
+        foreach ($universities as $university) {
+            $policy = $validated['policies'][$university->id] ?? null;
+            if (! is_array($policy)) {
+                continue;
+            }
+
+            $semesterCredits = (int) ($policy['semester_credits'] ?? 0);
+            $passingCredits = (int) ($policy['passing_credits'] ?? 0);
+
+            if ($semesterCredits < 1 || $semesterCredits > 120) {
+                return back()->withInput()->withErrors([
+                    "policies.{$university->id}.semester_credits" => "{$university->name}: semester credits must be between 1 and 120.",
+                ]);
+            }
+
+            if ($passingCredits < 1 || $passingCredits > $semesterCredits) {
+                return back()->withInput()->withErrors([
+                    "policies.{$university->id}.passing_credits" => "{$university->name}: passing credits must be between 1 and semester credits.",
+                ]);
+            }
+
+            SemesterCreditPolicy::updateOrCreate(
+                ['university_id' => $university->id],
+                [
+                    'semester_credits' => $semesterCredits,
+                    'passing_credits' => $passingCredits,
+                ]
+            );
+        }
+
+        return redirect()
+            ->route('bologna-definition.semester-credit-policy')
+            ->with('success', 'Semester credit policy updated successfully.');
     }
 
     public function studentRankings(Request $request)

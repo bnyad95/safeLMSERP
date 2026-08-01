@@ -43,7 +43,7 @@ class CourseRegistrationController extends Controller
                 ->get();
             $registeredSectionIds = $registrations->pluck('course_section_id');
             $registeredCourseIds = $registrations->pluck('courseSection.course_id')->filter();
-            $priorMarksByCourse = Mark::with(['courseSection.semester'])
+            $priorMarksByCourse = Mark::withTrashed()->with(['courseSection.semester'])
                 ->where('student_id', $student->id)
                 ->where('visibility_status', 'published')
                 ->whereNotNull('final_mark')
@@ -196,7 +196,7 @@ class CourseRegistrationController extends Controller
 
     private function registrationContext(Student $student, CourseSection $section, $priorMarks = null): array
     {
-        $priorMarks ??= Mark::with(['courseSection.semester'])
+        $priorMarks ??= Mark::withTrashed()->with(['courseSection.semester'])
             ->where('student_id', $student->id)
             ->where('course_id', $section->course_id)
             ->where('visibility_status', 'published')
@@ -241,7 +241,7 @@ class CourseRegistrationController extends Controller
 
     private function latestCompletedEnrollmentForCourse(Student $student, int $courseId): ?Enrollment
     {
-        return Enrollment::with(['courseSection'])
+        return Enrollment::withTrashed()->with(['courseSection'])
             ->where('student_id', $student->id)
             ->whereIn('status', ['completed', 'dropped'])
             ->whereHas('courseSection', fn ($query) => $query->where('course_id', $courseId))

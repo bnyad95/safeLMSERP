@@ -11,7 +11,7 @@
         </div>
     </x-slot>
 
-    <div class="py-8">
+    <div id="archive-year-page" data-archive-year-page="1" class="py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             <section class="grid gap-4 md:grid-cols-4">
                 <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -41,6 +41,7 @@
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <form method="GET" action="{{ route('academic-year-closures.archive.show') }}" class="grid gap-4 md:grid-cols-2 xl:grid-cols-8 xl:items-end">
                     <input type="hidden" name="academic_year" value="{{ $academicYear }}">
+                    <input type="hidden" name="students" value="1">
                     <div class="xl:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search results</label>
                         <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="Student, ID, module, group" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500">
@@ -112,76 +113,84 @@
                     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Passed and Failed Students</h3>
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">One row per student. Open the module breakdown only when you need the detailed marks.</p>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">One row per student. Apply filters when you need the detailed marks.</p>
                         </div>
-                        <div class="flex flex-wrap gap-2">
-                            <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ number_format($studentResultStats['students']) }} students</span>
-                            <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">{{ number_format($studentResultStats['passed']) }} passed students</span>
-                            <span class="rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-200">{{ number_format($studentResultStats['failed']) }} failed students</span>
-                        </div>
+                        @if($loadStudents)
+                            <div class="flex flex-wrap gap-2">
+                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ number_format($studentResultStats['students']) }} students</span>
+                                <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">{{ number_format($studentResultStats['passed']) }} passed students</span>
+                                <span class="rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-200">{{ number_format($studentResultStats['failed']) }} failed students</span>
+                            </div>
+                        @endif
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-[980px] divide-y divide-gray-100 dark:divide-gray-800">
-                        <thead class="bg-gray-50 dark:bg-gray-950">
-                            <tr>
-                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student</th>
-                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">College / Department</th>
-                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Modules</th>
-                                <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Average</th>
-                                <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Failed</th>
-                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Result</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
-                            @forelse($studentResultRows as $studentResult)
-                                    @php $passed = $studentResult['result'] === 'Passed'; @endphp
-                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/70">
-                                        <td class="px-5 py-4">
-                                            <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $studentResult['student_name'] }}</p>
-                                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $studentResult['student_number'] ?? '-' }}</p>
-                                        </td>
-                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
-                                            <p>{{ $studentResult['college'] }}</p>
-                                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $studentResult['department'] }}</p>
-                                        </td>
-                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
-                                            <p class="font-semibold text-gray-900 dark:text-gray-100">{{ number_format($studentResult['modules_count']) }} modules</p>
-                                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ number_format($studentResult['passed_modules']) }} passed / {{ number_format($studentResult['failed_modules']) }} failed</p>
-                                            <details class="mt-2">
-                                                <summary class="cursor-pointer text-xs font-semibold text-indigo-700 dark:text-indigo-300">View modules</summary>
-                                                <div class="mt-2 space-y-2">
-                                                    @foreach($studentResult['modules'] as $module)
-                                                        <div class="rounded-md bg-gray-50 p-2 text-xs text-gray-600 dark:bg-gray-950 dark:text-gray-300">
-                                                            <div class="flex items-start justify-between gap-3">
-                                                                <span>
-                                                                    <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $module['course_name'] ?? 'Archived module' }}</span>
-                                                                    <span class="text-gray-500 dark:text-gray-400">({{ $module['course_code'] ?? '-' }})</span>
-                                                                </span>
-                                                                <span class="font-semibold {{ ($module['result'] ?? '') === 'Passed' ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300' }}">{{ number_format((float) ($module['final_mark'] ?? 0), 2) }}</span>
-                                                            </div>
-                                                            <p class="mt-1 text-gray-500 dark:text-gray-400">{{ $module['stage'] ?? 'No stage' }} / {{ trim(($module['semester'] ?? '').' '.($module['academic_year'] ?? '')) ?: $academicYear }} / Group {{ $module['group'] ?? '-' }}</p>
-                                                        </div>
-                                                    @endforeach
-                                                </div>
-                                            </details>
-                                        </td>
-                                        <td class="px-5 py-4 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $studentResult['average_mark'], 2) }}</td>
-                                        <td class="px-5 py-4 text-right text-sm font-semibold {{ $studentResult['failed_modules'] > 0 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300' }}">{{ number_format($studentResult['failed_modules']) }}</td>
-                                        <td class="px-5 py-4">
-                                            <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $passed ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200' }}">{{ $passed ? 'Passed' : 'Failed' }}</span>
-                                        </td>
-                                    </tr>
-                            @empty
+                @if($loadStudents)
+                    <div class="overflow-x-auto">
+                        <table class="min-w-[980px] divide-y divide-gray-100 dark:divide-gray-800">
+                            <thead class="bg-gray-50 dark:bg-gray-950">
                                 <tr>
-                                    <td colspan="6" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No published results match these filters.</td>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">College / Department</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Modules</th>
+                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Average</th>
+                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Failed</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Result</th>
                                 </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-                @if($resultRows->count() >= 500)
-                    <div class="border-t border-gray-200 px-5 py-3 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">Module-level result export is limited to the first 500 matching rows. Use filters to narrow the list.</div>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                                @forelse($studentResultRows as $studentResult)
+                                        @php $passed = $studentResult['result'] === 'Passed'; @endphp
+                                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/70">
+                                            <td class="px-5 py-4">
+                                                <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $studentResult['student_name'] }}</p>
+                                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $studentResult['student_number'] ?? '-' }}</p>
+                                            </td>
+                                            <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                                <p>{{ $studentResult['college'] }}</p>
+                                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $studentResult['department'] }}</p>
+                                            </td>
+                                            <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                                <p class="font-semibold text-gray-900 dark:text-gray-100">{{ number_format($studentResult['modules_count']) }} modules</p>
+                                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ number_format($studentResult['passed_modules']) }} passed / {{ number_format($studentResult['failed_modules']) }} failed</p>
+                                                <details class="mt-2">
+                                                    <summary class="cursor-pointer text-xs font-semibold text-indigo-700 dark:text-indigo-300">View modules</summary>
+                                                    <div class="mt-2 space-y-2">
+                                                        @foreach($studentResult['modules'] as $module)
+                                                            <div class="rounded-md bg-gray-50 p-2 text-xs text-gray-600 dark:bg-gray-950 dark:text-gray-300">
+                                                                <div class="flex items-start justify-between gap-3">
+                                                                    <span>
+                                                                        <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $module['course_name'] ?? 'Archived module' }}</span>
+                                                                        <span class="text-gray-500 dark:text-gray-400">({{ $module['course_code'] ?? '-' }})</span>
+                                                                    </span>
+                                                                    <span class="font-semibold {{ ($module['result'] ?? '') === 'Passed' ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300' }}">{{ number_format((float) ($module['final_mark'] ?? 0), 2) }}</span>
+                                                                </div>
+                                                                <p class="mt-1 text-gray-500 dark:text-gray-400">{{ $module['stage'] ?? 'No stage' }} / {{ trim(($module['semester'] ?? '').' '.($module['academic_year'] ?? '')) ?: $academicYear }} / Group {{ $module['group'] ?? '-' }}</p>
+                                                            </div>
+                                                        @endforeach
+                                                    </div>
+                                                </details>
+                                            </td>
+                                            <td class="px-5 py-4 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $studentResult['average_mark'], 2) }}</td>
+                                            <td class="px-5 py-4 text-right text-sm font-semibold {{ $studentResult['failed_modules'] > 0 ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300' }}">{{ number_format($studentResult['failed_modules']) }}</td>
+                                            <td class="px-5 py-4">
+                                                <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $passed ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200' }}">{{ $passed ? 'Passed' : 'Failed' }}</span>
+                                            </td>
+                                        </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="6" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No published results match these filters.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    @if($resultRows->count() >= 500)
+                        <div class="border-t border-gray-200 px-5 py-3 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">Module-level result export is limited to the first 500 matching rows. Use filters to narrow the list.</div>
+                    @endif
+                @else
+                    <div class="px-5 py-8 text-sm text-gray-600 dark:text-gray-300">
+                        Student results are not loaded on initial open to keep archive pages fast on large datasets. Apply filters to load scoped passed/failed rows.
+                    </div>
                 @endif
             </section>
 
@@ -273,67 +282,151 @@
                 </section>
             @endif
 
-            <section class="space-y-5">
-                @forelse($groupedSections as $collegeName => $departments)
-                    <div class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $collegeName }}</h3>
-                        </div>
-                        <div class="divide-y divide-gray-100 dark:divide-gray-800">
-                            @foreach($departments as $departmentName => $stages)
-                                <div class="p-5">
-                                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $departmentName }}</h4>
-                                    <div class="mt-4 space-y-4">
-                                        @foreach($stages as $stageName => $semesters)
-                                            <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950">
-                                                <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $stageName }}</p>
-                                                <div class="mt-3 space-y-3">
-                                                    @foreach($semesters as $semesterName => $modules)
-                                                        <div>
-                                                            <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $semesterName }}</p>
-                                                            <div class="mt-2 grid gap-3 lg:grid-cols-2">
-                                                                @foreach($modules as $section)
-                                                                    <article class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                                                                        <div class="flex items-start justify-between gap-4">
-                                                                            <div>
-                                                                                <h5 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $section->course->name ?? 'Archived module' }}</h5>
-                                                                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $section->course->code ?? 'Course' }} / Group {{ $section->section_code }}</p>
-                                                                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Teacher: {{ $section->teacher->full_name ?? 'Not assigned' }}</p>
-                                                                            </div>
-                                                                            <span class="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ $section->trashed() ? 'Archived' : 'Closed' }}</span>
-                                                                        </div>
-                                                                        <dl class="mt-4 grid grid-cols-3 gap-3 text-sm">
-                                                                            <div>
-                                                                                <dt class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Students</dt>
-                                                                                <dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $section->enrollment_count }}</dd>
-                                                                            </div>
-                                                                            <div>
-                                                                                <dt class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Marks</dt>
-                                                                                <dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $section->marks_count }}</dd>
-                                                                            </div>
-                                                                            <div>
-                                                                                <dt class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Assessments</dt>
-                                                                                <dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $section->assessment_items_count }}</dd>
-                                                                            </div>
-                                                                        </dl>
-                                                                    </article>
-                                                                @endforeach
-                                                            </div>
-                                                        </div>
-                                                    @endforeach
+            @php
+                $baseFilters = [
+                    'academic_year' => $academicYear,
+                    'q' => $filters['q'] ?: null,
+                    'semester_id' => $filters['semester_id'] ?: null,
+                    'result_status' => $filters['result_status'] ?: null,
+                    'sort' => $filters['sort'] ?: null,
+                ];
+                $archiveUrl = function (array $extra = []) use ($baseFilters) {
+                    return route('academic-year-closures.archive.show', array_filter(array_merge($baseFilters, $extra), fn ($value) => ! is_null($value) && $value !== ''));
+                };
+
+                $selectedCollegeId = $filters['college_id'] ? (int) $filters['college_id'] : null;
+                $selectedDepartmentId = $filters['department_id'] ? (int) $filters['department_id'] : null;
+                $selectedStage = $filters['stage'] ?: null;
+
+                $selectedCollege = $selectedCollegeId ? $colleges->firstWhere('id', $selectedCollegeId) : null;
+                $selectedDepartment = $selectedDepartmentId ? $departments->firstWhere('id', $selectedDepartmentId) : null;
+
+                $collegeGroups = $sections->groupBy(fn (\App\Models\CourseSection $section) => $section->course?->department?->college?->name ?? 'No college');
+                $departmentGroups = $sections->groupBy(fn (\App\Models\CourseSection $section) => $section->course?->department?->name ?? 'No department');
+                $stageGroups = $sections->groupBy(fn (\App\Models\CourseSection $section) => $section->grade_level ?: 'No stage');
+                $semesterGroups = $sections->groupBy(fn (\App\Models\CourseSection $section) => trim(($section->semester?->name ?? 'Semester').' '.($section->semester?->academic_year ?? '')));
+
+                $isCollegeStep = is_null($selectedCollegeId);
+                $isDepartmentStep = ! is_null($selectedCollegeId) && is_null($selectedDepartmentId);
+                $isStageStep = ! is_null($selectedDepartmentId) && is_null($selectedStage);
+                $isClassroomStep = ! is_null($selectedStage);
+            @endphp
+
+            <section class="space-y-4">
+                <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div class="flex flex-wrap items-center gap-2 text-sm">
+                        <a href="{{ $archiveUrl() }}" data-archive-drilldown-link="1" class="rounded-md border border-gray-200 bg-gray-50 px-3 py-1 font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">Colleges</a>
+
+                        @if($selectedCollege)
+                            <span class="text-gray-400">/</span>
+                            <a href="{{ $archiveUrl(['college_id' => $selectedCollege->id]) }}" data-archive-drilldown-link="1" class="rounded-md border border-gray-200 bg-gray-50 px-3 py-1 font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">{{ $selectedCollege->name }}</a>
+                        @endif
+
+                        @if($selectedDepartment)
+                            <span class="text-gray-400">/</span>
+                            <a href="{{ $archiveUrl(['college_id' => $selectedCollege?->id, 'department_id' => $selectedDepartment->id]) }}" data-archive-drilldown-link="1" class="rounded-md border border-gray-200 bg-gray-50 px-3 py-1 font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">{{ $selectedDepartment->name }}</a>
+                        @endif
+
+                        @if($selectedStage)
+                            <span class="text-gray-400">/</span>
+                            <span class="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200">{{ $selectedStage }}</span>
+                        @endif
+                    </div>
+                </div>
+
+                @if($isCollegeStep)
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        @forelse($collegeGroups as $collegeName => $collegeSections)
+                            @php $collegeId = $collegeSections->first()?->course?->department?->college?->id; @endphp
+                            <a href="{{ $archiveUrl(['college_id' => $collegeId]) }}" data-archive-drilldown-link="1" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">College</p>
+                                <h3 class="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">{{ $collegeName }}</h3>
+                                <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">{{ $collegeSections->pluck('course.department.name')->filter()->unique()->count() }} departments</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">{{ $collegeSections->count() }} classrooms</p>
+                            </a>
+                        @empty
+                            <div class="rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 md:col-span-2 xl:col-span-3">
+                                No archived modules match these filters.
+                            </div>
+                        @endforelse
+                    </div>
+                @elseif($isDepartmentStep)
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        @forelse($departmentGroups as $departmentName => $departmentSections)
+                            @php $departmentId = $departmentSections->first()?->course?->department?->id; @endphp
+                            <a href="{{ $archiveUrl(['college_id' => $selectedCollegeId, 'department_id' => $departmentId]) }}" data-archive-drilldown-link="1" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Department</p>
+                                <h3 class="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">{{ $departmentName }}</h3>
+                                <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">{{ $departmentSections->pluck('grade_level')->filter()->unique()->count() }} stages</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">{{ $departmentSections->count() }} classrooms</p>
+                            </a>
+                        @empty
+                            <div class="rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 md:col-span-2 xl:col-span-3">
+                                No archived modules match these filters.
+                            </div>
+                        @endforelse
+                    </div>
+                @elseif($isStageStep)
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        @forelse($stageGroups as $stageName => $stageSections)
+                            <a href="{{ $archiveUrl(['college_id' => $selectedCollegeId, 'department_id' => $selectedDepartmentId, 'stage' => $stageName]) }}" data-archive-drilldown-link="1" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Stage</p>
+                                <h3 class="mt-2 text-base font-semibold text-gray-900 dark:text-gray-100">{{ $stageName }}</h3>
+                                <p class="mt-3 text-sm text-gray-600 dark:text-gray-300">{{ $stageSections->pluck('semester_id')->filter()->unique()->count() }} semesters</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">{{ $stageSections->count() }} classrooms</p>
+                            </a>
+                        @empty
+                            <div class="rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 md:col-span-2 xl:col-span-3">
+                                No archived modules match these filters.
+                            </div>
+                        @endforelse
+                    </div>
+                @elseif($isClassroomStep)
+                    <article class="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <header class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Classrooms</p>
+                            <h3 class="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">{{ $selectedStage }}</h3>
+                        </header>
+
+                        <div class="space-y-3 p-5">
+                            @foreach($semesterGroups as $semesterName => $modules)
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ $semesterName }}</p>
+                                    <div class="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                        @foreach($modules as $section)
+                                            <article class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Classroom</p>
+                                                        <h4 class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $section->course->name ?? 'Archived module' }}</h4>
+                                                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $section->course->code ?? 'Course' }} / Group {{ $section->section_code }}</p>
+                                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Teacher: {{ $section->teacher->full_name ?? 'Not assigned' }}</p>
+                                                    </div>
+                                                    <span class="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ $section->trashed() ? 'Archived' : 'Closed' }}</span>
                                                 </div>
-                                            </div>
+
+                                                <dl class="mt-4 grid grid-cols-3 gap-3 text-sm">
+                                                    <div>
+                                                        <dt class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Students</dt>
+                                                        <dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $section->enrollment_count }}</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Marks</dt>
+                                                        <dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $section->marks_count }}</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Assessments</dt>
+                                                        <dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $section->assessment_items_count }}</dd>
+                                                    </div>
+                                                </dl>
+                                            </article>
                                         @endforeach
                                     </div>
                                 </div>
                             @endforeach
                         </div>
-                    </div>
-                @empty
-                    <div class="rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
-                        No archived modules match these filters.
-                    </div>
-                @endforelse
+                    </article>
+                @endif
             </section>
         </div>
     </div>

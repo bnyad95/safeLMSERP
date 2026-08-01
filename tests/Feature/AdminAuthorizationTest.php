@@ -196,6 +196,8 @@ class AdminAuthorizationTest extends TestCase
             'full_name' => 'Outside Teacher',
             'staff_id' => 'OUT-T1',
             'email' => 'outside-teacher@example.com',
+            'password' => 'ScopedTemp@123',
+            'password_confirmation' => 'ScopedTemp@123',
             'university_id' => $secondUniversity->id,
             'department_id' => $secondDepartment->id,
             'status' => 'Active',

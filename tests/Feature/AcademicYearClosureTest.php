@@ -232,14 +232,29 @@ class AcademicYearClosureTest extends TestCase
         $this->assertSame('Final year project module details.', $snapshot['modules'][0]['details']['module']['notes']);
         $this->assertSame('completed', $snapshot['enrollments'][0]['status']);
         $this->assertSame('Closing Student', $snapshot['marks'][0]['student_name']);
-        $this->assertSame('completed', $setup['student']->enrollments()->first()->status);
+        $archivedEnrollment = Enrollment::withTrashed()
+            ->where('student_id', $setup['student']->id)
+            ->where('course_section_id', $setup['section']->id)
+            ->first();
+        $this->assertNotNull($archivedEnrollment);
+        $this->assertSame('completed', $archivedEnrollment->status);
         $this->assertSoftDeleted('course_sections', ['id' => $setup['section']->id]);
+        $this->assertSoftDeleted('enrollments', [
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $setup['section']->id,
+        ]);
+        $this->assertSoftDeleted('marks', [
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+        ]);
         $this->assertDatabaseHas('enrollment_events', [
             'student_id' => $setup['student']->id,
             'course_section_id' => $setup['section']->id,
             'action' => 'completed_by_year_closure',
         ]);
-        $this->assertSame('open', $invoice->fresh()->payment_status);
+        $this->assertSoftDeleted('finance_transactions', ['id' => $invoice->id]);
+        $this->assertSame('open', FinanceTransaction::withTrashed()->find($invoice->id)?->payment_status);
 
         $this->actingAs($user)
             ->get(route('academic-year-closures.archive.show', ['academic_year' => $setup['semester']->academic_year]))
@@ -380,7 +395,11 @@ class AcademicYearClosureTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->get(route('academic-year-closures.archive.show', ['academic_year' => '2030/2031']))
+            ->get(route('academic-year-closures.archive.show', [
+                'academic_year' => '2030/2031',
+                'students' => '1',
+                'q' => 'Legacy',
+            ]))
             ->assertOk()
             ->assertSee('2030/2031')
             ->assertSee('The original semester/module records for this year are no longer available.')
@@ -424,6 +443,53 @@ class AcademicYearClosureTest extends TestCase
         $this->assertIsArray($summary['archive_snapshot'] ?? null);
         $this->assertCount(1, $summary['archive_snapshot']['modules']);
         $this->assertCount(1, $summary['archive_snapshot']['marks']);
+    }
+
+    public function test_archive_rebuild_force_preserves_soft_deleted_year_records(): void
+    {
+        $admin = $this->adminUser();
+        $setup = $this->academicSetup();
+
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'final_mark' => 72,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($admin)->post(route('academic-year-closures.store'), [
+            'academic_year' => $setup['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ]);
+
+        $this->assertSoftDeleted('enrollments', [
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $setup['section']->id,
+        ]);
+        $this->assertSoftDeleted('marks', [
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+        ]);
+
+        $this->artisan('academic-years:rebuild-archive', [
+            'academic_year' => $setup['semester']->academic_year,
+            '--force' => true,
+        ])->assertExitCode(0);
+
+        $summary = AcademicYearClosure::firstOrFail()->summary;
+        $snapshot = $summary['archive_snapshot'] ?? [];
+
+        $this->assertSame(1, $summary['enrollment_count'] ?? null);
+        $this->assertSame(1, $summary['entered_marks'] ?? null);
+        $this->assertSame(1, $snapshot['counts']['enrollments'] ?? null);
+        $this->assertSame(1, $snapshot['counts']['marks'] ?? null);
+        $this->assertCount(1, $snapshot['enrollments'] ?? []);
+        $this->assertCount(1, $snapshot['marks'] ?? []);
     }
 
     public function test_closed_year_archive_lists_passed_and_failed_students_sorted_by_marks(): void
@@ -519,6 +585,7 @@ class AcademicYearClosureTest extends TestCase
         $this->actingAs($examUser)
             ->get(route('academic-year-closures.archive.show', [
                 'academic_year' => $setup['semester']->academic_year,
+                'students' => '1',
                 'result_status' => 'failed',
                 'sort' => 'final_asc',
             ]))
@@ -533,6 +600,7 @@ class AcademicYearClosureTest extends TestCase
         $response = $this->actingAs($examUser)
             ->get(route('academic-year-closures.archive.show', [
                 'academic_year' => $setup['semester']->academic_year,
+                'students' => '1',
                 'sort' => 'final_desc',
             ]))
             ->assertOk();
@@ -540,6 +608,81 @@ class AcademicYearClosureTest extends TestCase
         $response->assertSeeInOrder(['Passed Closing Student', '80.00', 'Closing Student', '45.00']);
         $this->assertSame(1, substr_count($response->getContent(), 'Passed Closing Student'));
         $response->assertSee('2 modules');
+    }
+
+    public function test_archive_student_results_are_scoped_by_stage_filter(): void
+    {
+        $admin = $this->adminUser();
+        $setup = $this->academicSetup();
+
+        $stageThreeStudent = Student::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'student_id' => 'CS-3001',
+            'full_name' => 'Stage Three Student',
+            'email' => 'stage3.student@example.com',
+            'status' => 'Active',
+        ]);
+        $stageThreeCourse = Course::create([
+            'department_id' => $setup['department']->id,
+            'code' => 'CS301',
+            'name' => 'Stage 3 Systems',
+            'credits' => 3,
+            'status' => 'active',
+        ]);
+        $stageThreeSection = CourseSection::create([
+            'course_id' => $stageThreeCourse->id,
+            'semester_id' => $setup['semester']->id,
+            'section_code' => 'C',
+            'grade_level' => 'Stage 3',
+            'status' => 'active',
+        ]);
+        Enrollment::create([
+            'student_id' => $stageThreeStudent->id,
+            'course_section_id' => $stageThreeSection->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now(),
+        ]);
+
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'final_mark' => 65,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+        Mark::create([
+            'student_id' => $stageThreeStudent->id,
+            'course_id' => $stageThreeCourse->id,
+            'course_section_id' => $stageThreeSection->id,
+            'final_mark' => 72,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($admin)->post(route('academic-year-closures.store'), [
+            'academic_year' => $setup['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ]);
+
+        $response = $this->actingAs($admin)
+            ->get(route('academic-year-closures.archive.show', [
+                'academic_year' => $setup['semester']->academic_year,
+                'students' => '1',
+                'stage' => 'Stage 4',
+            ]))
+            ->assertOk();
+
+        $response->assertSee('Passed and Failed Students');
+        $response->assertSee('1 students');
+        $response->assertSee('1 passed students');
+        $response->assertSee('0 failed students');
+        $response->assertSee('Closing Student');
+        $response->assertDontSee('Stage Three Student');
     }
 
     public function test_scoped_archive_users_only_see_their_organization_and_exports_current_results(): void
@@ -606,6 +749,8 @@ class AcademicYearClosureTest extends TestCase
         $this->actingAs($collegeUser)
             ->get(route('academic-year-closures.archive.show', [
                 'academic_year' => $setup['semester']->academic_year,
+                'students' => '1',
+                'q' => 'Closing',
             ]))
             ->assertOk()
             ->assertSee('Capstone')
@@ -616,6 +761,7 @@ class AcademicYearClosureTest extends TestCase
         $this->actingAs($collegeUser)
             ->get(route('academic-year-closures.archive.show', [
                 'academic_year' => $setup['semester']->academic_year,
+                'students' => '1',
                 'q' => 'Nursing',
             ]))
             ->assertOk()

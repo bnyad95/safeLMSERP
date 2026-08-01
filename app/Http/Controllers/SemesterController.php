@@ -7,8 +7,6 @@ use App\Models\Semester;
 use App\Models\University;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -43,9 +41,8 @@ class SemesterController extends Controller
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
 
         $universities = $this->scopedUniversities()->get();
-        $defaultSemesterNames = $this->defaultSemesterNames();
 
-        return view('academic-years.create', compact('universities', 'defaultSemesterNames'));
+        return view('academic-years.create', compact('universities'));
     }
 
     public function academicYears()
@@ -80,9 +77,6 @@ class SemesterController extends Controller
             'academic_year' => ['required', 'string', 'regex:/^(\d{4})\/(\d{4})$/'],
             'university_ids' => ['required', 'array', 'min:1'],
             'university_ids.*' => ['integer', 'distinct', 'exists:universities,id'],
-            'semester_names' => ['required', 'string', 'max:255'],
-            'first_semester_start_date' => ['nullable', 'date'],
-            'semester_length_months' => ['nullable', 'integer', 'min:1', 'max:12'],
         ]);
 
         [$firstYear, $secondYear] = array_map('intval', explode('/', $validated['academic_year']));
@@ -92,92 +86,41 @@ class SemesterController extends Controller
             ]);
         }
 
-        $semesterNames = collect(preg_split('/[\r\n,]+/', $validated['semester_names']))
-            ->map(fn ($name) => trim((string) $name))
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($semesterNames->isEmpty()) {
-            return back()
-                ->withInput()
-                ->withErrors(['semester_names' => 'Add at least one semester name.']);
-        }
-
         foreach ($validated['university_ids'] as $universityId) {
             $this->authorizeUniversityId((int) $universityId);
         }
 
         $created = 0;
         $skipped = 0;
-        $startDate = filled($validated['first_semester_start_date'] ?? null)
-            ? Carbon::parse($validated['first_semester_start_date'])->startOfDay()
-            : null;
-        $semesterLength = (int) ($validated['semester_length_months'] ?? 0);
+        foreach ($validated['university_ids'] as $universityId) {
+            $academicYear = AcademicYear::firstOrCreate(
+                [
+                    'university_id' => $universityId,
+                    'name' => $validated['academic_year'],
+                ],
+                [
+                    'status' => 'active',
+                ]
+            );
 
-        DB::transaction(function () use ($validated, $semesterNames, $startDate, $semesterLength, &$created, &$skipped) {
-            foreach ($validated['university_ids'] as $universityId) {
-                $yearStartsOn = $startDate?->copy();
-                $yearEndsOn = $yearStartsOn && $semesterLength > 0
-                    ? $yearStartsOn->copy()->addMonthsNoOverflow($semesterNames->count() * $semesterLength)->subDay()
-                    : null;
-
-                $academicYear = AcademicYear::firstOrCreate(
-                    [
-                        'university_id' => $universityId,
-                        'name' => $validated['academic_year'],
-                    ],
-                    [
-                        'starts_on' => $yearStartsOn?->toDateString(),
-                        'ends_on' => $yearEndsOn?->toDateString(),
-                        'status' => 'active',
-                    ]
-                );
-
-                foreach ($semesterNames as $index => $name) {
-                    $periodStart = $startDate && $semesterLength > 0
-                        ? $startDate->copy()->addMonthsNoOverflow($index * $semesterLength)
-                        : null;
-                    $periodEnd = $periodStart
-                        ? $periodStart->copy()->addMonthsNoOverflow($semesterLength)->subDay()
-                        : null;
-
-                    $semester = Semester::firstOrCreate(
-                        [
-                            'university_id' => $universityId,
-                            'academic_year' => $validated['academic_year'],
-                            'name' => $name,
-                        ],
-                        [
-                            'academic_year_id' => $academicYear->id,
-                            'start_date' => $periodStart?->toDateString(),
-                            'end_date' => $periodEnd?->toDateString(),
-                        ]
-                    );
-
-                    if ($semester->wasRecentlyCreated) {
-                        $created++;
-                    } else {
-                        $skipped++;
-                        if (! $semester->academic_year_id) {
-                            $semester->update(['academic_year_id' => $academicYear->id]);
-                        }
-                    }
-                }
+            if ($academicYear->wasRecentlyCreated) {
+                $created++;
+            } else {
+                $skipped++;
             }
-        });
+        }
 
         $message = $created > 0
-            ? "{$created} semester periods created for {$validated['academic_year']}."
-            : "No new semester periods were created for {$validated['academic_year']}; they already exist.";
+            ? "{$created} academic year record(s) created for {$validated['academic_year']}."
+            : "No new academic year records were created for {$validated['academic_year']}; they already exist.";
 
         if ($skipped > 0) {
-            $message .= " {$skipped} duplicate periods were skipped.";
+            $message .= " {$skipped} existing records were skipped.";
         }
 
         return redirect()
             ->route('academic-years.index')
-            ->with('success', $message.' Existing universities, colleges, departments, and Course Catalog records were reused.');
+            ->with('success', $message.' Use Semesters to define the institution semester structure (8 for universities, 4 for institutes).');
     }
 
     public function store(Request $request)
@@ -196,6 +139,11 @@ class SemesterController extends Controller
         $academicYear = AcademicYear::where('university_id', $validated['university_id'])
             ->where('name', $validated['academic_year'])
             ->firstOrFail();
+
+        $this->ensureSemesterCountWithinInstitutionRule(
+            (int) $validated['university_id'],
+            $validated['academic_year']
+        );
 
         Semester::create($validated + ['academic_year_id' => $academicYear->id]);
 
@@ -230,6 +178,12 @@ class SemesterController extends Controller
         $academicYear = AcademicYear::where('university_id', $validated['university_id'])
             ->where('name', $validated['academic_year'])
             ->firstOrFail();
+
+        $this->ensureSemesterCountWithinInstitutionRule(
+            (int) $validated['university_id'],
+            $validated['academic_year'],
+            $semester->id
+        );
 
         $semester->update($validated + ['academic_year_id' => $academicYear->id]);
 
@@ -266,34 +220,29 @@ class SemesterController extends Controller
         return $query->pluck('name')->filter()->values();
     }
 
-    private function defaultSemesterNames(): string
-    {
-        $yearQuery = AcademicYear::query()->orderByDesc('name');
-        OrganizationScope::apply($yearQuery, auth()->user(), 'academic_year');
-        $latestAcademicYear = $yearQuery->value('name');
-
-        if (! $latestAcademicYear) {
-            return "Semester 1\nSemester 2";
-        }
-
-        $namesQuery = Semester::where('academic_year', $latestAcademicYear);
-        OrganizationScope::apply($namesQuery, auth()->user(), 'semester');
-        $names = $namesQuery
-            ->orderBy('name')
-            ->pluck('name')
-            ->unique()
-            ->values();
-
-        return $names->isNotEmpty()
-            ? $names->join("\n")
-            : "Semester 1\nSemester 2";
-    }
-
     private function authorizeUniversityId(int $universityId): void
     {
         $query = University::whereKey($universityId);
         OrganizationScope::apply($query, auth()->user(), 'university');
         abort_unless($query->exists(), 403);
+    }
+
+    private function ensureSemesterCountWithinInstitutionRule(int $universityId, string $academicYear, ?int $ignoredSemesterId = null): void
+    {
+        $university = University::findOrFail($universityId);
+        $expectedSemesters = $university->isInstitute() ? 4 : 8;
+
+        $semesterCount = Semester::query()
+            ->where('university_id', $universityId)
+            ->where('academic_year', $academicYear)
+            ->when($ignoredSemesterId, fn ($query) => $query->whereKeyNot($ignoredSemesterId))
+            ->count();
+
+        if ($semesterCount >= $expectedSemesters) {
+            throw ValidationException::withMessages([
+                'name' => "{$university->name} supports {$expectedSemesters} semesters per academic year.",
+            ]);
+        }
     }
 
     private function authorizeSemesterScope(Semester $semester): void

@@ -42,14 +42,28 @@ class CourseSection extends Model
             $stageName = trim((string) $section->grade_level);
             $course = $section->course_id ? Course::withTrashed()->find($section->course_id) : null;
             if ($stageName !== '' && $course) {
-                $stage = Stage::firstOrCreate(
-                    ['department_id' => $course->department_id, 'name' => $stageName],
-                    [
-                        'university_id' => $course->university_id,
-                        'sequence' => ((int) Stage::where('department_id', $course->department_id)->max('sequence')) + 1,
-                    ]
-                );
-                $section->stage_id = $stage->id;
+                $stage = Stage::where('department_id', $course->department_id)
+                    ->where('name', $stageName)
+                    ->first();
+
+                if (! $stage) {
+                    $university = University::find($course->university_id);
+                    $nextSequence = ((int) Stage::where('department_id', $course->department_id)->max('sequence')) + 1;
+                    $maxStages = $university?->expectedStageCount() ?? 4;
+
+                    if ($nextSequence <= $maxStages) {
+                        $stage = Stage::create([
+                            'department_id' => $course->department_id,
+                            'name' => $stageName,
+                            'university_id' => $course->university_id,
+                            'sequence' => $nextSequence,
+                        ]);
+                    }
+                }
+
+                if ($stage) {
+                    $section->stage_id = $stage->id;
+                }
             }
         });
     }
@@ -61,7 +75,7 @@ class CourseSection extends Model
 
     public function semester()
     {
-        return $this->belongsTo(Semester::class);
+        return $this->belongsTo(Semester::class)->withTrashed();
     }
 
     public function stage()

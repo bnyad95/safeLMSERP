@@ -188,3 +188,98 @@ document.querySelectorAll('[data-class-messages]').forEach((workspace) => {
 	requestAnimationFrame(scrollToLatest);
 	window.setInterval(refreshConversation, 3000);
 });
+
+const ARCHIVE_PAGE_SELECTOR = '#archive-year-page[data-archive-year-page="1"]';
+
+const isPrimaryNavigationClick = (event) => (
+	event.button === 0
+	&& !event.metaKey
+	&& !event.ctrlKey
+	&& !event.shiftKey
+	&& !event.altKey
+);
+
+const replaceArchivePageFromHtml = (html) => {
+	const parser = new DOMParser();
+	const documentFragment = parser.parseFromString(html, 'text/html');
+	const nextRoot = documentFragment.querySelector(ARCHIVE_PAGE_SELECTOR);
+	const currentRoot = document.querySelector(ARCHIVE_PAGE_SELECTOR);
+
+	if (!nextRoot || !currentRoot) {
+		return false;
+	}
+
+	currentRoot.replaceWith(nextRoot);
+	if (documentFragment.title) {
+		document.title = documentFragment.title;
+	}
+
+	return true;
+};
+
+const loadArchivePage = async (url, pushState = true) => {
+	const currentRoot = document.querySelector(ARCHIVE_PAGE_SELECTOR);
+	if (!currentRoot) {
+		window.location.href = url;
+		return;
+	}
+
+	currentRoot.classList.add('opacity-60', 'pointer-events-none');
+
+	try {
+		const response = await fetch(url, {
+			headers: {
+				'X-Requested-With': 'XMLHttpRequest',
+			},
+			credentials: 'same-origin',
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed with status ${response.status}`);
+		}
+
+		const html = await response.text();
+		if (!replaceArchivePageFromHtml(html)) {
+			throw new Error('Archive root not found in response');
+		}
+
+		if (pushState) {
+			window.history.pushState({ archiveDrilldown: true }, '', url);
+		}
+	} catch (error) {
+		window.location.href = url;
+	}
+};
+
+document.addEventListener('click', (event) => {
+	if (!isPrimaryNavigationClick(event)) {
+		return;
+	}
+
+	const link = event.target.closest('a[data-archive-drilldown-link="1"]');
+	if (!link) {
+		return;
+	}
+
+	const url = link.getAttribute('href');
+	if (!url) {
+		return;
+	}
+
+	event.preventDefault();
+	loadArchivePage(url, true);
+});
+
+window.addEventListener('popstate', () => {
+	const hasArchivePage = document.querySelector(ARCHIVE_PAGE_SELECTOR);
+	if (!hasArchivePage) {
+		return;
+	}
+
+	if (!window.location.pathname.includes('/academic-year-archive/year')) {
+		window.location.reload();
+		return;
+	}
+
+	loadArchivePage(window.location.href, false);
+});

@@ -225,7 +225,7 @@
                         <div class="min-w-0">
                             <label class="block text-sm font-medium text-gray-700">Status</label>
                             <select name="status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
-                                @foreach($statuses as $value => $label)
+                                @foreach(($creationStatuses ?? $statuses) as $value => $label)
                                     <option value="{{ $value }}" @selected(old('status', 'pending') === $value)>{{ $label }}</option>
                                 @endforeach
                             </select>

@@ -122,22 +122,26 @@
                             <h3 class="text-base font-semibold text-gray-900">Students</h3>
                         </div>
                         <div class="divide-y divide-gray-100">
-                            @forelse($students as $student)
-                                <a href="{{ route('finance.students.show', $student) }}" class="block px-4 py-4 hover:bg-gray-50 sm:px-5">
-                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                        <div class="min-w-0">
-                                            <p class="font-medium text-gray-900">{{ $student->full_name }}</p>
-                                            <p class="mt-1 break-words text-sm text-gray-500">{{ $student->student_id }} / {{ $student->email }}</p>
-                                            <p class="mt-1 break-words text-xs text-gray-500">{{ $student->phone ?? 'No phone' }} / {{ $student->department->name ?? 'No department' }}</p>
+                            @if(!($shouldLoadStudents ?? false))
+                                <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">Use search or organization filters to load students.</div>
+                            @else
+                                @forelse($students as $student)
+                                    <a href="{{ route('finance.students.show', $student) }}" class="block px-4 py-4 hover:bg-gray-50 sm:px-5">
+                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                            <div class="min-w-0">
+                                                <p class="font-medium text-gray-900">{{ $student->full_name }}</p>
+                                                <p class="mt-1 break-words text-sm text-gray-500">{{ $student->student_id }} / {{ $student->email }}</p>
+                                                <p class="mt-1 break-words text-xs text-gray-500">{{ $student->phone ?? 'No phone' }} / {{ $student->department->name ?? 'No department' }}</p>
+                                            </div>
+                                            @if($selectedStudent?->id === $student->id)
+                                                <span class="self-start rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">Selected</span>
+                                            @endif
                                         </div>
-                                        @if($selectedStudent?->id === $student->id)
-                                            <span class="self-start rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">Selected</span>
-                                        @endif
-                                    </div>
-                                </a>
-                            @empty
-                                <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">No students match this search.</div>
-                            @endforelse
+                                    </a>
+                                @empty
+                                    <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">No students match this search.</div>
+                                @endforelse
+                            @endif
                         </div>
                     </div>
                 </section>

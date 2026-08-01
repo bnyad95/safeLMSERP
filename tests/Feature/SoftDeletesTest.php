@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Semester;
+use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -80,6 +82,31 @@ class SoftDeletesTest extends TestCase
 
         $this->assertNotNull($deletedUser->deleted_at);
         $this->assertTrue($deletedUser->trashed());
+    }
+
+    #[Test]
+    public function semester_can_be_soft_deleted_and_retrieved_with_trashed()
+    {
+        $university = University::create([
+            'name' => 'Test University',
+            'code' => 'TEST',
+            'email' => 'test@example.com',
+            'phone' => '1234567890',
+        ]);
+
+        $semester = Semester::create([
+            'university_id' => $university->id,
+            'name' => 'Fall',
+            'academic_year' => '2024/2025',
+            'start_date' => '2024-08-01',
+            'end_date' => '2024-12-31',
+        ]);
+
+        $semesterId = $semester->id;
+        $semester->delete();
+
+        $this->assertNull(Semester::find($semesterId));
+        $this->assertNotNull(Semester::withTrashed()->find($semesterId));
     }
 
     #[Test]

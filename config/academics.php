@@ -8,4 +8,6 @@ return [
     'attendance_warning_percent' => (float) env('ATTENDANCE_WARNING_PERCENT', 75),
     'attended_statuses' => ['present', 'late', 'excused'],
     'archive_inline_record_limit' => (int) env('ARCHIVE_INLINE_RECORD_LIMIT', 5000),
+    'student_id_prefix' => env('STUDENT_ID_PREFIX', 'STD'),
+    'teacher_id_prefix' => env('TEACHER_ID_PREFIX', 'TCH'),
 ];

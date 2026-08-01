@@ -52,7 +52,7 @@
                     ['label' => 'Modules', 'value' => $summary['section_count'], 'detail' => 'Class modules found'],
                     ['label' => 'Students', 'value' => $summary['student_count'], 'detail' => 'Enrolled students'],
                     ['label' => 'Published Marks', 'value' => $summary['published_marks'], 'detail' => 'Visible result rows'],
-                    ['label' => 'Open Invoices', 'value' => $summary['open_finance_invoices'], 'detail' => 'Carried to finance follow-up'],
+                    ['label' => 'Open Invoices', 'value' => $summary['open_finance_invoices'], 'detail' => 'Will be archived with the year'],
                 ] as $stat)
                     <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                         <p class="text-xs font-semibold uppercase text-gray-500">{{ $stat['label'] }}</p>
@@ -113,7 +113,7 @@
                         </div>
                         @if($summary['open_finance_by_currency']->isNotEmpty())
                             <div class="rounded-md border border-amber-200 bg-amber-50 p-4">
-                                <p class="text-sm font-semibold text-amber-900">Open finance carried forward</p>
+                                <p class="text-sm font-semibold text-amber-900">Open finance archived with this year</p>
                                 <div class="mt-2 space-y-1 text-sm text-amber-900">
                                     @foreach($summary['open_finance_by_currency'] as $total)
                                         <p>{{ number_format($total['total'], 2) }} {{ $total['currency'] }}</p>

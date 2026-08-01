@@ -7,6 +7,7 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +23,7 @@ class FinanceController extends Controller
         $query = $filters['q'];
         $user = $request->user();
         $selectedStudent = null;
+        $shouldLoadStudents = $query !== '' || (bool) $filters['college_id'] || (bool) $filters['department_id'];
 
         if ($request->filled('student_id')) {
             $params = $request->except('student_id');
@@ -29,28 +31,32 @@ class FinanceController extends Controller
             return redirect()->route('finance.students.show', array_merge(['student' => $request->integer('student_id')], $params));
         }
 
-        $students = Student::with(['department.college', 'university'])
-            ->when($query !== '', function ($builder) use ($query) {
-                $builder->where(function ($q) use ($query) {
-                    $q->where('full_name', 'like', "%{$query}%")
-                        ->orWhere('email', 'like', "%{$query}%")
-                        ->orWhere('student_id', 'like', "%{$query}%")
-                        ->orWhere('phone', 'like', "%{$query}%");
-                });
-            })
-            ->when($filters['college_id'], fn ($builder) => $builder->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
-            ->when($filters['department_id'], fn ($builder) => $builder->where('department_id', $filters['department_id']))
-            ->latest()
-            ->limit($query === '' ? 8 : 25)
-            ->get();
+        $students = $shouldLoadStudents
+            ? $this->scopedStudentQuery($user)
+                ->with(['department.college', 'university'])
+                ->when($query !== '', function ($builder) use ($query) {
+                    $builder->where(function ($q) use ($query) {
+                        $q->where('full_name', 'like', "%{$query}%")
+                            ->orWhere('email', 'like', "%{$query}%")
+                            ->orWhere('student_id', 'like', "%{$query}%")
+                            ->orWhere('phone', 'like', "%{$query}%");
+                    });
+                })
+                ->when($filters['college_id'], fn ($builder) => $builder->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
+                ->when($filters['department_id'], fn ($builder) => $builder->where('department_id', $filters['department_id']))
+                ->latest()
+                ->limit(25)
+                ->get()
+            : collect();
 
-        $transactionQuery = FinanceTransaction::with(['student.department.college', 'recorder', 'approver', 'voider', 'invoice', 'originalTransaction'])
+        $transactionQuery = $this->scopedFinanceQuery($user)
+            ->with(['student.department.college', 'recorder', 'approver', 'voider', 'invoice', 'originalTransaction'])
             ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
             ->latest('transaction_date')
             ->latest();
         $transactions = $transactionQuery->paginate(20)->withQueryString();
 
-        $scopeBalanceQuery = FinanceTransaction::query();
+        $scopeBalanceQuery = $this->scopedFinanceQuery($user);
         $this->applyFinanceFilters($scopeBalanceQuery, array_merge($filters, [
             'type' => '',
             'status' => '',
@@ -70,6 +76,7 @@ class FinanceController extends Controller
             'query' => $query,
             'filters' => $filters,
             'students' => $students,
+            'shouldLoadStudents' => $shouldLoadStudents,
             'selectedStudent' => $selectedStudent,
             'transactions' => $transactions,
             'stats' => [
@@ -82,7 +89,7 @@ class FinanceController extends Controller
             'selectedBalance' => $selectedBalance,
             'selectedPaymentStatus' => $selectedPaymentStatus,
             'invoiceOptions' => $selectedStudent ? $this->invoiceOptions($selectedStudent) : collect(),
-            'filterOptions' => $this->financeFilterOptions(),
+            'filterOptions' => $this->financeFilterOptions($user),
             'types' => [
                 'invoice' => 'Invoice / Tuition Charge',
                 'payment' => 'Payment',
@@ -103,6 +110,7 @@ class FinanceController extends Controller
     public function showStudent(Request $request, Student $student)
     {
         $this->authorizeStudentFinanceView($request->user());
+        $this->authorizeStudentScope($request->user(), $student);
 
         $filters = $this->financeFilters($request);
         $user = $request->user();
@@ -113,8 +121,8 @@ class FinanceController extends Controller
             'user.accountBlocker',
         ]);
 
-        $transactionQuery = FinanceTransaction::with(['student.department.college', 'recorder', 'approver', 'voider', 'invoice', 'originalTransaction'])
-            ->where('student_id', $student->id)
+        $transactionQuery = $this->scopedFinanceQuery($user)
+            ->with(['student.department.college', 'recorder', 'approver', 'voider', 'invoice', 'originalTransaction'])
             ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
             ->latest('transaction_date')
             ->latest();
@@ -141,7 +149,7 @@ class FinanceController extends Controller
             'selectedPaymentStatus' => $selectedPaymentStatus,
             'paymentPlanSummary' => $paymentPlanSummary,
             'invoiceOptions' => $this->invoiceOptions($student),
-            'filterOptions' => $this->financeFilterOptions(),
+            'filterOptions' => $this->financeFilterOptions($user),
             'semesterOptions' => Semester::where('university_id', $student->university_id)
                 ->orderByDesc('academic_year')
                 ->orderBy('start_date')
@@ -155,6 +163,7 @@ class FinanceController extends Controller
                 'refund' => 'Refund',
             ],
             'statuses' => ['pending' => 'Pending', 'paid' => 'Paid', 'partial' => 'Partial', 'approved' => 'Approved', 'cancelled' => 'Cancelled'],
+            'creationStatuses' => ['pending' => 'Pending', 'paid' => 'Paid'],
             'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'paid' => 'Paid', 'overdue' => 'Overdue', 'cancelled' => 'Cancelled'],
             'canCreateInvoice' => $user->hasRole('super_administrator') || $user->hasPermission('finance.create_invoice'),
             'canRecordPayment' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.record_payment', 'finance.record_expense', 'finance.refund']),
@@ -172,7 +181,7 @@ class FinanceController extends Controller
         if (! in_array($filters['payment_status'], ['', 'open', 'partial', 'overdue'], true)) {
             $filters['payment_status'] = '';
         }
-        $students = $this->tuitionReminderStudents($filters);
+        $students = $this->tuitionReminderStudents($filters, [], $request->user());
         $studentIds = $students->modelKeys();
         $balancesByStudent = $this->balanceRowsByStudentIds($studentIds);
         $oldestDueDates = $this->oldestDueDatesByStudentIds($studentIds, $filters);
@@ -192,7 +201,7 @@ class FinanceController extends Controller
 
         return view('finance.tuition-reminders', [
             'filters' => $filters,
-            'filterOptions' => $this->financeFilterOptions(),
+            'filterOptions' => $this->financeFilterOptions($request->user()),
             'reminderRows' => $reminderRows,
             'stats' => [
                 ['label' => 'Students In View', 'value' => (string) $reminderRows->count(), 'detail' => 'Filtered students with unpaid tuition'],
@@ -213,7 +222,7 @@ class FinanceController extends Controller
             'type' => ['required', 'in:invoice,payment,discount,scholarship,refund'],
             'amount' => ['required', 'numeric', 'min:0.01', 'max:999999999.99'],
             'currency' => ['required', 'in:IQD,USD'],
-            'status' => ['required', 'in:pending,paid,partial,approved,cancelled'],
+            'status' => ['required', 'in:pending,paid'],
             'invoice_number' => ['nullable', 'string', 'max:100', 'unique:finance_transactions,invoice_number'],
             'receipt_number' => ['nullable', 'string', 'max:100', 'unique:finance_transactions,receipt_number'],
             'reference' => ['nullable', 'string', 'max:100'],
@@ -228,8 +237,11 @@ class FinanceController extends Controller
 
         $validated['recorded_by'] = $request->user()->id;
 
-        $transactions = DB::transaction(function () use (&$validated) {
-            Student::whereKey($validated['student_id'])->lockForUpdate()->firstOrFail();
+        $transactions = DB::transaction(function () use (&$validated, $request) {
+            $this->scopedStudentQuery($request->user())
+                ->whereKey($validated['student_id'])
+                ->lockForUpdate()
+                ->firstOrFail();
             $validated['invoice_transaction_id'] = $this->validatedInvoiceAllocation($validated);
             $isSemesterPlan = $validated['type'] === 'invoice' && ($validated['payment_plan'] ?? 'full') === 'semester';
             $validated['invoice_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'invoice_number');
@@ -257,7 +269,7 @@ class FinanceController extends Controller
     public function approve(Request $request, FinanceTransaction $financeTransaction)
     {
         $this->authorizeFinanceApproval($financeTransaction);
-        abort_if($financeTransaction->status === 'cancelled', 422);
+        abort_unless($financeTransaction->status === 'pending', 422);
 
         DB::transaction(function () use ($request, $financeTransaction) {
             $financeTransaction->update([
@@ -281,7 +293,6 @@ class FinanceController extends Controller
     public function void(Request $request, FinanceTransaction $financeTransaction)
     {
         $this->authorizeFinanceVoid($financeTransaction);
-        abort_if($financeTransaction->status === 'cancelled' || $financeTransaction->original_transaction_id, 422);
 
         $validated = $request->validate([
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -289,7 +300,13 @@ class FinanceController extends Controller
 
         DB::transaction(function () use ($request, $financeTransaction, $validated) {
             Student::whereKey($financeTransaction->student_id)->lockForUpdate()->firstOrFail();
-            $financeTransaction->refresh();
+            $financeTransaction = FinanceTransaction::query()
+                ->whereKey($financeTransaction->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_if($financeTransaction->status === 'cancelled' || $financeTransaction->original_transaction_id, 422);
+
             $reversalType = $this->reversalType($financeTransaction->type);
             $reversal = FinanceTransaction::create([
                 'student_id' => $financeTransaction->student_id,
@@ -410,7 +427,8 @@ class FinanceController extends Controller
         $filters = $this->financeFilters($request);
         $students = $this->tuitionReminderStudents(
             $filters,
-            $studentIds
+            $studentIds,
+            $request->user()
         );
         $balancesByStudent = $this->balanceRowsByStudentIds($students->modelKeys());
 
@@ -468,7 +486,9 @@ class FinanceController extends Controller
 
     public function statement(Student $student)
     {
-        $this->authorizeStudentFinanceView(auth()->user());
+        $user = auth()->user();
+        $this->authorizeStudentFinanceView($user);
+        $this->authorizeStudentScope($user, $student);
 
         $student->load(['department', 'university']);
         $transactions = $student->financeTransactions()
@@ -492,11 +512,14 @@ class FinanceController extends Controller
 
     public function export(Request $request): StreamedResponse
     {
+        $user = $request->user();
         $filters = $this->financeFilters($request);
         $studentId = $request->integer('student_id') ?: null;
 
         if ($studentId) {
-            $this->authorizeStudentFinanceView($request->user());
+            $this->authorizeStudentFinanceView($user);
+            $student = $this->scopedStudentQuery($user)->findOrFail($studentId);
+            $studentId = $student->id;
         } else {
             $this->requireAnyPermission('finance.view');
         }
@@ -508,7 +531,7 @@ class FinanceController extends Controller
             'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
         ];
 
-        $callback = function () use ($studentId, $filters) {
+        $callback = function () use ($studentId, $filters, $user) {
             $output = fopen('php://output', 'w');
             fputcsv($output, [
                 'Date',
@@ -532,12 +555,18 @@ class FinanceController extends Controller
                 'Notes',
             ]);
 
-            FinanceTransaction::with(['student', 'recorder', 'approver', 'invoice'])
+            $query = FinanceTransaction::with(['student', 'recorder', 'approver', 'invoice'])
                 ->when($studentId, fn ($builder) => $builder->where('student_id', $studentId))
                 ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
                 ->oldest('transaction_date')
-                ->oldest()
-                ->chunk(200, function ($transactions) use ($output) {
+                ->oldest();
+
+            if (! $studentId) {
+                OrganizationScope::apply($query, $user, 'student_record');
+                $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
+            }
+
+            $query->chunk(200, function ($transactions) use ($output) {
                     foreach ($transactions as $transaction) {
                         fputcsv($output, [
                             $transaction->transaction_date?->format('Y-m-d'),
@@ -609,9 +638,12 @@ class FinanceController extends Controller
         abort_unless($this->canSendTuitionReminder($request->user()), 403);
     }
 
-    private function tuitionReminderStudents(array $filters, array $studentIds = [])
+    private function tuitionReminderStudents(array $filters, array $studentIds = [], ?User $user = null)
     {
-        return Student::with('department')
+        $query = $user ? $this->scopedStudentQuery($user) : Student::query();
+
+        return $query
+            ->with('department')
             ->when($studentIds !== [], fn ($query) => $query->whereKey($studentIds))
             ->when($studentIds === [] && $filters['q'], function ($builder) use ($filters) {
                 $search = $filters['q'];
@@ -635,7 +667,6 @@ class FinanceController extends Controller
                 $this->applyTuitionReminderInvoiceFilters($query, $filters);
             })
             ->latest()
-            ->limit(200)
             ->get();
     }
 
@@ -648,8 +679,8 @@ class FinanceController extends Controller
             ->when($filters['payment_status'] && in_array($filters['payment_status'], ['open', 'partial', 'overdue'], true), fn ($builder) => $builder->where('payment_status', $filters['payment_status']))
             ->when($filters['currency'], fn ($builder) => $builder->where('currency', $filters['currency']))
             ->when($filters['academic_year'], fn ($builder) => $builder->where('academic_year', $filters['academic_year']))
-            ->when($filters['date_from'], fn ($builder) => $builder->whereDate('due_date', '>=', $filters['date_from']))
-            ->when($filters['date_to'], fn ($builder) => $builder->whereDate('due_date', '<=', $filters['date_to']));
+            ->when($filters['date_from'], fn ($builder) => $builder->where('due_date', '>=', $filters['date_from']))
+            ->when($filters['date_to'], fn ($builder) => $builder->where('due_date', '<=', $filters['date_to']));
     }
 
     private function positiveBalances($balances)
@@ -727,16 +758,22 @@ class FinanceController extends Controller
             ->when($filters['payment_status'], fn ($query) => $query->where('payment_status', $filters['payment_status']))
             ->when($filters['currency'], fn ($query) => $query->where('currency', $filters['currency']))
             ->when($filters['academic_year'], fn ($query) => $query->where('academic_year', $filters['academic_year']))
-            ->when($filters['date_from'], fn ($query) => $query->whereDate('transaction_date', '>=', $filters['date_from']))
-            ->when($filters['date_to'], fn ($query) => $query->whereDate('transaction_date', '<=', $filters['date_to']))
+            ->when($filters['date_from'], fn ($query) => $query->where('transaction_date', '>=', $filters['date_from']))
+            ->when($filters['date_to'], fn ($query) => $query->where('transaction_date', '<=', $filters['date_to']))
             ->when($filters['college_id'], fn ($query) => $query->whereHas('student.department', fn ($department) => $department->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($query) => $query->whereHas('student', fn ($student) => $student->where('department_id', $filters['department_id'])));
     }
 
-    private function financeFilterOptions(): array
+    private function financeFilterOptions(User $user): array
     {
+        $query = $this->scopedFinanceQuery($user);
+
         return [
-            'academicYears' => FinanceTransaction::whereNotNull('academic_year')->distinct()->orderByDesc('academic_year')->pluck('academic_year'),
+            'academicYears' => $query
+                ->whereNotNull('academic_year')
+                ->distinct()
+                ->orderByDesc('academic_year')
+                ->pluck('academic_year'),
         ];
     }
 
@@ -761,6 +798,7 @@ class FinanceController extends Controller
     private function balancesByCurrencyQuery($query)
     {
         return (clone $query)
+            ->withoutEagerLoads()
             ->reorder()
             ->select('currency')
             ->selectRaw(
@@ -1042,6 +1080,7 @@ class FinanceController extends Controller
     {
         $user = auth()->user();
         abort_unless($user, 403);
+        $this->authorizeFinanceTransactionScope($user, $transaction);
 
         if ($user->hasRole('super_administrator')) {
             return;
@@ -1058,6 +1097,7 @@ class FinanceController extends Controller
     {
         $user = auth()->user();
         abort_unless($user, 403);
+        $this->authorizeFinanceTransactionScope($user, $transaction);
 
         if ($user->hasRole('super_administrator')) {
             return;
@@ -1112,7 +1152,106 @@ class FinanceController extends Controller
 
         abort_unless($invoice, 422);
 
+        $allocated = (float) $invoice->allocations()
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('type', FinanceTransaction::creditTypes())
+            ->sum('amount');
+        $remaining = round((float) $invoice->amount - $allocated, 2);
+
+        if ((float) $transaction['amount'] > $remaining) {
+            throw ValidationException::withMessages([
+                'amount' => 'The amount exceeds the remaining invoice balance of '.number_format($remaining, 2).' '.$invoice->currency.'.',
+            ]);
+        }
+
         return $invoice->id;
+    }
+
+    private function scopedStudentQuery(User $user)
+    {
+        $query = Student::query();
+        OrganizationScope::apply($query, $user, 'student');
+        $this->applyFinanceOrganizationConstraint($query, $user, 'student');
+
+        return $query;
+    }
+
+    private function scopedFinanceQuery(User $user)
+    {
+        $query = FinanceTransaction::query();
+        OrganizationScope::apply($query, $user, 'student_record');
+        $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
+
+        return $query;
+    }
+
+    private function applyFinanceOrganizationConstraint($query, User $user, string $modelType): void
+    {
+        if ($user->hasRole('super_administrator') || $user->hasAnyRole(['chief_accountant', 'accountant'])) {
+            return;
+        }
+
+        if ($user->department_id) {
+            if ($modelType === 'student') {
+                $query->where('department_id', $user->department_id);
+
+                return;
+            }
+
+            if ($modelType === 'student_record') {
+                $query->whereHas('student', fn ($student) => $student->where('department_id', $user->department_id));
+
+                return;
+            }
+        }
+
+        if ($user->college_id) {
+            if ($modelType === 'student') {
+                $query->whereHas('department', fn ($department) => $department->where('college_id', $user->college_id));
+
+                return;
+            }
+
+            if ($modelType === 'student_record') {
+                $query->whereHas('student.department', fn ($department) => $department->where('college_id', $user->college_id));
+
+                return;
+            }
+        }
+
+        if ($user->university_id) {
+            if ($modelType === 'student') {
+                $query->where('university_id', $user->university_id);
+
+                return;
+            }
+
+            if ($modelType === 'student_record') {
+                $query->whereHas('student', fn ($student) => $student->where('university_id', $user->university_id));
+
+                return;
+            }
+        }
+
+        $query->whereRaw('1 = 0');
+    }
+
+    private function authorizeStudentScope(User $user, Student $student): void
+    {
+        $visible = $this->scopedStudentQuery($user)
+            ->whereKey($student->id)
+            ->exists();
+
+        abort_unless($visible, 404);
+    }
+
+    private function authorizeFinanceTransactionScope(User $user, FinanceTransaction $transaction): void
+    {
+        $visible = $this->scopedFinanceQuery($user)
+            ->whereKey($transaction->id)
+            ->exists();
+
+        abort_unless($visible, 404);
     }
 
     private function documentNumber(array $transaction, string $column): ?string

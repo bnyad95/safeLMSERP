@@ -65,8 +65,9 @@ class StudentController extends Controller
         $this->requireAnyPermission('students.create');
 
         $departments = Department::orderBy('name')->get();
+        $suggestedStudentId = Student::suggestedStudentIdentifier();
 
-        return view('students.create', compact('departments'));
+        return view('students.create', compact('departments', 'suggestedStudentId'));
     }
 
     /**
@@ -366,7 +367,6 @@ class StudentController extends Controller
 
         $rules = [
             'full_name' => ['required', 'string', 'max:255'],
-            'student_id' => ['required', 'string', 'max:100', Rule::unique('students', 'student_id')->ignore($student)],
             'email' => $emailRules,
             'phone' => ['nullable', 'string', 'max:50'],
             'department_id' => ['required', 'exists:departments,id'],

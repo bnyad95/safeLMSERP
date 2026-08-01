@@ -621,6 +621,10 @@ class FinanceTest extends TestCase
 
         $academicAdmin->permissionOverrides()->attach($viewPermission, ['effect' => 'grant']);
         $academicAdmin->permissionOverrides()->attach($blockPermission, ['effect' => 'grant']);
+        $academicAdmin->update([
+            'university_id' => $student->university_id,
+            'department_id' => $student->department_id,
+        ]);
 
         $this->actingAs($academicAdmin)
             ->get(route('finance.students.show', $student))
@@ -642,6 +646,87 @@ class FinanceTest extends TestCase
             ->assertRedirect(route('finance.students.show', $student));
 
         $this->assertNull($studentUser->fresh()->account_blocked_at);
+    }
+
+    public function test_finance_rejects_cancelled_status_on_create(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '100000',
+                'currency' => 'IQD',
+                'status' => 'cancelled',
+                'transaction_date' => '2026-07-09',
+            ])
+            ->assertSessionHasErrors('status');
+    }
+
+    public function test_finance_approve_requires_pending_status(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'payment',
+            'amount' => '100',
+            'balance_after' => '-100',
+            'currency' => 'USD',
+            'status' => 'approved',
+            'payment_status' => 'paid',
+            'receipt_number' => 'RCT-2026-009900',
+            'transaction_date' => '2026-07-10',
+        ]);
+
+        $transaction = FinanceTransaction::firstOrFail();
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.approve', $transaction))
+            ->assertStatus(422);
+    }
+
+    public function test_finance_rejects_over_allocated_invoice_payment(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'transaction_date' => '2026-07-09',
+            'due_date' => '2026-08-09',
+        ]);
+        $invoice = FinanceTransaction::where('type', 'invoice')->firstOrFail();
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'invoice_transaction_id' => $invoice->id,
+            'type' => 'payment',
+            'amount' => '800',
+            'currency' => 'USD',
+            'status' => 'paid',
+            'transaction_date' => '2026-07-10',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'invoice_transaction_id' => $invoice->id,
+                'type' => 'payment',
+                'amount' => '300',
+                'currency' => 'USD',
+                'status' => 'paid',
+                'transaction_date' => '2026-07-11',
+            ])
+            ->assertSessionHasErrors('amount');
     }
 
     public function test_accountant_can_send_tuition_reminders_to_checked_students(): void

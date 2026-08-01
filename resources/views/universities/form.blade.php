@@ -13,6 +13,14 @@
         </div>
 
         <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Institution type</label>
+            <select name="institution_type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                <option value="university" @selected(old('institution_type', $university->institution_type ?? 'university') === 'university')>University (4 stages)</option>
+                <option value="institute" @selected(old('institution_type', $university->institution_type ?? 'university') === 'institute')>Institute (2 stages)</option>
+            </select>
+        </div>
+
+        <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
             <input type="email" name="email" value="{{ old('email', $university->email ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
         </div>

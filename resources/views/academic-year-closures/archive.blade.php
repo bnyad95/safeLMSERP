@@ -24,7 +24,7 @@
                     <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ number_format($years->sum('student_count')) }}</p>
                 </div>
                 <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                    <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Open Invoices Carried</p>
+                    <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Open Invoices At Closure</p>
                     <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ number_format($years->sum('open_finance_invoices')) }}</p>
                 </div>
             </section>

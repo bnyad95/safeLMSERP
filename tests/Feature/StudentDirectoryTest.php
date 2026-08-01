@@ -134,13 +134,12 @@ class StudentDirectoryTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('students.store'), $this->studentPayload($department, [
-                'student_id' => 'SYNC-100',
                 'full_name' => 'Original Student',
                 'email' => 'original.student@example.com',
             ]))
             ->assertRedirect(route('students.index'));
 
-        $student = Student::where('student_id', 'SYNC-100')->firstOrFail();
+        $student = Student::where('email', 'original.student@example.com')->firstOrFail();
         $account = User::findOrFail($student->user_id);
 
         $this->assertTrue(Hash::check('TempPassword123', $account->password));
@@ -149,7 +148,6 @@ class StudentDirectoryTest extends TestCase
 
         $this->actingAs($admin)
             ->put(route('students.update', $student), $this->studentPayload($department, [
-                'student_id' => 'SYNC-100',
                 'full_name' => 'Updated Student',
                 'email' => 'updated.student@example.com',
             ]))
@@ -170,7 +168,6 @@ class StudentDirectoryTest extends TestCase
 
         $this->actingAs($registrar)
             ->post(route('students.store'), $this->studentPayload($department, [
-                'student_id' => 'REG-100',
                 'full_name' => 'Registrar Created Student',
                 'email' => 'registrar.created@example.com',
                 'password' => 'RegistrarTemp123',
@@ -178,7 +175,7 @@ class StudentDirectoryTest extends TestCase
             ]))
             ->assertRedirect(route('students.index'));
 
-        $student = Student::where('student_id', 'REG-100')->firstOrFail();
+        $student = Student::where('email', 'registrar.created@example.com')->firstOrFail();
         $account = User::findOrFail($student->user_id);
 
         $this->assertSame('Registrar Created Student', $account->name);
@@ -198,7 +195,6 @@ class StudentDirectoryTest extends TestCase
 
         $this->actingAs($registrar)
             ->post(route('students.store'), $this->studentPayload($department, [
-                'student_id' => 'FORCE-100',
                 'full_name' => 'Temporary Password Student',
                 'email' => 'temporary.password@example.com',
                 'password' => 'Temporary123',
@@ -239,12 +235,11 @@ class StudentDirectoryTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('students.store'), $this->studentPayload($department, [
-                'student_id' => 'ARCH-100',
                 'full_name' => 'Archive Student',
                 'email' => 'archive.student@example.com',
             ]));
 
-        $student = Student::where('student_id', 'ARCH-100')->firstOrFail();
+        $student = Student::where('email', 'archive.student@example.com')->firstOrFail();
         $userId = $student->user_id;
 
         $this->actingAs($admin)

@@ -82,10 +82,37 @@
 
         <div class="flex-1 overflow-y-auto px-3 py-4">
             <div class="space-y-1">
+                @php
+                    $sidebarUser = Auth::user();
+                    $sidebarStudentId = null;
+
+                    if ($sidebarUser?->hasRole('student')) {
+                        $sidebarStudentId = \App\Models\Student::query()
+                            ->where('email', $sidebarUser->email)
+                            ->value('id');
+                    }
+
+                    $sidebarSeenAtRaw = session('notifications_sidebar_seen_at');
+
+                    $hasNewNotifications = \App\Models\AppNotification::query()
+                        ->where(function ($query) use ($sidebarUser, $sidebarStudentId) {
+                            $query->where('user_id', $sidebarUser->id);
+
+                            if ($sidebarStudentId) {
+                                $query->orWhere('student_id', $sidebarStudentId);
+                            }
+                        })
+                        ->when($sidebarSeenAtRaw, function ($query, $sidebarSeenAtRaw) {
+                            $query->where('created_at', '>', \Illuminate\Support\Carbon::parse($sidebarSeenAtRaw));
+                        }, function ($query) {
+                            $query->whereNull('read_at');
+                        })
+                        ->exists();
+                @endphp
                 <x-nav-link :href="Auth::user()?->hasRole('student') ? route('student-portal') : route('dashboard')" :active="request()->routeIs('dashboard') || (Auth::user()?->hasRole('student') && request()->routeIs('student-portal'))">
                     {{ __('Dashboard') }}
                 </x-nav-link>
-                <x-nav-link :href="route('notifications.index')" :active="request()->routeIs('notifications.*')">
+                <x-nav-link :href="route('notifications.index')" :active="request()->routeIs('notifications.*')" :class="$hasNewNotifications && ! request()->routeIs('notifications.*') ? 'font-bold text-gray-900 dark:text-gray-100' : ''">
                     {{ __('Notifications') }}
                 </x-nav-link>
                 @if (Auth::user()?->hasRole('student'))

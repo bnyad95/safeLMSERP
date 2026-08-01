@@ -9,7 +9,17 @@ class University extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'code', 'email', 'phone'];
+    protected $fillable = ['name', 'code', 'email', 'phone', 'institution_type'];
+
+    public function isInstitute(): bool
+    {
+        return $this->institution_type === 'institute';
+    }
+
+    public function expectedStageCount(): int
+    {
+        return $this->isInstitute() ? 2 : 4;
+    }
 
     public function colleges()
     {

@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -52,8 +51,9 @@ class TeacherController extends Controller
         $departments = $this->scopedDepartments(request()->user());
         $colleges = $this->scopedColleges(request()->user());
         $universities = $this->scopedUniversities(request()->user());
+        $suggestedStaffId = Teacher::suggestedStaffIdentifier();
 
-        return view('teachers.create', compact('departments', 'colleges', 'universities'));
+        return view('teachers.create', compact('departments', 'colleges', 'universities', 'suggestedStaffId'));
     }
 
     public function store(Request $request)
@@ -62,21 +62,19 @@ class TeacherController extends Controller
 
         $validated = $this->validateTeacher($request);
         $this->validateOrganizationSelection($validated);
+        $temporaryPassword = $validated['password'];
+        unset($validated['password']);
         unset($validated['college_id']);
 
-        [$teacher, $accountCreated] = DB::transaction(function () use ($validated) {
+        [$teacher, $accountCreated] = DB::transaction(function () use ($validated, $temporaryPassword) {
             $teacher = Teacher::create($validated);
-            $accountCreated = $this->syncTeacherUser($teacher);
+            $accountCreated = $this->syncTeacherUser($teacher, $temporaryPassword, true);
 
             return [$teacher, $accountCreated];
         });
 
-        if ($accountCreated) {
-            Password::sendResetLink(['email' => $teacher->email]);
-        }
-
         $message = $accountCreated
-            ? 'Teacher created successfully. A secure password setup link was sent to the teacher email.'
+            ? 'Teacher created successfully. Temporary password set. Teacher must change password at first login.'
             : 'Teacher created successfully. The existing login account was linked to the teacher profile.';
 
         return redirect()->route('teachers.index')->with('success', $message);
@@ -221,16 +219,21 @@ class TeacherController extends Controller
             $emailRules[] = Rule::unique('users', 'email')->ignore($linkedUser?->id);
         }
 
-        return $request->validate([
+        $rules = [
             'full_name' => ['required', 'string', 'max:255'],
-            'staff_id' => ['required', 'string', 'max:100', Rule::unique('teachers', 'staff_id')->ignore($teacher)],
             'email' => $emailRules,
             'title' => ['nullable', 'string', 'max:100'],
             'university_id' => ['required', 'exists:universities,id'],
             'college_id' => ['nullable', 'exists:colleges,id'],
             'department_id' => ['required', 'exists:departments,id'],
             'status' => ['required', Rule::in(['Active', 'Inactive', 'Retired'])],
-        ]);
+        ];
+
+        if (! $teacher) {
+            $rules['password'] = ['required', 'string', 'min:8', 'confirmed'];
+        }
+
+        return $request->validate($rules);
     }
 
     private function validateOrganizationSelection(array $validated): void
@@ -443,14 +446,14 @@ class TeacherController extends Controller
         abort_unless($visible, 403);
     }
 
-    private function syncTeacherUser(Teacher $teacher): bool
+    private function syncTeacherUser(Teacher $teacher, ?string $temporaryPassword = null, bool $forcePasswordChange = false): bool
     {
         $user = $this->linkedUser($teacher)
             ?: User::withTrashed()->where('email', $teacher->email)->first();
         $accountCreated = ! $user;
 
         if (! $user) {
-            $user = new User(['password' => Str::password(32)]);
+            $user = new User(['password' => $temporaryPassword ?? Str::password(32)]);
             $user->email_verified_at = now();
         } elseif ($user->trashed()) {
             $user->restore();
@@ -463,6 +466,15 @@ class TeacherController extends Controller
             'college_id' => $teacher->department?->college_id,
             'department_id' => $teacher->department_id,
         ]);
+
+        if ($temporaryPassword !== null) {
+            $user->password = $temporaryPassword;
+        }
+
+        if ($forcePasswordChange) {
+            $user->must_change_password = true;
+        }
+
         $user->save();
 
         $teacherRole = Role::firstOrCreate(

@@ -42,7 +42,7 @@ class ArchivedClassController extends Controller
             })
             ->pluck('id');
 
-        $enrollments = Enrollment::with([
+        $enrollments = Enrollment::withTrashed()->with([
                 'courseSection.course.department.college',
                 'courseSection.semester',
                 'courseSection.teacher',
@@ -52,7 +52,7 @@ class ArchivedClassController extends Controller
             ->orderByDesc('updated_at')
             ->get();
 
-        $marks = Mark::with('course')
+        $marks = Mark::withTrashed()->with('course')
             ->where('student_id', $student->id)
             ->whereIn('course_section_id', $enrollments->pluck('course_section_id')->filter())
             ->where('visibility_status', 'published')
@@ -81,11 +81,11 @@ class ArchivedClassController extends Controller
         $sections = CourseSection::withTrashed()
             ->with(['course.department.college', 'semester', 'teacher'])
             ->withCount([
-                'enrollments as roster_count',
+                'enrollments as roster_count' => fn ($query) => $query->withTrashed(),
                 'assessmentItems',
                 'materials',
                 'streamPosts',
-                'marks',
+                'marks' => fn ($query) => $query->withTrashed(),
             ])
             ->where('teacher_id', $teacher->id)
             ->where(function ($query) {

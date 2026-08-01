@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\AcademicYear;
 use App\Models\AcademicYearClosure;
 use App\Models\AssessmentItem;
+use App\Models\AssessmentSubmission;
 use App\Models\Attendance;
 use App\Models\ClassMessage;
+use App\Models\ClassStreamComment;
 use App\Models\ClassStreamPost;
+use App\Models\ClassStreamReaction;
 use App\Models\CourseMaterial;
 use App\Models\CourseSection;
 use App\Models\Enrollment;
@@ -70,7 +73,7 @@ class AcademicYearClosureController extends Controller
     {
         $this->authorizeArchiveView($request);
 
-        $data = $this->archiveYearData($request, false);
+        $data = $this->archiveYearData($request, false, true);
         $filename = 'academic-year-archive-results-'.str($data['academicYear'])->replace(['/', '\\', ' '], '-')->toString().'-'.now()->format('Y-m-d-His').'.csv';
 
         return response()->streamDownload(function () use ($data) {
@@ -91,6 +94,8 @@ class AcademicYearClosureController extends Controller
             ]);
 
             if ($data['resultRows']->isNotEmpty()) {
+                $exportedKeys = [];
+
                 foreach ($data['resultRows'] as $mark) {
                     $section = $mark->courseSection;
                     $course = $mark->course ?? $section?->course;
@@ -114,6 +119,30 @@ class AcademicYearClosureController extends Controller
                         $section?->section_code,
                         number_format((float) $mark->final_mark, 2, '.', ''),
                         $passed ? 'Passed' : 'Failed',
+                    ]);
+
+                    $exportedKeys[$this->archiveResultKeyFromModel($mark)] = true;
+                }
+
+                foreach ($data['snapshotResultRows'] as $row) {
+                    $key = $this->archiveResultRowKey($row);
+                    if ($key !== '' && isset($exportedKeys[$key])) {
+                        continue;
+                    }
+
+                    fputcsv($handle, [
+                        $data['academicYear'],
+                        $row['student_number'] ?? '',
+                        $row['student_name'] ?? '',
+                        $row['college'] ?? '',
+                        $row['department'] ?? '',
+                        $row['stage'] ?? 'No stage',
+                        trim(($row['semester'] ?? '').' '.($row['academic_year'] ?? '')) ?: $data['academicYear'],
+                        $row['course_code'] ?? '',
+                        $row['course_name'] ?? '',
+                        $row['group'] ?? '',
+                        number_format((float) ($row['final_mark'] ?? 0), 2, '.', ''),
+                        $row['result'] ?? ((float) ($row['final_mark'] ?? 0) >= 50 ? 'Passed' : 'Failed'),
                     ]);
                 }
             } else {
@@ -139,7 +168,7 @@ class AcademicYearClosureController extends Controller
         }, $filename, ['Content-Type' => 'text/csv']);
     }
 
-    private function archiveYearData(Request $request, bool $limitResults = true): array
+    private function archiveYearData(Request $request, bool $limitResults = true, bool $forceLoadStudents = false): array
     {
         $validated = $request->validate([
             'academic_year' => ['required', 'string'],
@@ -148,13 +177,14 @@ class AcademicYearClosureController extends Controller
             'department_id' => ['nullable', 'integer'],
             'stage' => ['nullable', 'string'],
             'semester_id' => ['nullable', 'integer'],
+            'students' => ['nullable', Rule::in(['0', '1'])],
             'result_status' => ['nullable', Rule::in(['passed', 'failed'])],
             'sort' => ['nullable', Rule::in(['final_desc', 'final_asc', 'student_asc', 'student_desc', 'course_asc'])],
         ]);
 
         $academicYear = $validated['academic_year'];
         $q = trim((string) ($validated['q'] ?? ''));
-        $semesterQuery = Semester::where('academic_year', $academicYear);
+        $semesterQuery = Semester::withTrashed()->where('academic_year', $academicYear);
         $this->scopeArchiveQuery($semesterQuery, $request->user(), 'semester');
         $semesterIds = $semesterQuery->pluck('id');
         $closureSummary = $this->archiveSummaryForYear($academicYear, $request->user());
@@ -173,8 +203,10 @@ class AcademicYearClosureController extends Controller
         $departmentId = $validated['department_id'] ?? null;
         $stage = $validated['stage'] ?? null;
         $semesterId = $validated['semester_id'] ?? null;
+        $loadStudents = $forceLoadStudents || (($validated['students'] ?? '0') === '1');
         $resultStatus = $validated['result_status'] ?? null;
         $sort = $validated['sort'] ?? 'final_desc';
+        $isClassroomStep = filled($stage);
 
         $filteredSectionQuery = $this->archivedModulesForYear($semesterIds, $request->user())
             ->when($collegeId, fn ($query) => $query->whereHas('course.department', fn ($department) => $department->where('college_id', $collegeId)))
@@ -187,82 +219,29 @@ class AcademicYearClosureController extends Controller
             ->pluck('id');
 
         $sections = (clone $filteredSectionQuery)
-            ->withCount([
-                'enrollments as enrollment_count',
-                'marks',
-                'assessmentItems',
-            ])
+            ->when($isClassroomStep, fn ($query) => $query->withCount([
+                'enrollments as enrollment_count' => fn ($enrollments) => $enrollments->withTrashed(),
+                'marks' => fn ($marks) => $marks->withTrashed(),
+                'assessmentItems' => fn ($assessments) => $assessments->withTrashed(),
+            ]))
             ->orderBy('semester_id')
             ->orderBy('grade_level')
             ->orderBy('section_code')
-            ->when($limitResults, fn ($query) => $query->limit(500))
+            ->when($limitResults && $isClassroomStep, fn ($query) => $query->limit(500))
             ->get();
-        $resultBaseQuery = Mark::with([
-            'student.department.college',
-            'course.department.college',
-            'courseSection.semester',
-            'courseSection.course.department.college',
-        ])
-            ->where('visibility_status', 'published')
-            ->whereNotNull('final_mark');
-
-        if ($sectionIds->isNotEmpty()) {
-            $resultBaseQuery->whereIn('course_section_id', $sectionIds);
-        } elseif ($usingSnapshotFallback) {
-            $resultBaseQuery->whereNull('course_section_id');
-        } else {
-            $resultBaseQuery->whereRaw('1 = 0');
-        }
-
-        $this->scopeArchiveMarkQuery($resultBaseQuery, $request->user());
-        $this->applyArchiveResultSearch($resultBaseQuery, $q);
-
         $resultStats = [
-            'published' => (clone $resultBaseQuery)->count(),
-            'passed' => (clone $resultBaseQuery)->where('final_mark', '>=', 50)->count(),
-            'failed' => (clone $resultBaseQuery)->where('final_mark', '<', 50)->count(),
+            'published' => 0,
+            'passed' => 0,
+            'failed' => 0,
         ];
-
-        $databaseStudentResultStats = $this->studentArchiveResultStats($resultBaseQuery);
-        $studentIdsForDisplay = $this->studentArchiveResultStudentIds(
-            $resultBaseQuery,
-            $resultStatus,
-            $sort,
-            $limitResults ? 500 : null
-        );
-        $studentResultSourceRows = $studentIdsForDisplay->isNotEmpty()
-            ? $this->markRowsForStudentArchive((clone $resultBaseQuery)->whereIn('student_id', $studentIdsForDisplay)->get())
-            : collect();
-
-        $resultRows = (clone $resultBaseQuery)
-            ->when($resultStatus === 'passed', fn ($query) => $query->where('final_mark', '>=', 50))
-            ->when($resultStatus === 'failed', fn ($query) => $query->where('final_mark', '<', 50));
-
-        match ($sort) {
-            'final_asc' => $resultRows->orderBy('final_mark')->orderBy('id'),
-            'student_asc' => $resultRows
-                ->join('students', 'marks.student_id', '=', 'students.id')
-                ->select('marks.*')
-                ->orderBy('students.full_name')
-                ->orderByDesc('marks.final_mark'),
-            'student_desc' => $resultRows
-                ->join('students', 'marks.student_id', '=', 'students.id')
-                ->select('marks.*')
-                ->orderByDesc('students.full_name')
-                ->orderByDesc('marks.final_mark'),
-            'course_asc' => $resultRows
-                ->join('courses', 'marks.course_id', '=', 'courses.id')
-                ->select('marks.*')
-                ->orderBy('courses.name')
-                ->orderByDesc('marks.final_mark'),
-            default => $resultRows->orderByDesc('final_mark')->orderBy('id'),
-        };
-
-        if ($limitResults) {
-            $resultRows->limit(500);
-        }
-
-        $resultRows = $resultRows->get();
+        $resultRows = collect();
+        $studentResultRows = collect();
+        $studentResultStats = [
+            'students' => 0,
+            'passed' => 0,
+            'failed' => 0,
+        ];
+        $snapshotResultRows = collect();
         $snapshotModules = $this->snapshotModulesForArchive($archiveSnapshot, $request->user(), [
             'q' => $q,
             'college_id' => $collegeId,
@@ -288,37 +267,124 @@ class AcademicYearClosureController extends Controller
             'result_status' => null,
             'sort' => $sort,
         ]);
+        $snapshotPublishedResults = $this->snapshotResultsForArchive($archiveSnapshot, $request->user(), [
+            'q' => $q,
+            'college_id' => $collegeId,
+            'department_id' => $departmentId,
+            'stage' => $stage,
+            'semester_id' => $semesterId,
+            'result_status' => null,
+            'sort' => $sort,
+        ]);
+        if ($loadStudents) {
+            $resultBaseQuery = Mark::withTrashed()->with([
+                'student.department.college',
+                'course.department.college',
+                'courseSection.semester',
+                'courseSection.course.department.college',
+            ])
+                ->where('visibility_status', 'published')
+                ->whereNotNull('final_mark');
 
-        if ($resultRows->isEmpty() && $snapshotResultRows->isNotEmpty()) {
-            $snapshotPublishedResults = $this->snapshotResultsForArchive($archiveSnapshot, $request->user(), [
-                'q' => $q,
-                'college_id' => $collegeId,
-                'department_id' => $departmentId,
-                'stage' => $stage,
-                'semester_id' => $semesterId,
-                'result_status' => null,
-                'sort' => $sort,
-            ]);
+            if ($sectionIds->isNotEmpty()) {
+                $resultBaseQuery->whereIn('course_section_id', $sectionIds);
+            } elseif ($usingSnapshotFallback) {
+                $resultBaseQuery->whereNull('course_section_id');
+            } else {
+                $resultBaseQuery->whereRaw('1 = 0');
+            }
+
+            $this->scopeArchiveMarkQuery($resultBaseQuery, $request->user());
+            $this->applyArchiveResultSearch($resultBaseQuery, $q);
 
             $resultStats = [
-                'published' => $snapshotPublishedResults->count(),
-                'passed' => $snapshotPublishedResults->where('result', 'Passed')->count(),
-                'failed' => $snapshotPublishedResults->where('result', 'Failed')->count(),
+                'published' => (clone $resultBaseQuery)->count(),
+                'passed' => (clone $resultBaseQuery)->where('final_mark', '>=', 50)->count(),
+                'failed' => (clone $resultBaseQuery)->where('final_mark', '<', 50)->count(),
+            ];
+
+            $studentIdsForDisplay = $this->studentArchiveResultStudentIds(
+                $resultBaseQuery,
+                $resultStatus,
+                $sort,
+                $limitResults ? 500 : null
+            );
+            $studentResultSourceRows = $studentIdsForDisplay->isNotEmpty()
+                ? $this->markRowsForStudentArchive((clone $resultBaseQuery)->whereIn('student_id', $studentIdsForDisplay)->get())
+                : collect();
+
+            $resultRows = (clone $resultBaseQuery)
+                ->when($resultStatus === 'passed', fn ($query) => $query->where('final_mark', '>=', 50))
+                ->when($resultStatus === 'failed', fn ($query) => $query->where('final_mark', '<', 50));
+
+            match ($sort) {
+                'final_asc' => $resultRows->orderBy('final_mark')->orderBy('id'),
+                'student_asc' => $resultRows
+                    ->join('students', 'marks.student_id', '=', 'students.id')
+                    ->select('marks.*')
+                    ->orderBy('students.full_name')
+                    ->orderByDesc('marks.final_mark'),
+                'student_desc' => $resultRows
+                    ->join('students', 'marks.student_id', '=', 'students.id')
+                    ->select('marks.*')
+                    ->orderByDesc('students.full_name')
+                    ->orderByDesc('marks.final_mark'),
+                'course_asc' => $resultRows
+                    ->join('courses', 'marks.course_id', '=', 'courses.id')
+                    ->select('marks.*')
+                    ->orderBy('courses.name')
+                    ->orderByDesc('marks.final_mark'),
+                default => $resultRows->orderByDesc('final_mark')->orderBy('id'),
+            };
+
+            if ($limitResults) {
+                $resultRows->limit(500);
+            }
+
+            $resultRows = $resultRows->get();
+
+            if ($resultRows->isEmpty() && $snapshotResultRows->isNotEmpty()) {
+                $resultStats = [
+                    'published' => $snapshotPublishedResults->count(),
+                    'passed' => $snapshotPublishedResults->where('result', 'Passed')->count(),
+                    'failed' => $snapshotPublishedResults->where('result', 'Failed')->count(),
+                ];
+            }
+
+            $combinedStudentResultSourceRows = $studentResultSourceRows;
+            if ($snapshotStudentSourceRows->isNotEmpty()) {
+                $existingKeys = $combinedStudentResultSourceRows
+                    ->map(fn (array $row) => $this->archiveResultRowKey($row))
+                    ->filter()
+                    ->flip();
+
+                $snapshotRowsToAdd = $snapshotStudentSourceRows->reject(function (array $row) use ($existingKeys) {
+                    $key = $this->archiveResultRowKey($row);
+
+                    return $key !== '' && $existingKeys->has($key);
+                });
+
+                $combinedStudentResultSourceRows = $combinedStudentResultSourceRows
+                    ->concat($snapshotRowsToAdd)
+                    ->values();
+            }
+
+            $allScopedStudentResultRows = $this->studentResultsForArchive(
+                $combinedStudentResultSourceRows,
+                null,
+                $sort
+            );
+            $studentResultRows = $this->studentResultsForArchive(
+                $combinedStudentResultSourceRows,
+                $resultStatus,
+                $sort
+            );
+            $studentResultStats = [
+                'students' => $allScopedStudentResultRows->count(),
+                'passed' => $allScopedStudentResultRows->where('result', 'Passed')->count(),
+                'failed' => $allScopedStudentResultRows->where('result', 'Failed')->count(),
             ];
         }
-
-        $studentResultRows = $this->studentResultsForArchive(
-            $studentResultSourceRows->isNotEmpty() ? $studentResultSourceRows : $snapshotStudentSourceRows,
-            $resultStatus,
-            $sort
-        );
-        $studentResultStats = $databaseStudentResultStats['students'] > 0 || $snapshotStudentSourceRows->isEmpty()
-            ? $databaseStudentResultStats
-            : [
-                'students' => $studentResultRows->count(),
-                'passed' => $studentResultRows->where('result', 'Passed')->count(),
-                'failed' => $studentResultRows->where('result', 'Failed')->count(),
-            ];
 
         $groupedSections = $sections
             ->groupBy(fn (CourseSection $section) => $section->course?->department?->college?->name ?? 'No college')
@@ -328,16 +394,31 @@ class AcademicYearClosureController extends Controller
                     ->groupBy(fn (CourseSection $section) => $section->grade_level ?: 'No stage')
                     ->map(fn ($stageSections) => $stageSections
                         ->groupBy(fn (CourseSection $section) => trim(($section->semester?->name ?? 'Semester').' '.($section->semester?->academic_year ?? ''))))));
+        $hasActiveFilters = $q !== '' || ! is_null($collegeId) || ! is_null($departmentId) || ! is_null($stage) || ! is_null($semesterId);
         $filteredEnrollmentCount = $sectionIds->isNotEmpty()
-            ? Enrollment::whereIn('course_section_id', $sectionIds)->count()
+            ? Enrollment::withTrashed()->whereIn('course_section_id', $sectionIds)->count()
             : 0;
         $filteredMarksCount = $sectionIds->isNotEmpty()
-            ? Mark::whereIn('course_section_id', $sectionIds)->count()
+            ? Mark::withTrashed()->whereIn('course_section_id', $sectionIds)->count()
             : 0;
+        $snapshotFilteredEnrollmentCount = $this->snapshotFilteredCountForArchive($archiveSnapshot, 'enrollments', $request->user(), [
+            'q' => $q,
+            'college_id' => $collegeId,
+            'department_id' => $departmentId,
+            'stage' => $stage,
+            'semester_id' => $semesterId,
+        ]);
+        $snapshotFilteredMarksCount = $this->snapshotFilteredCountForArchive($archiveSnapshot, 'marks', $request->user(), [
+            'q' => $q,
+            'college_id' => $collegeId,
+            'department_id' => $departmentId,
+            'stage' => $stage,
+            'semester_id' => $semesterId,
+        ]);
         $summaryStats = [
-            'modules' => $sectionIds->count() ?: ($snapshotModules->count() ?: ($usingSnapshotFallback ? (int) ($closureSummary['section_count'] ?? $closureSummary['archived_modules'] ?? 0) : 0)),
-            'enrollments' => $filteredEnrollmentCount ?: ($this->snapshotCountForUser($archiveSnapshot, 'enrollments', $request->user()) ?: ($usingSnapshotFallback ? (int) ($closureSummary['enrollment_count'] ?? 0) : 0)),
-            'marks' => $filteredMarksCount ?: ($this->snapshotCountForUser($archiveSnapshot, 'marks', $request->user()) ?: ($usingSnapshotFallback ? (int) ($closureSummary['entered_marks'] ?? $closureSummary['published_marks'] ?? 0) : 0)),
+            'modules' => $sectionIds->count() ?: ($snapshotModules->count() ?: ((! $hasActiveFilters && $usingSnapshotFallback) ? (int) ($closureSummary['section_count'] ?? $closureSummary['archived_modules'] ?? 0) : 0)),
+            'enrollments' => $filteredEnrollmentCount ?: ($snapshotFilteredEnrollmentCount ?: ((! $hasActiveFilters && $usingSnapshotFallback) ? (int) ($closureSummary['enrollment_count'] ?? 0) : 0)),
+            'marks' => $filteredMarksCount ?: ($snapshotFilteredMarksCount ?: ((! $hasActiveFilters && $usingSnapshotFallback) ? (int) ($closureSummary['entered_marks'] ?? $closureSummary['published_marks'] ?? 0) : 0)),
         ];
         $snapshotCoverage = [
             ['label' => 'Modules', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'modules', $request->user())],
@@ -369,6 +450,7 @@ class AcademicYearClosureController extends Controller
             'resultStats' => $resultStats,
             'studentResultRows' => $studentResultRows,
             'studentResultStats' => $studentResultStats,
+            'loadStudents' => $loadStudents,
             'filters' => [
                 'q' => $q,
                 'college_id' => $collegeId,
@@ -464,6 +546,7 @@ class AcademicYearClosureController extends Controller
             }
 
             $closureSummary = $this->buildSummary($validated['academic_year'], true);
+            $this->archiveYearRecords($closureSummary, $validated['academic_year']);
 
             foreach ($closureSummary['university_ids'] as $universityId) {
                 AcademicYearClosure::updateOrCreate(
@@ -487,12 +570,12 @@ class AcademicYearClosureController extends Controller
 
         return redirect()
             ->route('academic-year-closures.index', ['academic_year' => $validated['academic_year']])
-            ->with('success', 'Academic year closed. Current rosters were completed, waitlists were cleared, old modules were archived, and finance balances remain visible for follow-up.');
+            ->with('success', 'Academic year closed and archived. Current rosters were completed, waitlists were cleared, and year records were moved to archive history.');
     }
 
     private function buildSummary(string $academicYear, bool $includeArchiveSnapshot = false): array
     {
-        $semesters = Semester::with('university')
+        $semesters = Semester::withTrashed()->with('university')
             ->where('academic_year', $academicYear)
             ->orderBy('name')
             ->get();
@@ -509,9 +592,9 @@ class AcademicYearClosureController extends Controller
             ->get();
 
         $sectionIds = $sections->pluck('id');
-        $resultEnrollmentQuery = Enrollment::whereIn('course_section_id', $sectionIds)->whereIn('status', ['enrolled', 'completed']);
-        $markQuery = Mark::whereIn('course_section_id', $sectionIds);
-        $financeQuery = FinanceTransaction::where('academic_year', $academicYear)
+        $resultEnrollmentQuery = Enrollment::withTrashed()->whereIn('course_section_id', $sectionIds)->whereIn('status', ['enrolled', 'completed']);
+        $markQuery = Mark::withTrashed()->whereIn('course_section_id', $sectionIds);
+        $financeQuery = FinanceTransaction::withTrashed()->where('academic_year', $academicYear)
             ->where('type', 'invoice')
             ->where('status', '!=', 'cancelled');
 
@@ -555,7 +638,7 @@ class AcademicYearClosureController extends Controller
             [
                 'label' => 'Open tuition invoices',
                 'count' => $openFinanceInvoices,
-                'detail' => 'These balances stay open after closure so finance can continue follow-up.',
+                'detail' => 'These balances will be archived with the closed academic year records.',
             ],
             [
                 'label' => 'Open modules',
@@ -569,6 +652,7 @@ class AcademicYearClosureController extends Controller
             'universities' => $semesters->pluck('university.name')->filter()->unique()->values(),
             'university_ids' => $universityIds,
             'semester_count' => $semesters->count(),
+            'semester_ids' => $semesterIds,
             'section_count' => $sections->count(),
             'section_ids' => $sectionIds,
             'student_count' => $studentCount,
@@ -627,7 +711,16 @@ class AcademicYearClosureController extends Controller
 
         $moduleSnapshots = CourseSection::withTrashed()
             ->with(['course.department.college.university', 'course.university', 'semester.university', 'teacher.department'])
-            ->withCount(['enrollments', 'marks', 'assessmentItems', 'attendances', 'materials', 'streamPosts', 'messages', 'timetables'])
+            ->withCount([
+                'enrollments' => fn ($query) => $query->withTrashed(),
+                'marks' => fn ($query) => $query->withTrashed(),
+                'assessmentItems' => fn ($query) => $query->withTrashed(),
+                'attendances' => fn ($query) => $query->withTrashed(),
+                'materials' => fn ($query) => $query->withTrashed(),
+                'streamPosts' => fn ($query) => $query->withTrashed(),
+                'messages' => fn ($query) => $query->withTrashed(),
+                'timetables',
+            ])
             ->whereIn('id', $sectionIds)
             ->orderBy('semester_id')
             ->orderBy('grade_level')
@@ -726,15 +819,15 @@ class AcademicYearClosureController extends Controller
 
         $recordCounts = [
             'modules' => count($moduleSnapshots),
-            'enrollments' => Enrollment::whereIn('course_section_id', $sectionIds)->count(),
-            'marks' => Mark::whereIn('course_section_id', $sectionIds)->count(),
-            'assessments' => AssessmentItem::whereIn('course_section_id', $sectionIds)->count(),
-            'attendance' => Attendance::whereIn('course_section_id', $sectionIds)->count(),
+            'enrollments' => Enrollment::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
+            'marks' => Mark::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
+            'assessments' => AssessmentItem::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
+            'attendance' => Attendance::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
             'timetable' => Timetable::whereIn('course_section_id', $sectionIds)->count(),
-            'materials' => CourseMaterial::whereIn('course_section_id', $sectionIds)->count(),
-            'stream_posts' => ClassStreamPost::whereIn('course_section_id', $sectionIds)->count(),
-            'class_messages' => ClassMessage::whereIn('course_section_id', $sectionIds)->count(),
-            'finance_transactions' => FinanceTransaction::where('academic_year', $academicYear)->count(),
+            'materials' => CourseMaterial::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
+            'stream_posts' => ClassStreamPost::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
+            'class_messages' => ClassMessage::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
+            'finance_transactions' => FinanceTransaction::withTrashed()->where('academic_year', $academicYear)->count(),
         ];
 
         if (array_sum($recordCounts) > config('academics.archive_inline_record_limit', 5000)) {
@@ -756,7 +849,7 @@ class AcademicYearClosureController extends Controller
             ];
         }
 
-        $enrollments = Enrollment::with(['student.department.college', 'courseSection'])
+        $enrollments = Enrollment::withTrashed()->with(['student.department.college', 'courseSection'])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('course_section_id')
             ->orderBy('student_id')
@@ -780,7 +873,7 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $marks = Mark::with(['student.department.college', 'course.department.college', 'courseSection.semester'])
+        $marks = Mark::withTrashed()->with(['student.department.college', 'course.department.college', 'courseSection.semester'])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('course_section_id')
             ->orderBy('student_id')
@@ -789,8 +882,8 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $assessments = AssessmentItem::with(['creator'])
-            ->withCount(['submissions'])
+        $assessments = AssessmentItem::withTrashed()->with(['creator'])
+            ->withCount(['submissions' => fn ($query) => $query->withTrashed()])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('course_section_id')
             ->orderBy('due_at')
@@ -811,7 +904,7 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $attendance = Attendance::with(['student'])
+        $attendance = Attendance::withTrashed()->with(['student'])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('date')
             ->orderBy('course_section_id')
@@ -850,7 +943,7 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $materials = CourseMaterial::with(['uploadedBy'])
+        $materials = CourseMaterial::withTrashed()->with(['uploadedBy'])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('course_section_id')
             ->orderBy('title')
@@ -868,8 +961,8 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $streamPosts = ClassStreamPost::with(['user'])
-            ->withCount(['comments', 'reactions'])
+        $streamPosts = ClassStreamPost::withTrashed()->with(['user'])
+            ->withCount(['comments' => fn ($query) => $query->withTrashed(), 'reactions'])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('course_section_id')
             ->orderBy('created_at')
@@ -888,7 +981,7 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $messages = ClassMessage::with(['sender', 'recipient'])
+        $messages = ClassMessage::withTrashed()->with(['sender', 'recipient'])
             ->whereIn('course_section_id', $sectionIds)
             ->orderBy('course_section_id')
             ->orderBy('created_at')
@@ -907,7 +1000,7 @@ class AcademicYearClosureController extends Controller
             ->values()
             ->all();
 
-        $financeTransactions = FinanceTransaction::with(['student.department.college'])
+        $financeTransactions = FinanceTransaction::withTrashed()->with(['student.department.college'])
             ->where('academic_year', $academicYear)
             ->orderBy('transaction_date')
             ->orderBy('id')
@@ -1042,6 +1135,7 @@ class AcademicYearClosureController extends Controller
             'universities' => collect(),
             'university_ids' => collect(),
             'semester_count' => 0,
+            'semester_ids' => collect(),
             'section_count' => 0,
             'section_ids' => collect(),
             'student_count' => 0,
@@ -1117,7 +1211,7 @@ class AcademicYearClosureController extends Controller
         return $closures
             ->groupBy('academic_year')
             ->map(function ($yearClosures, string $academicYear) use ($user) {
-                $semesterQuery = Semester::where('academic_year', $academicYear);
+                $semesterQuery = Semester::withTrashed()->where('academic_year', $academicYear);
                 $this->scopeArchiveQuery($semesterQuery, $user, 'semester');
                 $semesterIds = $semesterQuery->pluck('id');
                 $sectionQuery = $this->archivedModulesForYear($semesterIds, $user);
@@ -1129,7 +1223,7 @@ class AcademicYearClosureController extends Controller
                     ->whereNull('deleted_at')
                     ->where('status', 'closed')
                     ->count();
-                $enrollmentQuery = Enrollment::whereIn('course_section_id', $sectionIds)
+                $enrollmentQuery = Enrollment::withTrashed()->whereIn('course_section_id', $sectionIds)
                     ->whereIn('status', ['enrolled', 'completed']);
                 $financeQuery = FinanceTransaction::where('academic_year', $academicYear)
                     ->where('type', 'invoice')
@@ -1182,6 +1276,73 @@ class AcademicYearClosureController extends Controller
         }
 
         return $query;
+    }
+
+    private function archiveYearRecords(array $summary, string $academicYear): void
+    {
+        $sectionIds = collect($summary['section_ids'] ?? [])->filter()->values();
+        $semesterIds = collect($summary['semester_ids'] ?? [])->filter()->values();
+
+        if ($sectionIds->isNotEmpty()) {
+            Enrollment::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            Mark::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            $assessmentItemIds = AssessmentItem::whereIn('course_section_id', $sectionIds)->pluck('id');
+            $streamPostIds = ClassStreamPost::whereIn('course_section_id', $sectionIds)->pluck('id');
+
+            if ($assessmentItemIds->isNotEmpty()) {
+                AssessmentSubmission::whereIn('assessment_item_id', $assessmentItemIds)
+                    ->whereNull('deleted_at')
+                    ->delete();
+            }
+
+            if ($streamPostIds->isNotEmpty()) {
+                ClassStreamComment::whereIn('class_stream_post_id', $streamPostIds)
+                    ->whereNull('deleted_at')
+                    ->delete();
+
+                ClassStreamReaction::whereIn('class_stream_post_id', $streamPostIds)->delete();
+            }
+
+            AssessmentItem::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            Attendance::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            CourseMaterial::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            ClassStreamPost::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            ClassMessage::whereIn('course_section_id', $sectionIds)
+                ->whereNull('deleted_at')
+                ->delete();
+
+            Timetable::whereIn('course_section_id', $sectionIds)
+                ->where('status', '!=', 'archived')
+                ->update(['status' => 'archived']);
+        }
+
+        FinanceTransaction::where('academic_year', $academicYear)
+            ->whereNull('deleted_at')
+            ->delete();
+
+        if ($semesterIds->isNotEmpty()) {
+            Semester::whereIn('id', $semesterIds)
+                ->whereNull('deleted_at')
+                ->delete();
+        }
     }
 
     private function scopeArchiveQuery($query, User $user, string $modelType): void
@@ -1310,6 +1471,44 @@ class AcademicYearClosureController extends Controller
             ->count();
     }
 
+    private function snapshotFilteredCountForArchive(array $snapshot, string $key, User $user, array $filters): int
+    {
+        $rows = collect($snapshot[$key] ?? []);
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $scopedFilteredSectionIds = collect($snapshot['modules'] ?? [])
+            ->filter(fn (array $row) => $this->snapshotRowMatchesScope($row, $user))
+            ->filter(fn (array $row) => $this->snapshotRowMatchesFilters($row, $filters))
+            ->pluck('course_section_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        if ($key === 'modules') {
+            return $scopedFilteredSectionIds->count();
+        }
+
+        return $rows
+            ->filter(function (array $row) use ($user, $filters, $scopedFilteredSectionIds) {
+                $inScope = (array_key_exists('college_id', $row) || array_key_exists('department_id', $row))
+                    ? $this->snapshotRowMatchesScope($row, $user)
+                    : $scopedFilteredSectionIds->contains((int) ($row['course_section_id'] ?? 0));
+
+                if (! $inScope) {
+                    return false;
+                }
+
+                if ($this->snapshotRowMatchesFilters($row, $filters)) {
+                    return true;
+                }
+
+                return $scopedFilteredSectionIds->contains((int) ($row['course_section_id'] ?? 0));
+            })
+            ->count();
+    }
+
     private function snapshotModulesForArchive(array $snapshot, User $user, array $filters)
     {
         return collect($snapshot['modules'] ?? [])
@@ -1365,6 +1564,9 @@ class AcademicYearClosureController extends Controller
                 $finalMark = (float) $mark->final_mark;
 
                 return [
+                    'mark_id' => $mark->id,
+                    'course_section_id' => $mark->course_section_id,
+                    'course_id' => $mark->course_id,
                     'student_id' => $mark->student_id,
                     'student_number' => $mark->student?->student_id,
                     'student_name' => $mark->student?->full_name,
@@ -1485,6 +1687,36 @@ class AcademicYearClosureController extends Controller
             'course_asc' => $studentRows->sortBy(fn (array $row) => $row['modules'][0]['course_name'] ?? '')->values(),
             default => $studentRows->sortByDesc(fn (array $row) => $row['average_mark'])->values(),
         };
+    }
+
+    private function archiveResultKeyFromModel(Mark $mark): string
+    {
+        if ($mark->id) {
+            return 'mark:'.$mark->id;
+        }
+
+        return implode('|', [
+            'fallback',
+            (int) $mark->student_id,
+            (int) $mark->course_id,
+            (int) ($mark->course_section_id ?? 0),
+            number_format((float) ($mark->final_mark ?? 0), 2, '.', ''),
+        ]);
+    }
+
+    private function archiveResultRowKey(array $row): string
+    {
+        if (! empty($row['mark_id'])) {
+            return 'mark:'.(int) $row['mark_id'];
+        }
+
+        return implode('|', [
+            'fallback',
+            (int) ($row['student_id'] ?? 0),
+            (int) ($row['course_id'] ?? 0),
+            (int) ($row['course_section_id'] ?? 0),
+            number_format((float) ($row['final_mark'] ?? 0), 2, '.', ''),
+        ]);
     }
 
     private function snapshotRowMatchesScope(array $row, User $user): bool

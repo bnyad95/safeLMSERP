@@ -14,6 +14,8 @@ class NotificationCenterController extends Controller
     {
         $student = $this->studentForUser($request);
 
+        $request->session()->put('notifications_sidebar_seen_at', now()->toIso8601String());
+
         $notifications = AppNotification::query()
             ->where(fn (Builder $query) => $this->recipientScope($query, $request, $student))
             ->latest()

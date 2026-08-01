@@ -38,12 +38,18 @@
 
         <div class="md:col-span-2">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">University</label>
-            <select name="university_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+            <select id="semester-university-id" name="university_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
                 <option value="">Select university</option>
                 @foreach($universities as $university)
-                    <option value="{{ $university->id }}" @selected(old('university_id', $semester->university_id ?? '') == $university->id)>{{ $university->name }}</option>
+                    <option
+                        value="{{ $university->id }}"
+                        data-institution-type="{{ $university->institution_type ?? 'university' }}"
+                        data-expected-semesters="{{ ($university->institution_type ?? 'university') === 'institute' ? 4 : 8 }}"
+                        @selected(old('university_id', $semester->university_id ?? '') == $university->id)
+                    >{{ $university->name }}</option>
                 @endforeach
             </select>
+            <p id="semester-cap-hint" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></p>
         </div>
     </div>
 
@@ -52,3 +58,29 @@
         <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" @disabled(! $isEdit && $academicYears->isEmpty())>{{ $isEdit ? 'Update Semester' : 'Create Extra Semester' }}</button>
     </div>
 </div>
+
+<script>
+    (function () {
+        const universitySelect = document.getElementById('semester-university-id');
+        const semesterCapHint = document.getElementById('semester-cap-hint');
+
+        if (!universitySelect || !semesterCapHint) {
+            return;
+        }
+
+        const renderHint = () => {
+            const selectedOption = universitySelect.options[universitySelect.selectedIndex];
+            if (!selectedOption || !selectedOption.value) {
+                semesterCapHint.textContent = 'Select an institution to see the semester target for this academic year.';
+                return;
+            }
+
+            const institutionType = selectedOption.dataset.institutionType === 'institute' ? 'Institute' : 'University';
+            const expectedSemesters = selectedOption.dataset.expectedSemesters || '8';
+            semesterCapHint.textContent = `${institutionType} target: ${expectedSemesters} semesters per academic year.`;
+        };
+
+        universitySelect.addEventListener('change', renderHint);
+        renderHint();
+    })();
+</script>

@@ -8,21 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('semesters', function (Blueprint $table) {
+        Schema::create('semester_credit_policies', function (Blueprint $table) {
             $table->id();
             $table->foreignId('university_id')->constrained()->cascadeOnDelete();
-            $table->string('name');
-            $table->string('academic_year');
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
+            $table->unsignedSmallInteger('semester_credits');
+            $table->unsignedSmallInteger('passing_credits');
             $table->timestamps();
-            $table->softDeletes();
-            $table->unique(['university_id', 'name', 'academic_year']);
+
+            $table->unique('university_id');
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('semesters');
+        Schema::dropIfExists('semester_credit_policies');
     }
 };

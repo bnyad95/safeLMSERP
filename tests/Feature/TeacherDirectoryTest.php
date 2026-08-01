@@ -12,7 +12,6 @@ use App\Models\Semester;
 use App\Models\Teacher;
 use App\Models\University;
 use App\Models\User;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -208,21 +207,21 @@ class TeacherDirectoryTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('teachers.store'), $this->teacherPayload($university, $department, [
-                'staff_id' => 'SYNC-100',
                 'full_name' => 'Original Teacher',
                 'email' => 'original.teacher@example.com',
+                'password' => 'TempPass@123',
+                'password_confirmation' => 'TempPass@123',
             ]))
             ->assertRedirect(route('teachers.index'));
 
-        $teacher = Teacher::where('staff_id', 'SYNC-100')->firstOrFail();
+        $teacher = Teacher::where('email', 'original.teacher@example.com')->firstOrFail();
         $account = User::findOrFail($teacher->user_id);
 
-        $this->assertFalse(Hash::check('SYNC-100@123', $account->password));
-        Notification::assertSentTo($account, ResetPassword::class);
+        $this->assertTrue(Hash::check('TempPass@123', $account->password));
+        $this->assertTrue($account->must_change_password);
 
         $this->actingAs($admin)
             ->put(route('teachers.update', $teacher), $this->teacherPayload($university, $department, [
-                'staff_id' => 'SYNC-100',
                 'full_name' => 'Updated Teacher',
                 'email' => 'updated.teacher@example.com',
             ]))
@@ -271,12 +270,11 @@ class TeacherDirectoryTest extends TestCase
         $admin = $this->superAdmin();
 
         $this->actingAs($admin)->post(route('teachers.store'), $this->teacherPayload($university, $department, [
-            'staff_id' => 'ARCH-100',
             'full_name' => 'Archive Teacher',
             'email' => 'archive.teacher@example.com',
         ]));
 
-        $teacher = Teacher::where('staff_id', 'ARCH-100')->firstOrFail();
+        $teacher = Teacher::where('email', 'archive.teacher@example.com')->firstOrFail();
         $userId = $teacher->user_id;
 
         $this->actingAs($admin)->delete(route('teachers.destroy', $teacher))->assertRedirect(route('teachers.index'));
@@ -340,6 +338,8 @@ class TeacherDirectoryTest extends TestCase
             'full_name' => 'Directory Teacher',
             'staff_id' => 'DIR-100',
             'email' => 'directory.teacher@example.com',
+            'password' => 'TeacherTemp@123',
+            'password_confirmation' => 'TeacherTemp@123',
             'title' => 'Lecturer',
             'university_id' => $university->id,
             'college_id' => $department->college_id,

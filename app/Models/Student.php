@@ -11,6 +11,15 @@ class Student extends Model
 {
     use HasFactory, Loggable, SoftDeletes;
 
+    protected static function booted(): void
+    {
+        static::creating(function (Student $student): void {
+            if (blank($student->student_id)) {
+                $student->student_id = static::suggestedStudentIdentifier();
+            }
+        });
+    }
+
     protected $fillable = [
         'university_id',
         'department_id',
@@ -103,5 +112,20 @@ class Student extends Model
     public function documents()
     {
         return $this->hasMany(StudentDocument::class)->latest();
+    }
+
+    public static function suggestedStudentIdentifier(): string
+    {
+        $prefix = trim((string) config('academics.student_id_prefix', 'STD'));
+        $prefix = $prefix !== '' ? strtoupper($prefix) : 'STD';
+        $year = now()->format('y');
+        $sequence = static::withTrashed()->count() + 1;
+
+        do {
+            $candidate = sprintf('%s%s%04d', $prefix, $year, $sequence);
+            $sequence++;
+        } while (static::withTrashed()->where('student_id', $candidate)->exists());
+
+        return $candidate;
     }
 }
