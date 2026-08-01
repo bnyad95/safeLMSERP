@@ -149,6 +149,11 @@
                             <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">No unpaid tuition charges match these filters.</div>
                         @endforelse
                     </div>
+                    @if($reminderPaginator->hasPages())
+                        <div class="border-t border-gray-100 px-4 py-4 sm:px-5">
+                            {{ $reminderPaginator->links() }}
+                        </div>
+                    @endif
                 </div>
             </form>
         </div>

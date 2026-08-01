@@ -21,6 +21,7 @@ class OrganizationScope
             $roleNames->contains('university_administrator') => 'university',
             $roleNames->intersect(['examination_administrator', 'examination_committee'])->isNotEmpty() => self::examinationScope($user),
             $roleNames->intersect(['admission_officer', 'receptionist'])->isNotEmpty() => 'department',
+            self::hasDirectAcademicSetupGrant($user) => self::assignedScope($user),
             default => null,
         };
 
@@ -52,12 +53,29 @@ class OrganizationScope
 
     private static function examinationScope(User $user): ?string
     {
+        return self::assignedScope($user);
+    }
+
+    private static function assignedScope(User $user): string
+    {
         return match (true) {
             filled($user->department_id) => 'department',
             filled($user->college_id) => 'college',
             filled($user->university_id) => 'university',
             default => 'unassigned',
         };
+    }
+
+    private static function hasDirectAcademicSetupGrant(User $user): bool
+    {
+        if (! $user->relationLoaded('permissionOverrides')) {
+            $user->load('permissionOverrides');
+        }
+
+        return $user->permissionOverrides->contains(function ($permission) {
+            return in_array($permission->name, ['academic_setup.view', 'academic_setup.manage'], true)
+                && $permission->pivot->effect === 'grant';
+        });
     }
 
     private static function scopeCollege(Builder $query, User $user, string $scope): void

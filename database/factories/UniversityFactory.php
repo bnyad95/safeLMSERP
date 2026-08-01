@@ -14,6 +14,9 @@ class UniversityFactory extends Factory
         return [
             'name' => $this->faker->unique()->company(),
             'code' => strtoupper($this->faker->unique()->bothify('???#')),
+            'institution_type' => 'university',
+            'expected_stage_count' => 4,
+            'expected_semesters_per_year' => 2,
             'email' => $this->faker->optional()->safeEmail(),
             'phone' => $this->faker->optional()->phoneNumber(),
         ];

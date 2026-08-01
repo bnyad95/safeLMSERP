@@ -10,7 +10,17 @@ class SemesterCreditPolicy extends Model
         'university_id',
         'semester_credits',
         'passing_credits',
+        'graduation_credits',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'semester_credits' => 'integer',
+            'passing_credits' => 'integer',
+            'graduation_credits' => 'integer',
+        ];
+    }
 
     public function university()
     {

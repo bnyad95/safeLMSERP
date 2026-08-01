@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicYear;
 use App\Models\FinanceTransaction;
 use App\Models\Semester;
 use App\Models\Student;
+use App\Models\TuitionAgreement;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Support\OrganizationScope;
@@ -70,7 +72,7 @@ class FinanceController extends Controller
         $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery);
         $selectedBalances = $selectedStudent ? $this->balancesByCurrencyQuery($selectedStudent->financeTransactions()) : collect();
         $selectedBalance = (float) $selectedBalances->sum('balance');
-        $selectedPaymentStatus = $this->paymentStatusForBalance($selectedBalance);
+        $selectedPaymentStatus = $this->paymentStatusForBalances($selectedBalances);
 
         return view('finance.index', [
             'query' => $query,
@@ -114,6 +116,7 @@ class FinanceController extends Controller
 
         $filters = $this->financeFilters($request);
         $user = $request->user();
+        $this->refreshStudentInvoiceStatuses($student);
 
         $student->load([
             'department.college',
@@ -130,7 +133,7 @@ class FinanceController extends Controller
         $selectedBalances = $this->balancesByCurrencyQuery($student->financeTransactions());
         $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery);
         $selectedBalance = (float) $selectedBalances->sum('balance');
-        $selectedPaymentStatus = $this->paymentStatusForBalance($selectedBalance);
+        $selectedPaymentStatus = $this->paymentStatusForBalances($selectedBalances);
         $nextDueInvoice = $this->nextDueInvoiceQuery($student);
         $paymentPlanSummary = $this->paymentPlanSummaryQuery($student);
 
@@ -141,7 +144,7 @@ class FinanceController extends Controller
             'stats' => [
                 ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($selectedBalances, 'balance'), 'detail' => 'Remaining balance by currency'],
                 ['label' => 'Paid / Credits', 'value' => $this->formatCurrencyTotals($selectedBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships'],
-                ['label' => 'Next Due', 'value' => $nextDueInvoice ? number_format((float) $nextDueInvoice->amount, 2).' '.$nextDueInvoice->currency : 'No due invoices', 'detail' => $nextDueInvoice ? 'Due '.$nextDueInvoice->due_date->format('Y-m-d') : 'No open invoice due date'],
+                ['label' => 'Next Due', 'value' => $nextDueInvoice ? number_format($this->remainingInvoiceAmount($nextDueInvoice), 2).' '.$nextDueInvoice->currency : 'No due invoices', 'detail' => $nextDueInvoice ? 'Due '.$nextDueInvoice->due_date->format('Y-m-d') : 'No open invoice due date'],
                 ['label' => 'Payment Status', 'value' => ucfirst($selectedPaymentStatus), 'detail' => $paymentPlanSummary['total'] > 0 ? $paymentPlanSummary['label'] : 'No semester payment plan'],
             ],
             'selectedBalances' => $selectedBalances,
@@ -151,9 +154,21 @@ class FinanceController extends Controller
             'invoiceOptions' => $this->invoiceOptions($student),
             'filterOptions' => $this->financeFilterOptions($user),
             'semesterOptions' => Semester::where('university_id', $student->university_id)
+                ->with('academicYear')
+                ->whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
                 ->orderByDesc('academic_year')
                 ->orderBy('start_date')
                 ->orderBy('name')
+                ->get(),
+            'academicYearOptions' => AcademicYear::where('university_id', $student->university_id)
+                ->whereIn('status', ['upcoming', 'active'])
+                ->orderByDesc('name')
+                ->get(),
+            'tuitionAgreements' => $student->tuitionAgreements()
+                ->with('academicYear')
+                ->withCount('transactions')
+                ->latest('agreed_at')
+                ->limit(10)
                 ->get(),
             'types' => [
                 'invoice' => 'Invoice / Tuition Charge',
@@ -181,8 +196,11 @@ class FinanceController extends Controller
         if (! in_array($filters['payment_status'], ['', 'open', 'partial', 'overdue'], true)) {
             $filters['payment_status'] = '';
         }
-        $students = $this->tuitionReminderStudents($filters, [], $request->user());
-        $studentIds = $students->modelKeys();
+        $studentPaginator = $this->tuitionReminderStudentQuery($filters, [], $request->user())
+            ->paginate(50)
+            ->withQueryString();
+        $students = collect($studentPaginator->items());
+        $studentIds = $students->pluck('id')->map(fn ($id) => (int) $id)->all();
         $balancesByStudent = $this->balanceRowsByStudentIds($studentIds);
         $oldestDueDates = $this->oldestDueDatesByStudentIds($studentIds, $filters);
         $reminderRows = $students->map(function (Student $student) use ($balancesByStudent, $oldestDueDates) {
@@ -203,8 +221,9 @@ class FinanceController extends Controller
             'filters' => $filters,
             'filterOptions' => $this->financeFilterOptions($request->user()),
             'reminderRows' => $reminderRows,
+            'reminderPaginator' => $studentPaginator,
             'stats' => [
-                ['label' => 'Students In View', 'value' => (string) $reminderRows->count(), 'detail' => 'Filtered students with unpaid tuition'],
+                ['label' => 'Matching Students', 'value' => (string) $studentPaginator->total(), 'detail' => 'Filtered students with unpaid tuition'],
                 ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($balanceTotals, 'balance'), 'detail' => 'Open balances by currency'],
                 ['label' => 'Reminder Scope', 'value' => $filters['q'] !== '' ? 'Filtered' : 'All unpaid', 'detail' => 'Use filters to narrow recipients'],
             ],
@@ -227,7 +246,9 @@ class FinanceController extends Controller
             'receipt_number' => ['nullable', 'string', 'max:100', 'unique:finance_transactions,receipt_number'],
             'reference' => ['nullable', 'string', 'max:100'],
             'academic_year' => ['nullable', 'string', 'max:20'],
+            'academic_year_id' => ['nullable', 'integer', 'exists:academic_years,id'],
             'payment_plan' => ['nullable', 'in:full,semester'],
+            'collect_now' => ['nullable', 'boolean'],
             'semester_ids' => ['nullable', 'array'],
             'semester_ids.*' => ['integer', 'distinct', 'exists:semesters,id'],
             'transaction_date' => ['required', 'date'],
@@ -246,7 +267,12 @@ class FinanceController extends Controller
             $isSemesterPlan = $validated['type'] === 'invoice' && ($validated['payment_plan'] ?? 'full') === 'semester';
             $validated['invoice_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'invoice_number');
             $validated['receipt_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'receipt_number');
-            $validated['balance_after'] = $this->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency']);
+            $validated['posting_status'] = $validated['type'] === 'invoice' || $validated['status'] === 'paid'
+                ? 'posted'
+                : 'pending';
+            $validated['balance_after'] = $validated['posting_status'] === 'posted'
+                ? $this->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency'])
+                : null;
             $validated['payment_status'] = $this->paymentStatusForTransaction($validated);
             $transactions = $this->createFinanceTransactions($validated);
 
@@ -254,6 +280,7 @@ class FinanceController extends Controller
                 $firstTransaction = $transactions->first();
                 $this->recalculateStudentBalances((int) $firstTransaction->student_id, $firstTransaction->currency);
                 $transactions->each(fn (FinanceTransaction $transaction) => $this->refreshAllocatedInvoice($transaction->fresh()));
+                $this->synchronizeFinanceHold($firstTransaction->student()->with('user')->first());
             }
 
             return $transactions;
@@ -269,11 +296,35 @@ class FinanceController extends Controller
     public function approve(Request $request, FinanceTransaction $financeTransaction)
     {
         $this->authorizeFinanceApproval($financeTransaction);
-        abort_unless($financeTransaction->status === 'pending', 422);
+        abort_unless($financeTransaction->status === 'pending' && $financeTransaction->posting_status === 'pending', 422);
+        abort_if(
+            ! $request->user()->hasRole('super_administrator') && $financeTransaction->recorded_by === $request->user()->id,
+            422,
+            'A finance record must be approved by a different authorized user.'
+        );
 
         DB::transaction(function () use ($request, $financeTransaction) {
+            $financeTransaction = FinanceTransaction::query()->whereKey($financeTransaction->id)->lockForUpdate()->firstOrFail();
+            abort_unless($financeTransaction->status === 'pending' && $financeTransaction->posting_status === 'pending', 422);
+
+            if ($financeTransaction->invoice_transaction_id && in_array($financeTransaction->type, FinanceTransaction::creditTypes(), true)) {
+                $invoice = FinanceTransaction::query()->whereKey($financeTransaction->invoice_transaction_id)->lockForUpdate()->firstOrFail();
+                $alreadyPosted = (float) $invoice->allocations()
+                    ->where('id', '!=', $financeTransaction->id)
+                    ->where('posting_status', 'posted')
+                    ->where('status', '!=', 'cancelled')
+                    ->whereIn('type', FinanceTransaction::creditTypes())
+                    ->sum('amount');
+
+                if ($alreadyPosted + (float) $financeTransaction->amount > (float) $invoice->amount) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'This approval would exceed the remaining invoice balance.',
+                    ]);
+                }
+            }
             $financeTransaction->update([
                 'status' => 'approved',
+                'posting_status' => 'posted',
                 'payment_status' => $this->paymentStatusForTransaction([
                     'type' => $financeTransaction->type,
                     'status' => 'approved',
@@ -282,7 +333,9 @@ class FinanceController extends Controller
                 'approved_by' => $request->user()->id,
                 'approved_at' => now(),
             ]);
+            $this->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
             $this->refreshAllocatedInvoice($financeTransaction);
+            $this->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
         });
 
         return redirect()
@@ -295,7 +348,7 @@ class FinanceController extends Controller
         $this->authorizeFinanceVoid($financeTransaction);
 
         $validated = $request->validate([
-            'notes' => ['nullable', 'string', 'max:2000'],
+            'notes' => ['required', 'string', 'max:2000'],
         ]);
 
         DB::transaction(function () use ($request, $financeTransaction, $validated) {
@@ -307,9 +360,23 @@ class FinanceController extends Controller
 
             abort_if($financeTransaction->status === 'cancelled' || $financeTransaction->original_transaction_id, 422);
 
+            if (! $financeTransaction->isPosted()) {
+                $financeTransaction->update([
+                    'status' => 'cancelled',
+                    'payment_status' => 'cancelled',
+                    'voided_by' => $request->user()->id,
+                    'voided_at' => now(),
+                    'notes' => $validated['notes'],
+                ]);
+
+                return;
+            }
+
             $reversalType = $this->reversalType($financeTransaction->type);
             $reversal = FinanceTransaction::create([
                 'student_id' => $financeTransaction->student_id,
+                'tuition_agreement_id' => $financeTransaction->tuition_agreement_id,
+                'semester_id' => $financeTransaction->semester_id,
                 'original_transaction_id' => $financeTransaction->id,
                 'recorded_by' => $request->user()->id,
                 'approved_by' => $request->user()->id,
@@ -319,6 +386,7 @@ class FinanceController extends Controller
                 'balance_after' => $this->balanceAfter($financeTransaction->student_id, $reversalType, (float) $financeTransaction->amount, $financeTransaction->currency),
                 'currency' => $financeTransaction->currency,
                 'status' => 'approved',
+                'posting_status' => 'posted',
                 'payment_status' => 'paid',
                 'receipt_number' => $this->documentNumber([
                     'type' => $reversalType,
@@ -328,7 +396,7 @@ class FinanceController extends Controller
                 'reference' => 'VOID-'.$financeTransaction->documentNumber(),
                 'academic_year' => $financeTransaction->academic_year,
                 'transaction_date' => now()->toDateString(),
-                'notes' => $validated['notes'] ?? 'Reversal for '.$financeTransaction->documentNumber(),
+                'notes' => $validated['notes'],
             ]);
 
             $financeTransaction->update([
@@ -338,9 +406,14 @@ class FinanceController extends Controller
                 'voided_at' => now(),
             ]);
 
+            if ($financeTransaction->type === 'invoice') {
+                $this->refreshTuitionAgreementStatus($financeTransaction->tuition_agreement_id);
+            }
+
             $this->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
             $this->refreshAllocatedInvoice($financeTransaction);
             $this->refreshAllocatedInvoice($reversal);
+            $this->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
         });
 
         return redirect()
@@ -357,21 +430,23 @@ class FinanceController extends Controller
         abort_unless($account, 404, 'Student login account was not found.');
         abort_unless($account->roles()->where('name', 'student')->exists(), 403, 'Only student login accounts can be blocked from finance.');
 
-        $balances = $this->positiveBalances($this->balancesByCurrencyQuery($student->financeTransactions()));
-        if ($balances->isEmpty()) {
+        $this->refreshStudentInvoiceStatuses($student);
+        $overdueInvoices = $this->overdueInvoiceQuery($student)->exists();
+        if (! $overdueInvoices) {
             return redirect()
                 ->route('finance.students.show', $student)
-                ->with('error', 'This student has no unpaid tuition balance to block.');
+                ->with('error', 'This student has no overdue tuition installment to justify a finance block.');
         }
 
         $validated = $request->validate([
-            'reason' => ['nullable', 'string', 'max:1000'],
+            'reason' => ['required', 'string', 'max:1000'],
         ]);
 
         $account->update([
             'account_blocked_at' => now(),
             'account_blocked_by' => $request->user()->id,
-            'account_block_reason' => $validated['reason'] ?: 'Blocked by finance because of unpaid tuition.',
+            'account_block_reason' => $validated['reason'],
+            'account_block_type' => 'finance',
         ]);
 
         return redirect()
@@ -391,6 +466,7 @@ class FinanceController extends Controller
             'account_blocked_at' => null,
             'account_blocked_by' => null,
             'account_block_reason' => null,
+            'account_block_type' => null,
         ]);
 
         return redirect()
@@ -425,30 +501,22 @@ class FinanceController extends Controller
         };
 
         $filters = $this->financeFilters($request);
-        $students = $this->tuitionReminderStudents(
-            $filters,
-            $studentIds,
-            $request->user()
-        );
-        $balancesByStudent = $this->balanceRowsByStudentIds($students->modelKeys());
-
-        if ($students->isEmpty()) {
-            return $this->redirectToFinance($request)->with('error', 'No unpaid tuition charges were found for the selected scope.');
-        }
-
         $notificationService = app(NotificationService::class);
         $sent = 0;
+        $this->tuitionReminderStudentQuery($filters, $studentIds, $request->user())
+            ->chunkById(200, function ($students) use ($notificationService, $validated, $request, &$sent) {
+                $balancesByStudent = $this->balanceRowsByStudentIds($students->modelKeys());
 
-        foreach ($students as $student) {
-            $balances = $this->positiveBalances($balancesByStudent->get($student->id, collect()));
+                foreach ($students as $student) {
+                    $balances = $this->positiveBalances($balancesByStudent->get($student->id, collect()));
+                    if ($balances->isEmpty()) {
+                        continue;
+                    }
 
-            if ($balances->isEmpty()) {
-                continue;
-            }
-
-            $notificationService->notifyTuitionChargeReminder($student, $balances, $validated['message'] ?? null, $request->user());
-            $sent++;
-        }
+                    $notificationService->notifyTuitionChargeReminder($student, $balances, $validated['message'] ?? null, $request->user());
+                    $sent++;
+                }
+            });
 
         if ($sent === 0) {
             return $this->redirectToFinance($request)->with('error', 'No unpaid tuition charges were found for the selected scope.');
@@ -462,17 +530,23 @@ class FinanceController extends Controller
         $this->requireAnyRole('student');
 
         $student = Student::with(['department', 'university'])
-            ->where('email', $request->user()->email)
+            ->where(function ($query) use ($request) {
+                $query->where('user_id', $request->user()->id)
+                    ->orWhere(function ($legacy) use ($request) {
+                        $legacy->whereNull('user_id')->where('email', $request->user()->email);
+                    });
+            })
             ->first();
         $transactions = collect();
         $balances = collect();
 
         if ($student) {
+            $this->refreshStudentInvoiceStatuses($student);
             $transactions = $student->financeTransactions()
                 ->with(['invoice', 'originalTransaction'])
-                ->oldest('transaction_date')
-                ->oldest()
-                ->get();
+                ->latest('transaction_date')
+                ->latest()
+                ->paginate(20);
             $balances = $this->balancesByCurrencyQuery($student->financeTransactions());
         }
 
@@ -480,7 +554,7 @@ class FinanceController extends Controller
             'student' => $student,
             'transactions' => $transactions,
             'balances' => $balances,
-            'paymentStatus' => $this->paymentStatusForBalance((float) $balances->sum('balance')),
+            'paymentStatus' => $this->paymentStatusForBalances($balances),
         ]);
     }
 
@@ -506,8 +580,40 @@ class FinanceController extends Controller
             'charges' => (float) $balances->sum('charges'),
             'credits' => (float) $balances->sum('credits'),
             'balance' => (float) $balances->sum('balance'),
-            'paymentStatus' => $this->paymentStatusForBalance((float) $balances->sum('balance')),
+            'paymentStatus' => $this->paymentStatusForBalances($balances),
         ]);
+    }
+
+    public function receipt(Request $request, FinanceTransaction $financeTransaction)
+    {
+        abort_unless(
+            in_array($financeTransaction->type, FinanceTransaction::creditTypes(), true)
+            && $financeTransaction->posting_status === 'posted'
+            && $financeTransaction->status !== 'cancelled',
+            404
+        );
+
+        $user = $request->user();
+        if ($user->hasRole('student')) {
+            $student = Student::query()
+                ->whereKey($financeTransaction->student_id)
+                ->where(function ($query) use ($user) {
+                    $query->where('user_id', $user->id)
+                        ->orWhere(function ($legacy) use ($user) {
+                            $legacy->whereNull('user_id')->where('email', $user->email);
+                        });
+                })
+                ->firstOrFail();
+        } else {
+            $this->authorizeStudentFinanceView($user);
+            $this->authorizeFinanceTransactionScope($user, $financeTransaction);
+            $student = $financeTransaction->student;
+        }
+
+        $financeTransaction->load(['recorder', 'approver', 'invoice']);
+        $student->load(['department.college', 'university']);
+
+        return view('finance.receipt', compact('financeTransaction', 'student'));
     }
 
     public function export(Request $request): StreamedResponse
@@ -545,6 +651,7 @@ class FinanceController extends Controller
                 'Amount',
                 'Currency',
                 'Status',
+                'Posting Status',
                 'Payment Status',
                 'Balance After',
                 'Due Date',
@@ -580,6 +687,7 @@ class FinanceController extends Controller
                             $transaction->amount,
                             $transaction->currency,
                             $transaction->status,
+                            $transaction->posting_status,
                             $transaction->payment_status,
                             $transaction->balance_after,
                             $transaction->due_date?->format('Y-m-d'),
@@ -638,7 +746,7 @@ class FinanceController extends Controller
         abort_unless($this->canSendTuitionReminder($request->user()), 403);
     }
 
-    private function tuitionReminderStudents(array $filters, array $studentIds = [], ?User $user = null)
+    private function tuitionReminderStudentQuery(array $filters, array $studentIds = [], ?User $user = null)
     {
         $query = $user ? $this->scopedStudentQuery($user) : Student::query();
 
@@ -660,20 +768,21 @@ class FinanceController extends Controller
             ->whereHas('financeTransactions', function ($query) {
                 $query
                     ->where('type', 'invoice')
+                    ->where('posting_status', 'posted')
                     ->where('status', '!=', 'cancelled')
                     ->whereIn('payment_status', ['open', 'partial', 'overdue']);
             })
             ->whereHas('financeTransactions', function ($query) use ($filters) {
                 $this->applyTuitionReminderInvoiceFilters($query, $filters);
             })
-            ->latest()
-            ->get();
+            ->latest();
     }
 
     private function applyTuitionReminderInvoiceFilters($query, array $filters): void
     {
         $query
             ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
             ->where('status', '!=', 'cancelled')
             ->whereIn('payment_status', ['open', 'partial', 'overdue'])
             ->when($filters['payment_status'] && in_array($filters['payment_status'], ['open', 'partial', 'overdue'], true), fn ($builder) => $builder->where('payment_status', $filters['payment_status']))
@@ -780,6 +889,7 @@ class FinanceController extends Controller
     private function balancesByCurrency($transactions)
     {
         return $transactions
+            ->where('posting_status', 'posted')
             ->groupBy('currency')
             ->map(function ($currencyTransactions, $currency) {
                 $charges = $currencyTransactions->whereIn('type', FinanceTransaction::chargeTypes())->sum(fn ($transaction) => (float) $transaction->amount);
@@ -800,6 +910,7 @@ class FinanceController extends Controller
         return (clone $query)
             ->withoutEagerLoads()
             ->reorder()
+            ->where('posting_status', 'posted')
             ->select('currency')
             ->selectRaw(
                 'SUM(CASE WHEN type IN (?, ?) THEN amount ELSE 0 END) as charges',
@@ -836,6 +947,7 @@ class FinanceController extends Controller
 
         return FinanceTransaction::query()
             ->whereIn('student_id', $studentIds)
+            ->where('posting_status', 'posted')
             ->select('student_id', 'currency')
             ->selectRaw(
                 'SUM(CASE WHEN type IN (?, ?) THEN amount ELSE 0 END) as charges',
@@ -900,10 +1012,14 @@ class FinanceController extends Controller
     {
         return $student->financeTransactions()
             ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
             ->where('status', '!=', 'cancelled')
             ->where('payment_status', '!=', 'paid')
             ->oldest('due_date')
-            ->get();
+            ->get()
+            ->each(function (FinanceTransaction $invoice) {
+                $invoice->setAttribute('remaining_amount', $this->remainingInvoiceAmount($invoice));
+            });
     }
 
     private function nextDueInvoice(Student $student): ?FinanceTransaction
@@ -921,6 +1037,7 @@ class FinanceController extends Controller
     {
         return $student->financeTransactions()
             ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
             ->where('status', '!=', 'cancelled')
             ->whereIn('payment_status', ['open', 'partial', 'overdue'])
             ->whereNotNull('due_date')
@@ -955,8 +1072,14 @@ class FinanceController extends Controller
     {
         $row = $student->financeTransactions()
             ->where('type', 'invoice')
-            ->whereNotNull('reference')
-            ->where('reference', 'like', '% - %')
+            ->where(function ($query) {
+                $query->whereNotNull('semester_id')
+                    ->orWhere(function ($legacy) {
+                        $legacy->whereNull('tuition_agreement_id')
+                            ->whereNotNull('reference')
+                            ->where('reference', 'like', '% - %');
+                    });
+            })
             ->selectRaw('COUNT(*) as total')
             ->selectRaw('SUM(CASE WHEN payment_status = ? THEN 1 ELSE 0 END) as paid', ['paid'])
             ->selectRaw('SUM(CASE WHEN payment_status = ? THEN 1 ELSE 0 END) as overdue', ['overdue'])
@@ -978,11 +1101,66 @@ class FinanceController extends Controller
 
     private function createFinanceTransactions(array $validated)
     {
-        if ($validated['type'] === 'invoice' && ($validated['payment_plan'] ?? 'full') === 'semester') {
-            return $this->createSemesterTuitionInvoices($validated);
+        if ($validated['type'] === 'invoice') {
+            $semesters = ($validated['payment_plan'] ?? 'full') === 'semester'
+                ? $this->selectedTuitionSemesters($validated)
+                : collect();
+            $academicYear = $this->tuitionAcademicYear($validated, $semesters);
+            $agreement = TuitionAgreement::create([
+                'student_id' => $validated['student_id'],
+                'academic_year_id' => $academicYear?->id,
+                'created_by' => $validated['recorded_by'],
+                'payment_method' => ($validated['payment_plan'] ?? 'full') === 'semester' ? 'semester' : 'full',
+                'total_amount' => $validated['amount'],
+                'currency' => $validated['currency'],
+                'status' => 'active',
+                'agreed_at' => $validated['transaction_date'],
+                'notes' => $validated['notes'] ?? null,
+            ]);
+            $validated['tuition_agreement_id'] = $agreement->id;
+            $validated['academic_year_id'] = $academicYear?->id;
+            $validated['academic_year'] = $academicYear?->name ?? ($validated['academic_year'] ?? null);
+
+            if (($validated['payment_plan'] ?? 'full') === 'semester') {
+                return $this->createSemesterTuitionInvoices($validated, $semesters);
+            }
+
+            $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now'])->all();
+            $invoice = FinanceTransaction::create($payload);
+            $transactions = collect([$invoice]);
+
+            if (! empty($validated['collect_now'])) {
+                $payment = FinanceTransaction::create([
+                    'student_id' => $invoice->student_id,
+                    'tuition_agreement_id' => $agreement->id,
+                    'invoice_transaction_id' => $invoice->id,
+                    'recorded_by' => $validated['recorded_by'],
+                    'approved_by' => $validated['recorded_by'],
+                    'approved_at' => now(),
+                    'type' => 'payment',
+                    'amount' => $invoice->amount,
+                    'currency' => $invoice->currency,
+                    'status' => 'approved',
+                    'posting_status' => 'posted',
+                    'payment_status' => 'paid',
+                    'receipt_number' => $this->documentNumber([
+                        'type' => 'payment',
+                        'transaction_date' => $validated['transaction_date'],
+                        'receipt_number' => null,
+                    ], 'receipt_number'),
+                    'reference' => $validated['reference'] ?? 'Full tuition payment',
+                    'academic_year' => $validated['academic_year'] ?? null,
+                    'transaction_date' => $validated['transaction_date'],
+                    'notes' => 'Collected with full tuition agreement.',
+                ]);
+                $transactions->push($payment);
+                $agreement->update(['status' => 'completed']);
+            }
+
+            return $transactions;
         }
 
-        $payload = collect($validated)->except(['payment_plan', 'semester_ids'])->all();
+        $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now'])->all();
 
         return collect([FinanceTransaction::create($payload)]);
     }
@@ -1000,9 +1178,8 @@ class FinanceController extends Controller
         return 'Finance record saved successfully.';
     }
 
-    private function createSemesterTuitionInvoices(array $validated)
+    private function createSemesterTuitionInvoices(array $validated, $semesters)
     {
-        $semesters = $this->selectedTuitionSemesters($validated);
         $totalAmount = (float) $validated['amount'];
         $semesterCount = $semesters->count();
         $baseAmount = round($totalAmount / $semesterCount, 2);
@@ -1014,8 +1191,9 @@ class FinanceController extends Controller
                 $amount = $index === $semesterCount - 1 ? round((float) $validated['amount'] - $allocated, 2) : $baseAmount;
                 $allocated += $amount;
 
-                $payload = collect($validated)->except(['payment_plan', 'semester_ids'])->merge([
+                $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now'])->merge([
                     'amount' => $amount,
+                    'semester_id' => $semester->id,
                     'invoice_number' => null,
                     'reference' => substr(trim(($validated['reference'] ?? 'Tuition').' - '.$semester->name.' '.$semester->academic_year), 0, 100),
                     'academic_year' => $semester->academic_year,
@@ -1053,7 +1231,45 @@ class FinanceController extends Controller
             throw ValidationException::withMessages(['semester_ids' => 'Every selected semester must have an end date before tuition can be split by semester.']);
         }
 
+        if ($semesters->pluck('academic_year_id')->filter()->unique()->count() !== 1) {
+            throw ValidationException::withMessages(['semester_ids' => 'All installments must belong to one academic year.']);
+        }
+
+        if ($semesters->contains(fn (Semester $semester) => ! $semester->academicYear || $semester->academicYear->isLocked())) {
+            throw ValidationException::withMessages(['semester_ids' => 'Closed or archived semesters cannot receive a new tuition agreement.']);
+        }
+
         return $semesters;
+    }
+
+    private function tuitionAcademicYear(array $validated, $semesters): ?AcademicYear
+    {
+        if ($semesters->isNotEmpty()) {
+            return $semesters->first()->academicYear;
+        }
+
+        $student = Student::findOrFail($validated['student_id']);
+        $academicYear = AcademicYear::query()
+            ->whereKey($validated['academic_year_id'] ?? 0)
+            ->where('university_id', $student->university_id)
+            ->whereIn('status', ['upcoming', 'active'])
+            ->first();
+
+        if (! $academicYear && ! empty($validated['academic_year'])) {
+            $academicYear = AcademicYear::query()
+                ->where('university_id', $student->university_id)
+                ->where('name', $validated['academic_year'])
+                ->whereIn('status', ['upcoming', 'active'])
+                ->first();
+        }
+
+        if (! $academicYear && AcademicYear::where('university_id', $student->university_id)->whereIn('status', ['upcoming', 'active'])->exists()) {
+            throw ValidationException::withMessages([
+                'academic_year_id' => 'Select an active or upcoming academic year for this tuition agreement.',
+            ]);
+        }
+
+        return $academicYear;
     }
 
     private function authorizeFinanceEntry(?string $type): void
@@ -1154,6 +1370,7 @@ class FinanceController extends Controller
 
         $allocated = (float) $invoice->allocations()
             ->where('status', '!=', 'cancelled')
+            ->where('posting_status', 'posted')
             ->whereIn('type', FinanceTransaction::creditTypes())
             ->sum('amount');
         $remaining = round((float) $invoice->amount - $allocated, 2);
@@ -1187,7 +1404,11 @@ class FinanceController extends Controller
 
     private function applyFinanceOrganizationConstraint($query, User $user, string $modelType): void
     {
-        if ($user->hasRole('super_administrator') || $user->hasAnyRole(['chief_accountant', 'accountant'])) {
+        if (
+            $user->hasRole('super_administrator')
+            || $user->hasDirectPermissionGrant('finance.view_global')
+            || ($user->hasAnyRole(['chief_accountant', 'accountant']) && ! $user->university_id && ! $user->college_id && ! $user->department_id)
+        ) {
             return;
         }
 
@@ -1307,10 +1528,12 @@ class FinanceController extends Controller
     {
         $charges = FinanceTransaction::where('student_id', $studentId)
             ->where('currency', $currency)
+            ->where('posting_status', 'posted')
             ->whereIn('type', FinanceTransaction::chargeTypes())
             ->sum('amount');
         $credits = FinanceTransaction::where('student_id', $studentId)
             ->where('currency', $currency)
+            ->where('posting_status', 'posted')
             ->whereIn('type', FinanceTransaction::creditTypes())
             ->sum('amount');
         $signedAmount = in_array($type, FinanceTransaction::creditTypes(), true) ? -$amount : $amount;
@@ -1327,9 +1550,13 @@ class FinanceController extends Controller
             ->oldest()
             ->lazy(500)
             ->each(function (FinanceTransaction $transaction) use (&$balance) {
-                $balance += $transaction->signedAmount();
                 $transaction->timestamps = false;
-                $transaction->balance_after = round($balance, 2);
+                if ($transaction->isPosted()) {
+                    $balance += $transaction->signedAmount();
+                    $transaction->balance_after = round($balance, 2);
+                } else {
+                    $transaction->balance_after = null;
+                }
                 $transaction->save();
             });
     }
@@ -1348,17 +1575,19 @@ class FinanceController extends Controller
 
         $paid = (float) $invoice->allocations()
             ->where('status', '!=', 'cancelled')
+            ->where('posting_status', 'posted')
             ->whereIn('type', FinanceTransaction::creditTypes())
             ->sum('amount');
         $amount = (float) $invoice->amount;
         $status = match (true) {
             $paid >= $amount => 'paid',
-            $paid > 0 => 'partial',
             $invoice->due_date && $invoice->due_date->isPast() => 'overdue',
+            $paid > 0 => 'partial',
             default => 'open',
         };
 
         $invoice->update(['payment_status' => $status]);
+        $this->refreshTuitionAgreementStatus($invoice->tuition_agreement_id);
     }
 
     private function paymentStatusForTransaction(array $transaction): string
@@ -1375,10 +1604,6 @@ class FinanceController extends Controller
             return in_array($transaction['status'], ['paid', 'approved'], true) ? 'paid' : 'open';
         }
 
-        if ($transaction['type'] === 'invoice' && $transaction['status'] === 'paid') {
-            return 'paid';
-        }
-
         if (
             $transaction['type'] === 'invoice'
             && ! empty($transaction['due_date'])
@@ -1390,13 +1615,83 @@ class FinanceController extends Controller
         return 'open';
     }
 
-    private function paymentStatusForBalance(float $balance): string
+    private function paymentStatusForBalances($balances): string
     {
-        if ($balance <= 0.0) {
-            return 'paid';
+        return collect($balances)->contains(fn ($balance) => (float) ($balance['balance'] ?? 0) > 0)
+            ? 'open'
+            : 'paid';
+    }
+
+    private function remainingInvoiceAmount(FinanceTransaction $invoice): float
+    {
+        $allocated = (float) $invoice->allocations()
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('type', FinanceTransaction::creditTypes())
+            ->sum('amount');
+
+        return max(0, round((float) $invoice->amount - $allocated, 2));
+    }
+
+    private function refreshStudentInvoiceStatuses(Student $student): void
+    {
+        $student->financeTransactions()
+            ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('payment_status', ['open', 'partial', 'overdue'])
+            ->lazyById(200)
+            ->each(fn (FinanceTransaction $invoice) => $this->refreshAllocatedInvoice($invoice));
+    }
+
+    private function overdueInvoiceQuery(Student $student)
+    {
+        return $student->financeTransactions()
+            ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->where('payment_status', 'overdue');
+    }
+
+    private function synchronizeFinanceHold(?Student $student): void
+    {
+        if (! $student) {
+            return;
         }
 
-        return 'open';
+        $this->refreshStudentInvoiceStatuses($student);
+        $account = $student->user;
+
+        if ($account && $account->account_block_type === 'finance' && ! $this->overdueInvoiceQuery($student)->exists()) {
+            $account->update([
+                'account_blocked_at' => null,
+                'account_blocked_by' => null,
+                'account_block_reason' => null,
+                'account_block_type' => null,
+            ]);
+        }
+    }
+
+    private function refreshTuitionAgreementStatus(?int $agreementId): void
+    {
+        if (! $agreementId) {
+            return;
+        }
+
+        $agreement = TuitionAgreement::find($agreementId);
+        if (! $agreement || $agreement->status === 'cancelled') {
+            return;
+        }
+
+        $invoiceQuery = $agreement->transactions()
+            ->where('type', 'invoice')
+            ->where('status', '!=', 'cancelled');
+        $invoiceCount = (clone $invoiceQuery)->count();
+        $hasUnpaid = (clone $invoiceQuery)->where('payment_status', '!=', 'paid')->exists();
+
+        $agreement->update([
+            'status' => $invoiceCount === 0 ? 'cancelled' : ($hasUnpaid ? 'active' : 'completed'),
+        ]);
     }
 
     private function reversalType(string $type): string

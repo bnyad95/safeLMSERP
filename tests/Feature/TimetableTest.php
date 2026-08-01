@@ -589,6 +589,46 @@ class TimetableTest extends TestCase
         ]);
     }
 
+    public function test_closed_academic_year_timetable_entries_are_read_only(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $section = $this->makeSection();
+        $room = Classroom::create(['name' => 'Archive Room', 'capacity' => 40]);
+        $entry = Timetable::create([
+            'course_id' => $section->course_id,
+            'course_section_id' => $section->id,
+            'teacher_id' => $section->teacher_id,
+            'classroom_id' => $room->id,
+            'day_of_week' => 'Monday',
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'room_number' => $room->name,
+            'type' => 'lecture',
+            'status' => 'scheduled',
+        ]);
+        $section->semester->academicYear->update(['status' => 'closed']);
+
+        $this->actingAs($admin)
+            ->patch(route('timetables.update', $entry), [
+                'department_id' => $section->course->department_id,
+                'grade_level' => $section->grade_level,
+                'course_section_id' => $section->id,
+                'classroom_id' => $room->id,
+                'day_of_week' => 'Tuesday',
+                'start_time' => '10:00',
+                'end_time' => '11:00',
+                'type' => 'lab',
+                'status' => 'scheduled',
+            ])
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('timetables', [
+            'id' => $entry->id,
+            'day_of_week' => 'Monday',
+            'type' => 'lecture',
+        ]);
+    }
+
     public function test_admin_timetable_handles_rows_without_module(): void
     {
         $admin = $this->makeSuperAdmin();

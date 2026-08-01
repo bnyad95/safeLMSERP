@@ -10,7 +10,16 @@ class Semester extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['university_id', 'academic_year_id', 'name', 'academic_year', 'start_date', 'end_date'];
+    protected $fillable = ['university_id', 'academic_year_id', 'name', 'term_type', 'sequence', 'academic_year', 'start_date', 'end_date'];
+
+    protected function casts(): array
+    {
+        return [
+            'sequence' => 'integer',
+            'start_date' => 'date',
+            'end_date' => 'date',
+        ];
+    }
 
     protected static function booted(): void
     {
@@ -28,7 +37,7 @@ class Semester extends Model
             if ($semester->university_id && filled($semester->academic_year)) {
                 $academicYear = AcademicYear::firstOrCreate(
                     ['university_id' => $semester->university_id, 'name' => $semester->academic_year],
-                    ['status' => 'active']
+                    ['status' => 'upcoming']
                 );
                 $semester->academic_year_id = $academicYear->id;
             }
@@ -53,5 +62,10 @@ class Semester extends Model
     public function courseSections()
     {
         return $this->hasMany(CourseSection::class);
+    }
+
+    public function isLocked(): bool
+    {
+        return $this->academicYear?->isLocked() ?? false;
     }
 }

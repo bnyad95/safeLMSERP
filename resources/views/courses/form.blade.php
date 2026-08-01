@@ -35,7 +35,7 @@
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Credits</label>
-            <input type="number" min="1" max="10" name="credits" value="{{ old('credits', $course->credits ?? 3) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+            <input type="number" min="0.5" max="30" step="0.5" name="credits" value="{{ old('credits', $course->credits ?? 3) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>

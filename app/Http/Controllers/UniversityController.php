@@ -38,6 +38,8 @@ class UniversityController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', 'unique:universities,code'],
             'institution_type' => ['required', Rule::in(['university', 'institute'])],
+            'expected_stage_count' => ['required', 'integer', 'min:1', 'max:12'],
+            'expected_semesters_per_year' => ['required', 'integer', 'min:1', 'max:4'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
         ]);
@@ -64,6 +66,8 @@ class UniversityController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', Rule::unique('universities', 'code')->ignore($university->id)],
             'institution_type' => ['required', Rule::in(['university', 'institute'])],
+            'expected_stage_count' => ['required', 'integer', 'min:1', 'max:12'],
+            'expected_semesters_per_year' => ['required', 'integer', 'min:1', 'max:4'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
         ]);

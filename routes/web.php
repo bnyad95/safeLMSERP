@@ -93,6 +93,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/my-finance', [FinanceController::class, 'studentFinance'])
         ->middleware('role.any:student')
         ->name('student.finance');
+    Route::get('/my-finance/transactions/{financeTransaction}/receipt', [FinanceController::class, 'receipt'])
+        ->middleware('access.any:role:student')
+        ->name('student.finance.receipt');
     Route::get('/course-registration', [CourseRegistrationController::class, 'index'])
         ->middleware('role.any:student')
         ->name('course-registration.index');
@@ -152,6 +155,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/enrollments', [EnrollmentController::class, 'index'])
         ->middleware('permission.any:enrollments.view')
         ->name('enrollments.index');
+    Route::get('/module-offerings', [EnrollmentController::class, 'moduleOfferings'])
+        ->name('module-offerings.index');
     Route::get('/course-sections/create', [EnrollmentController::class, 'createSection'])
         ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.create');
@@ -219,9 +224,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/academic-years/create', [SemesterController::class, 'createAcademicYear'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
         ->name('academic-years.create');
+    Route::get('/academic-years/{academicYear}', [SemesterController::class, 'showAcademicYear'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
+        ->name('academic-years.show');
+    Route::get('/academic-years/{academicYear}/edit', [SemesterController::class, 'editAcademicYear'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->name('academic-years.edit');
     Route::post('/academic-years', [SemesterController::class, 'storeAcademicYear'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
         ->name('academic-years.store');
+    Route::put('/academic-years/{academicYear}', [SemesterController::class, 'updateAcademicYear'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->name('academic-years.update');
     Route::resource('universities', UniversityController::class)
         ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage');
@@ -299,6 +313,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/finance/students/{student}/statement', [FinanceController::class, 'statement'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.statement');
+    Route::get('/finance/transactions/{financeTransaction}/receipt', [FinanceController::class, 'receipt'])
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->name('finance.transactions.receipt');
     Route::post('/finance/students/{student}/account-block', [FinanceController::class, 'blockStudentAccount'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.approve_payment')
         ->name('finance.students.account-block.store');
@@ -326,6 +343,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/bologna-definition/student-rankings', [ErpController::class, 'studentRankings'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
         ->name('bologna-definition.student-rankings');
+    Route::get('/bologna-definition/student-rankings/export', [ErpController::class, 'exportStudentRankings'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
+        ->name('bologna-definition.student-rankings.export');
     Route::get('/bologna-definition/semester-credit-policy', [ErpController::class, 'semesterCreditPolicy'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
         ->name('bologna-definition.semester-credit-policy');

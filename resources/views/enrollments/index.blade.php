@@ -2,8 +2,8 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-xl font-semibold text-gray-900">Enrollments</h2>
-                <p class="text-sm text-gray-600">Semester modules, rosters, waitlists, transfers, and enrollment history.</p>
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Module Offerings</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Open catalog courses for an academic year, stage, semester, group, and teacher.</p>
             </div>
             <div class="flex flex-wrap gap-2">
                 <a href="{{ route('course-records.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Course Catalog</a>
@@ -31,7 +31,7 @@
                 @endforeach
             </div>
 
-            <form method="GET" action="{{ route('enrollments.index') }}" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <form method="GET" action="{{ route('module-offerings.index') }}" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="grid gap-4 md:grid-cols-4">
                     <div class="md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700">Search</label>
@@ -102,7 +102,7 @@
                     </div>
                 </div>
                 <div class="mt-4 flex justify-end gap-2">
-                    <a href="{{ route('enrollments.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Reset</a>
+                    <a href="{{ route('module-offerings.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Reset</a>
                     <button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Apply</button>
                 </div>
             </form>
@@ -149,7 +149,7 @@
                     <a href="{{ route('course-sections.show', $section) }}" class="block rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md">
                         <div class="flex items-start justify-between gap-4">
                             <div>
-                                <div class="text-sm font-medium text-gray-500">{{ $section->semester->name }} {{ $section->semester->academic_year }} / Group {{ $section->section_code }}</div>
+                                <div class="text-sm font-medium text-gray-500">{{ $section->semester->name }} {{ $section->semester->academic_year }} / {{ $section->programSemesterLabel() }} / Group {{ $section->section_code }}</div>
                                 <div class="mt-1 text-lg font-semibold text-gray-900">{{ $section->course->code }} - {{ $section->course->name }}</div>
                             </div>
                             <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $section->status === 'active' ? 'bg-green-100 text-green-700' : ($section->status === 'closed' ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-700') }}">{{ ucfirst($section->status) }}</span>
@@ -166,6 +166,10 @@
                             <div>
                                 <dt class="text-gray-500">Stage</dt>
                                 <dd class="font-medium text-gray-900">{{ $section->grade_level ?: 'No stage' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-gray-500">Program Semester</dt>
+                                <dd class="font-medium text-gray-900">{{ $section->programSemesterLabel() }}</dd>
                             </div>
                             <div>
                                 <dt class="text-gray-500">Teacher</dt>

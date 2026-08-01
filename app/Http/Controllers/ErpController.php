@@ -1587,8 +1587,7 @@ class ErpController extends Controller
         $coursesQuery = Course::with(['department.college'])->withCount('sections')->orderBy('name');
         $sectionsQuery = CourseSection::with(['course.department.college', 'semester', 'teacher', 'stage'])
             ->withCount('activeEnrollments')
-            ->orderBy('grade_level')
-            ->orderBy('section_code');
+            ->orderByDesc('created_at');
 
         OrganizationScope::apply($universitiesQuery, $user, 'university');
         OrganizationScope::apply($collegesQuery, $user, 'college');
@@ -1611,6 +1610,7 @@ class ErpController extends Controller
         $courseCount = (clone $coursesQuery)->count();
         $moduleCount = (clone $sectionsQuery)->reorder()->count();
         $inactiveCourseCount = (clone $coursesQuery)->where('status', 'inactive')->count();
+        $missingCreditPolicyCount = max(0, $universityCount - $semesterCreditPolicyCount);
 
         $structureStats = [
             ['label' => 'Universities', 'value' => number_format($universityCount), 'detail' => 'Institution records in scope'],
@@ -1631,26 +1631,67 @@ class ErpController extends Controller
 
         $stageSummaries = $stageSectionsQuery
             ->leftJoin('courses', 'course_sections.course_id', '=', 'courses.id')
+            ->leftJoin('departments', 'courses.department_id', '=', 'departments.id')
+            ->leftJoin('colleges', 'departments.college_id', '=', 'colleges.id')
+            ->leftJoin('universities', 'departments.university_id', '=', 'universities.id')
             ->leftJoin('stages', 'course_sections.stage_id', '=', 'stages.id')
             ->leftJoinSub($activeEnrollmentCounts, 'active_enrollment_counts', function ($join) {
                 $join->on('active_enrollment_counts.course_section_id', '=', 'course_sections.id');
             })
+            ->selectRaw('universities.name as university')
+            ->selectRaw('colleges.name as college')
+            ->selectRaw('departments.id as department_id')
+            ->selectRaw('departments.name as department')
+            ->selectRaw('COALESCE(stages.id, 0) as stage_id')
             ->selectRaw("COALESCE(stages.name, NULLIF(course_sections.grade_level, ''), 'Stage not specified') as stage")
             ->selectRaw('COUNT(course_sections.id) as modules')
             ->selectRaw('COUNT(DISTINCT course_sections.course_id) as courses')
             ->selectRaw('COUNT(DISTINCT course_sections.semester_id) as semesters')
             ->selectRaw('COALESCE(SUM(active_enrollment_counts.active_enrollments_count), 0) as students')
-            ->selectRaw('COALESCE(SUM(courses.credits), 0) as credits')
-            ->groupByRaw("COALESCE(stages.name, NULLIF(course_sections.grade_level, ''), 'Stage not specified')")
+            ->groupBy(
+                'universities.name',
+                'colleges.name',
+                'departments.id',
+                'departments.name',
+                'stages.id',
+                'stages.name',
+                'course_sections.grade_level'
+            )
+            ->orderBy('universities.name')
+            ->orderBy('colleges.name')
+            ->orderBy('departments.name')
             ->orderBy('stage')
+            ->get();
+
+        $stageCreditRowsQuery = CourseSection::query();
+        OrganizationScope::apply($stageCreditRowsQuery, $user, 'section');
+        $stageCreditRows = $stageCreditRowsQuery
+            ->join('courses', 'course_sections.course_id', '=', 'courses.id')
+            ->leftJoin('stages', 'course_sections.stage_id', '=', 'stages.id')
+            ->selectRaw('courses.department_id as department_id')
+            ->selectRaw('COALESCE(stages.id, 0) as stage_id')
+            ->selectRaw("COALESCE(stages.name, NULLIF(course_sections.grade_level, ''), 'Stage not specified') as stage")
+            ->selectRaw('course_sections.course_id as course_id')
+            ->selectRaw('MAX(courses.credits) as credits')
+            ->groupBy('courses.department_id', 'stages.id', 'stages.name', 'course_sections.grade_level', 'course_sections.course_id');
+        $stageCredits = DB::query()
+            ->fromSub($stageCreditRows, 'stage_courses')
+            ->selectRaw('department_id, stage_id, stage, SUM(credits) as credits')
+            ->groupBy('department_id', 'stage_id', 'stage')
             ->get()
+            ->keyBy(fn ($row) => $row->department_id.'|'.$row->stage_id.'|'.$row->stage);
+
+        $stageSummaries = $stageSummaries
             ->map(fn ($stage) => [
+                'university' => $stage->university,
+                'college' => $stage->college,
+                'department' => $stage->department,
                 'stage' => $stage->stage,
                 'modules' => (int) $stage->modules,
                 'courses' => (int) $stage->courses,
                 'semesters' => (int) $stage->semesters,
                 'students' => (int) $stage->students,
-                'credits' => (int) $stage->credits,
+                'credits' => round((float) ($stageCredits[$stage->department_id.'|'.$stage->stage_id.'|'.$stage->stage]->credits ?? 0), 1),
             ]);
 
         $moduleSummaries = (clone $sectionsQuery)
@@ -1668,7 +1709,12 @@ class ErpController extends Controller
 
         $universityScopeQuery = University::query()->orderBy('name');
         OrganizationScope::apply($universityScopeQuery, $user, 'university');
-        $scopedUniversities = $universityScopeQuery->get(['id', 'institution_type']);
+        $scopedUniversities = $universityScopeQuery->get([
+            'id',
+            'institution_type',
+            'expected_stage_count',
+            'expected_semesters_per_year',
+        ]);
 
         $academicYearSemesterCountsQuery = AcademicYear::query()
             ->leftJoin('semesters', 'semesters.academic_year_id', '=', 'academic_years.id')
@@ -1686,25 +1732,26 @@ class ErpController extends Controller
                     return false;
                 }
 
-                $expectedSemesters = $university->isInstitute() ? 4 : 8;
+                $expectedSemesters = $university->expectedSemesterCount();
+                $actualSemesters = (int) $academicYear->semester_count;
 
-                return (int) $academicYear->semester_count !== $expectedSemesters;
+                return $actualSemesters < $expectedSemesters || $actualSemesters > $expectedSemesters + 1;
             })
             ->count();
 
-        $stageCountsByUniversityQuery = Stage::query()
-            ->selectRaw('university_id, COUNT(DISTINCT sequence) as stage_count')
-            ->groupBy('university_id');
-        OrganizationScope::apply($stageCountsByUniversityQuery, $user, 'stage');
-        $stageCountsByUniversity = $stageCountsByUniversityQuery
-            ->get()
-            ->mapWithKeys(fn ($row) => [(int) $row->university_id => (int) $row->stage_count]);
+        $departmentStageCountsQuery = Department::query()
+            ->leftJoin('stages', 'stages.department_id', '=', 'departments.id')
+            ->selectRaw('departments.id as department_id, departments.university_id as university_id, COUNT(DISTINCT stages.sequence) as stage_count')
+            ->groupBy('departments.id', 'departments.university_id');
+        OrganizationScope::apply($departmentStageCountsQuery, $user, 'department');
+        $departmentStageCounts = $departmentStageCountsQuery->get();
+        $universitiesById = $scopedUniversities->keyBy('id');
 
-        $institutionStageRuleViolations = $scopedUniversities
-            ->filter(function (University $university) use ($stageCountsByUniversity) {
-                $actualStageCount = (int) ($stageCountsByUniversity[$university->id] ?? 0);
+        $institutionStageRuleViolations = $departmentStageCounts
+            ->filter(function ($department) use ($universitiesById) {
+                $university = $universitiesById->get((int) $department->university_id);
 
-                return $actualStageCount !== $university->expectedStageCount();
+                return $university && (int) $department->stage_count !== $university->expectedStageCount();
             })
             ->count();
 
@@ -1712,12 +1759,12 @@ class ErpController extends Controller
             [
                 'label' => 'Institution semester rule mismatch',
                 'value' => $institutionSemesterRuleViolations,
-                'detail' => 'Universities require 8 semesters; institutes require 4 semesters per academic year.',
+                'detail' => 'Each academic year must match its institution semester target; one optional summer semester is allowed.',
             ],
             [
                 'label' => 'Institution stage rule mismatch',
                 'value' => $institutionStageRuleViolations,
-                'detail' => 'Universities require 4 stages; institutes require 2 stages.',
+                'detail' => 'Departments must define the number of program stages configured for their institution.',
             ],
             [
                 'label' => 'Missing stage',
@@ -1742,20 +1789,29 @@ class ErpController extends Controller
                 'value' => $inactiveCourseCount,
                 'detail' => 'Review inactive catalog definitions.',
             ],
+            [
+                'label' => 'Missing credit policy',
+                'value' => $missingCreditPolicyCount,
+                'detail' => 'Every institution should define semester, progression, and graduation credit requirements.',
+            ],
         ]);
         $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
         $canViewCourseCatalog = $user->hasRole('super_administrator') || $user->hasPermission('courses.view');
+        $canViewModuleOfferings = $user->hasAnyRole(['super_administrator', 'administrator'])
+            || $user->hasPermission('enrollments.view')
+            || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
 
         $setupCards = [
-            ['title' => 'Academic Years', 'description' => 'Manage active, closed, and archived academic periods.', 'route' => route('academic-years.index'), 'count' => $academicYearCount, 'enabled' => true],
             ['title' => 'Universities', 'description' => 'Institution records and official codes.', 'route' => route('universities.index'), 'count' => $universityCount, 'enabled' => true],
             ['title' => 'Colleges', 'description' => 'College definitions under each university.', 'route' => route('colleges.index'), 'count' => $collegeCount, 'enabled' => true],
             ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
             ['title' => 'Stages', 'description' => 'Reusable study stages defined for each department.', 'route' => route('stages.index'), 'count' => $stageCount, 'enabled' => true],
-            ['title' => 'Semesters', 'description' => 'Academic periods with year and date range.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
-            ['title' => 'Semester Credit Policy', 'description' => 'Set semester ECTS/credits and passing credits required.', 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => $canManageAcademicSetup],
+            ['title' => 'Semester Credit Policy', 'description' => 'Review semester ECTS/credits and passing credits required.', 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => true],
             ['title' => 'Course Catalog', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
+            ['title' => 'Academic Years', 'description' => 'Manage upcoming, active, closed, and archived academic periods.', 'route' => route('academic-years.index'), 'count' => $academicYearCount, 'enabled' => true],
+            ['title' => 'Semesters', 'description' => 'Define regular and optional summer periods inside each academic year.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
+            ['title' => 'Module Offerings', 'description' => 'Open catalog courses by academic year, semester, stage, group, and teacher.', 'route' => route('module-offerings.index'), 'count' => $moduleCount, 'enabled' => $canViewModuleOfferings],
         ];
 
         return view('erp.bologna-definition', compact(
@@ -1781,8 +1837,10 @@ class ErpController extends Controller
             ->whereIn('university_id', $universities->pluck('id'))
             ->get()
             ->keyBy('university_id');
+        $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
+            || $user->hasDirectPermissionGrant('academic_setup.manage');
 
-        return view('erp.semester-credit-policy', compact('universities', 'policies'));
+        return view('erp.semester-credit-policy', compact('universities', 'policies', 'canManageAcademicSetup'));
     }
 
     public function storeSemesterCreditPolicy(Request $request)
@@ -1806,6 +1864,7 @@ class ErpController extends Controller
 
             $semesterCredits = (int) ($policy['semester_credits'] ?? 0);
             $passingCredits = (int) ($policy['passing_credits'] ?? 0);
+            $graduationCredits = (int) ($policy['graduation_credits'] ?? 0);
 
             if ($semesterCredits < 1 || $semesterCredits > 120) {
                 return back()->withInput()->withErrors([
@@ -1819,11 +1878,18 @@ class ErpController extends Controller
                 ]);
             }
 
+            if ($graduationCredits < $semesterCredits || $graduationCredits > 2000) {
+                return back()->withInput()->withErrors([
+                    "policies.{$university->id}.graduation_credits" => "{$university->name}: graduation credits must be at least one semester and no more than 2000.",
+                ]);
+            }
+
             SemesterCreditPolicy::updateOrCreate(
                 ['university_id' => $university->id],
                 [
                     'semester_credits' => $semesterCredits,
                     'passing_credits' => $passingCredits,
+                    'graduation_credits' => $graduationCredits,
                 ]
             );
         }
@@ -1846,6 +1912,59 @@ class ErpController extends Controller
         return view('erp.student-rankings', compact('studentRankingHierarchy', 'rankings', 'rankingFilters', 'rankingOptions'));
     }
 
+    public function exportStudentRankings(Request $request)
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
+
+        $sectionsQuery = CourseSection::withTrashed();
+        OrganizationScope::apply($sectionsQuery, $user, 'section');
+        [, , , , $rankingQuery] = $this->bolognaStudentRankingHierarchy($sectionsQuery, $request);
+
+        return response()->streamDownload(function () use ($rankingQuery) {
+            $output = fopen('php://output', 'w');
+            fputcsv($output, [
+                'Rank',
+                'Student ID',
+                'Student',
+                'University',
+                'College',
+                'Department',
+                'Stage',
+                'Academic Year',
+                'Average',
+                'Stage Credits',
+                'Lifetime Credits',
+                'Progression Eligible',
+                'Graduation Eligible',
+            ]);
+
+            foreach ($rankingQuery->cursor() as $row) {
+                fputcsv($output, [
+                    $row->student_rank,
+                    $row->student_number,
+                    $row->student_name,
+                    $row->university,
+                    $row->college,
+                    $row->department,
+                    $row->stage,
+                    $row->academic_year,
+                    round((float) $row->average_mark, 1),
+                    round((float) $row->earned_credits, 1),
+                    round((float) $row->lifetime_credits, 1),
+                    (int) $row->required_progression_credits > 0
+                        ? ((float) $row->earned_credits >= (int) $row->required_progression_credits ? 'Yes' : 'No')
+                        : 'Policy missing',
+                    (int) $row->required_graduation_credits > 0
+                        ? ((float) $row->lifetime_credits >= (int) $row->required_graduation_credits ? 'Yes' : 'No')
+                        : 'Policy missing',
+                ]);
+            }
+
+            fclose($output);
+        }, 'student-rankings-'.now()->format('Y-m-d').'.csv', ['Content-Type' => 'text/csv']);
+    }
+
     private function bolognaStudentRankingHierarchy($sectionsQuery, Request $request): array
     {
         $passMark = (int) config('academics.pass_mark', 50);
@@ -1858,6 +1977,26 @@ class ErpController extends Controller
         ];
         $scopedSectionIds = (clone $sectionsQuery)->reorder()->select('course_sections.id');
 
+        $passedCourses = Enrollment::query()
+            ->join('course_sections', 'enrollments.course_section_id', '=', 'course_sections.id')
+            ->join('courses', 'course_sections.course_id', '=', 'courses.id')
+            ->join('marks', function ($join) use ($passMark) {
+                $join->on('marks.course_section_id', '=', 'course_sections.id')
+                    ->on('marks.student_id', '=', 'enrollments.student_id')
+                    ->whereNull('marks.deleted_at')
+                    ->where('marks.visibility_status', 'published')
+                    ->where('marks.final_mark', '>=', $passMark);
+            })
+            ->whereIn('enrollments.course_section_id', (clone $scopedSectionIds))
+            ->whereIn('enrollments.status', ['enrolled', 'completed'])
+            ->whereNull('enrollments.deleted_at')
+            ->selectRaw('enrollments.student_id as student_id, courses.university_id as university_id, courses.id as course_id, MAX(courses.credits) as credits')
+            ->groupBy('enrollments.student_id', 'courses.university_id', 'courses.id');
+        $lifetimeCredits = DB::query()
+            ->fromSub($passedCourses, 'passed_courses')
+            ->selectRaw('student_id, university_id, SUM(credits) as earned_credits')
+            ->groupBy('student_id', 'university_id');
+
         $studentScores = Enrollment::query()
             ->join('course_sections', 'enrollments.course_section_id', '=', 'course_sections.id')
             ->join('students', 'enrollments.student_id', '=', 'students.id')
@@ -1867,6 +2006,11 @@ class ErpController extends Controller
             ->join('colleges', 'departments.college_id', '=', 'colleges.id')
             ->join('universities', 'departments.university_id', '=', 'universities.id')
             ->leftJoin('stages', 'course_sections.stage_id', '=', 'stages.id')
+            ->leftJoin('semester_credit_policies', 'universities.id', '=', 'semester_credit_policies.university_id')
+            ->leftJoinSub($lifetimeCredits, 'lifetime_credits', function ($join) {
+                $join->on('lifetime_credits.student_id', '=', 'students.id')
+                    ->on('lifetime_credits.university_id', '=', 'universities.id');
+            })
             ->leftJoin('marks', function ($join) {
                 $join->on('course_sections.id', '=', 'marks.course_section_id')
                     ->on('students.id', '=', 'marks.student_id')
@@ -1890,6 +2034,11 @@ class ErpController extends Controller
             ->selectRaw('students.student_id as student_number')
             ->selectRaw('1.0 * SUM(marks.final_mark * courses.credits) / NULLIF(SUM(courses.credits), 0) as average_mark')
             ->selectRaw('COUNT(enrollments.id) as modules_count')
+            ->selectRaw('COUNT(DISTINCT course_sections.semester_id) as semester_count')
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark >= ? THEN courses.credits ELSE 0 END) as earned_credits", [$passMark])
+            ->selectRaw('COALESCE(MAX(lifetime_credits.earned_credits), 0) as lifetime_credits')
+            ->selectRaw('COALESCE(MAX(semester_credit_policies.passing_credits), 0) * COUNT(DISTINCT course_sections.semester_id) as required_progression_credits')
+            ->selectRaw('COALESCE(MAX(semester_credit_policies.graduation_credits), 0) as required_graduation_credits')
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark IS NOT NULL THEN 1 ELSE 0 END) as published_count")
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark >= ? THEN 1 ELSE 0 END) as passed_count", [$passMark])
             ->groupBy(
@@ -1913,9 +2062,9 @@ class ErpController extends Controller
         $rankedScores = DB::query()
             ->fromSub($studentScores, 'student_scores')
             ->select('student_scores.*')
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY university_id, college_id, department_id, stage_id, stage, academic_year ORDER BY average_mark DESC, student_name ASC) as student_rank');
+            ->selectRaw('DENSE_RANK() OVER (PARTITION BY university_id, college_id, department_id, stage_id, stage, academic_year ORDER BY average_mark DESC) as student_rank');
 
-        $rankingQuery = DB::query()
+        $filteredRankings = DB::query()
             ->fromSub($rankedScores, 'ranked_scores')
             ->when($rankingFilters['q'] !== '', fn ($query) => $query->where(function ($search) use ($rankingFilters) {
                 $search->where('student_name', 'like', "%{$rankingFilters['q']}%")
@@ -1924,13 +2073,37 @@ class ErpController extends Controller
             ->when($rankingFilters['college_id'], fn ($query, $id) => $query->where('college_id', $id))
             ->when($rankingFilters['department_id'], fn ($query, $id) => $query->where('department_id', $id))
             ->when($rankingFilters['stage_id'], fn ($query, $id) => $query->where('stage_id', $id))
-            ->when($rankingFilters['academic_year'] !== '', fn ($query) => $query->where('academic_year', $rankingFilters['academic_year']))
+            ->when($rankingFilters['academic_year'] !== '', fn ($query) => $query->where('academic_year', $rankingFilters['academic_year']));
+
+        $collegeTotals = (clone $filteredRankings)
+            ->selectRaw('university_id, college_id, COUNT(DISTINCT student_id) as students')
+            ->groupBy('university_id', 'college_id')
+            ->get()
+            ->keyBy(fn ($row) => $row->university_id.'|'.$row->college_id);
+        $departmentTotals = (clone $filteredRankings)
+            ->selectRaw('department_id, COUNT(DISTINCT student_id) as students')
+            ->groupBy('department_id')
+            ->get()
+            ->keyBy('department_id');
+        $stageTotals = (clone $filteredRankings)
+            ->selectRaw('department_id, stage_id, stage, COUNT(DISTINCT student_id) as students')
+            ->groupBy('department_id', 'stage_id', 'stage')
+            ->get()
+            ->keyBy(fn ($row) => $row->department_id.'|'.$row->stage_id.'|'.$row->stage);
+        $yearTotals = (clone $filteredRankings)
+            ->selectRaw('department_id, stage_id, stage, academic_year, COUNT(DISTINCT student_id) as students')
+            ->groupBy('department_id', 'stage_id', 'stage', 'academic_year')
+            ->get()
+            ->keyBy(fn ($row) => $row->department_id.'|'.$row->stage_id.'|'.$row->stage.'|'.$row->academic_year);
+
+        $rankingQuery = (clone $filteredRankings)
             ->orderBy('university')
             ->orderBy('college')
             ->orderBy('department')
             ->orderBy('stage')
             ->orderByDesc('academic_year')
-            ->orderBy('student_rank');
+            ->orderBy('student_rank')
+            ->orderBy('student_name');
         $rankings = $rankingQuery->paginate(100)->withQueryString();
         $rows = collect($rankings->items());
         $hierarchy = $rows
@@ -1938,21 +2111,22 @@ class ErpController extends Controller
             ->map(fn ($collegeRows) => [
                 'university' => $collegeRows->first()->university,
                 'college' => $collegeRows->first()->college,
-                'students' => $collegeRows->pluck('student_id')->unique()->count(),
+                'students' => (int) ($collegeTotals[$collegeRows->first()->university_id.'|'.$collegeRows->first()->college_id]->students ?? 0),
                 'departments' => $collegeRows
                     ->groupBy('department_id')
-                    ->map(fn ($departmentRows) => [
+                    ->map(fn ($departmentRows, $departmentId) => [
                         'department' => $departmentRows->first()->department,
-                        'students' => $departmentRows->pluck('student_id')->unique()->count(),
+                        'students' => (int) ($departmentTotals[$departmentId]->students ?? 0),
                         'stages' => $departmentRows
                             ->groupBy(fn ($row) => $row->stage_id.'|'.$row->stage)
-                            ->map(fn ($stageRows) => [
+                            ->map(fn ($stageRows, $stageKey) => [
                                 'stage' => $stageRows->first()->stage,
-                                'students' => $stageRows->pluck('student_id')->unique()->count(),
+                                'students' => (int) ($stageTotals[$departmentId.'|'.$stageKey]->students ?? 0),
                                 'years' => $stageRows
                                     ->groupBy('academic_year')
                                     ->map(fn ($yearRows, string $academicYear) => [
                                         'academic_year' => $academicYear,
+                                        'total_students' => (int) ($yearTotals[$departmentId.'|'.$stageKey.'|'.$academicYear]->students ?? 0),
                                         'students' => $yearRows
                                             ->map(fn ($row) => [
                                                 'rank' => (int) $row->student_rank,
@@ -1960,6 +2134,16 @@ class ErpController extends Controller
                                                 'student_number' => $row->student_number ?: '-',
                                                 'average' => round((float) $row->average_mark, 1),
                                                 'marks' => (int) $row->modules_count,
+                                                'earned_credits' => round((float) $row->earned_credits, 1),
+                                                'required_progression_credits' => (int) $row->required_progression_credits,
+                                                'progression_eligible' => (int) $row->required_progression_credits > 0
+                                                    ? (float) $row->earned_credits >= (int) $row->required_progression_credits
+                                                    : null,
+                                                'lifetime_credits' => round((float) $row->lifetime_credits, 1),
+                                                'required_graduation_credits' => (int) $row->required_graduation_credits,
+                                                'graduation_eligible' => (int) $row->required_graduation_credits > 0
+                                                    ? (float) $row->lifetime_credits >= (int) $row->required_graduation_credits
+                                                    : null,
                                                 'pass_rate' => (int) $row->modules_count > 0
                                                     ? round(((int) $row->passed_count / (int) $row->modules_count) * 100)
                                                     : 0,
@@ -1974,28 +2158,21 @@ class ErpController extends Controller
             ])
             ->values();
 
-        $optionRows = DB::table('course_sections')
+        $optionBase = DB::table('course_sections')
             ->join('semesters', 'course_sections.semester_id', '=', 'semesters.id')
             ->join('courses', 'course_sections.course_id', '=', 'courses.id')
             ->join('departments', 'courses.department_id', '=', 'departments.id')
             ->join('colleges', 'departments.college_id', '=', 'colleges.id')
             ->leftJoin('stages', 'course_sections.stage_id', '=', 'stages.id')
-            ->whereIn('course_sections.id', (clone $scopedSectionIds))
-            ->selectRaw('colleges.id as college_id, colleges.name as college')
-            ->selectRaw('departments.id as department_id, departments.name as department')
-            ->selectRaw('COALESCE(stages.id, 0) as stage_id')
-            ->selectRaw("COALESCE(stages.name, NULLIF(course_sections.grade_level, ''), 'Stage not specified') as stage")
-            ->addSelect('semesters.academic_year')
-            ->distinct()
-            ->get();
+            ->whereIn('course_sections.id', (clone $scopedSectionIds));
         $rankingOptions = [
-            'colleges' => $optionRows->unique('college_id')->sortBy('college')->values(),
-            'departments' => $optionRows->unique('department_id')->sortBy('department')->values(),
-            'stages' => $optionRows->unique(fn ($row) => $row->stage_id.'|'.$row->stage)->sortBy('stage')->values(),
-            'academicYears' => $optionRows->pluck('academic_year')->unique()->sortDesc()->values(),
+            'colleges' => (clone $optionBase)->selectRaw('colleges.id as college_id, colleges.name as college')->distinct()->orderBy('college')->get(),
+            'departments' => (clone $optionBase)->selectRaw('departments.id as department_id, departments.college_id as college_id, departments.name as department')->distinct()->orderBy('department')->get(),
+            'stages' => (clone $optionBase)->selectRaw('COALESCE(stages.id, 0) as stage_id, departments.id as department_id')->selectRaw("COALESCE(stages.name, NULLIF(course_sections.grade_level, ''), 'Stage not specified') as stage")->distinct()->orderBy('stage')->get(),
+            'academicYears' => (clone $optionBase)->orderByDesc('semesters.academic_year')->distinct()->pluck('semesters.academic_year'),
         ];
 
-        return [$hierarchy, $rankings, $rankingFilters, $rankingOptions];
+        return [$hierarchy, $rankings, $rankingFilters, $rankingOptions, $rankingQuery];
     }
 
     public function search(Request $request)

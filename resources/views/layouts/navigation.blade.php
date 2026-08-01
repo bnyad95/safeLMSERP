@@ -179,7 +179,7 @@
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Academic</p>
                         @if($canStudents)<x-nav-link :href="route('students.index')" :active="request()->routeIs('students.*')">{{ __('Student Records') }}</x-nav-link>@endif
                         @if($canTeachers)<x-nav-link :href="route('teachers.index')" :active="request()->routeIs('teachers.*')">{{ __('Teachers') }}</x-nav-link>@endif
-                        @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.*')">{{ __('Enrollments') }}</x-nav-link>@endif
+                        @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.show')">{{ __('Enrollments') }}</x-nav-link>@endif
                         @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
                         @if($canAttendance)<x-nav-link :href="route('attendance')" :active="request()->routeIs('attendance', 'attendance.*')">{{ __('Attendance') }}</x-nav-link>@endif
                     @endif
@@ -208,7 +208,7 @@
 
                     @if($canStructure)
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Academic Setup</p>
-                        <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*')">{{ __('Bologna Definition') }}</x-nav-link>
+                        <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore')">{{ __('Bologna Definition') }}</x-nav-link>
                         <x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>
                         <x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>
                     @endif

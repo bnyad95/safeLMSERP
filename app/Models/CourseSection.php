@@ -39,32 +39,7 @@ class CourseSection extends Model
                 return;
             }
 
-            $stageName = trim((string) $section->grade_level);
-            $course = $section->course_id ? Course::withTrashed()->find($section->course_id) : null;
-            if ($stageName !== '' && $course) {
-                $stage = Stage::where('department_id', $course->department_id)
-                    ->where('name', $stageName)
-                    ->first();
-
-                if (! $stage) {
-                    $university = University::find($course->university_id);
-                    $nextSequence = ((int) Stage::where('department_id', $course->department_id)->max('sequence')) + 1;
-                    $maxStages = $university?->expectedStageCount() ?? 4;
-
-                    if ($nextSequence <= $maxStages) {
-                        $stage = Stage::create([
-                            'department_id' => $course->department_id,
-                            'name' => $stageName,
-                            'university_id' => $course->university_id,
-                            'sequence' => $nextSequence,
-                        ]);
-                    }
-                }
-
-                if ($stage) {
-                    $section->stage_id = $stage->id;
-                }
-            }
+            // Legacy grade text remains readable, but stage definitions are created only in Academic Setup.
         });
     }
 
@@ -155,5 +130,46 @@ class CourseSection extends Model
             ->count();
 
         return $count < $this->capacity;
+    }
+
+    public function programSemesterNumber(): ?int
+    {
+        $stage = $this->stage;
+        $semester = $this->semester;
+
+        if (! $stage || ! $semester || ($semester->term_type ?? 'regular') === 'summer') {
+            return null;
+        }
+
+        $university = $semester->university;
+        if (! $university || (int) $stage->university_id !== (int) $university->id) {
+            return null;
+        }
+
+        $stageSequence = (int) $stage->sequence;
+        $semesterSequence = (int) $semester->sequence;
+        $regularSemesters = $university->expectedSemesterCount();
+
+        if (
+            $stageSequence < 1
+            || $stageSequence > $university->expectedStageCount()
+            || $semesterSequence < 1
+            || $semesterSequence > $regularSemesters
+        ) {
+            return null;
+        }
+
+        return (($stageSequence - 1) * $regularSemesters) + $semesterSequence;
+    }
+
+    public function programSemesterLabel(): string
+    {
+        if (($this->semester?->term_type ?? 'regular') === 'summer') {
+            return 'Summer Semester';
+        }
+
+        $number = $this->programSemesterNumber();
+
+        return $number ? 'Program Semester '.$number : 'Program semester unavailable';
     }
 }

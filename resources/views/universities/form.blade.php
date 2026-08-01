@@ -15,9 +15,20 @@
         <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Institution type</label>
             <select name="institution_type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
-                <option value="university" @selected(old('institution_type', $university->institution_type ?? 'university') === 'university')>University (4 stages)</option>
-                <option value="institute" @selected(old('institution_type', $university->institution_type ?? 'university') === 'institute')>Institute (2 stages)</option>
+                <option value="university" @selected(old('institution_type', $university->institution_type ?? 'university') === 'university')>University</option>
+                <option value="institute" @selected(old('institution_type', $university->institution_type ?? 'university') === 'institute')>Institute</option>
             </select>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Program stages</label>
+            <input type="number" name="expected_stage_count" min="1" max="12" value="{{ old('expected_stage_count', $university->expected_stage_count ?? 4) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Regular semesters per academic year</label>
+            <input type="number" name="expected_semesters_per_year" min="1" max="4" value="{{ old('expected_semesters_per_year', $university->expected_semesters_per_year ?? 2) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">An optional summer semester is allowed in addition to this target.</p>
         </div>
 
         <div>

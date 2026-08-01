@@ -23,7 +23,7 @@ class EnrollmentService
         ?int $transferredFromId = null
     ): array {
         return DB::transaction(function () use ($student, $section, $action, $enrolledAt, $notes, $actor, $ignoredEnrollmentId, $transferredFromId) {
-            $section = CourseSection::with(['course.department', 'timetables'])
+            $section = CourseSection::with(['course.department', 'timetables', 'semester.academicYear'])
                 ->lockForUpdate()
                 ->findOrFail($section->id);
             $student = Student::lockForUpdate()->findOrFail($student->id);
@@ -36,6 +36,9 @@ class EnrollmentService
             }
             if ($section->course->status !== 'active') {
                 return $this->failure('Students cannot be added to an inactive course.');
+            }
+            if ($section->semester?->academicYear?->isLocked()) {
+                return $this->failure('Enrollments in a closed academic year are read-only.');
             }
             if ($student->university_id !== $section->course->university_id) {
                 return $this->failure('The student and course module must belong to the same university.');
@@ -111,7 +114,11 @@ class EnrollmentService
     public function drop(Enrollment $enrollment, string $reason, User $actor): array
     {
         return DB::transaction(function () use ($enrollment, $reason, $actor) {
-            $enrollment = Enrollment::lockForUpdate()->findOrFail($enrollment->id);
+            $enrollment = Enrollment::with('courseSection.semester.academicYear')->lockForUpdate()->findOrFail($enrollment->id);
+
+            if ($enrollment->courseSection?->semester?->academicYear?->isLocked()) {
+                return $this->failure('Enrollments in a closed academic year are read-only.');
+            }
 
             if (! in_array($enrollment->status, ['enrolled', 'waitlisted'], true)) {
                 return $this->failure('Only enrolled or waitlisted records can be dropped.');
@@ -132,7 +139,11 @@ class EnrollmentService
     public function transfer(Enrollment $source, CourseSection $target, string $reason, User $actor): array
     {
         return DB::transaction(function () use ($source, $target, $reason, $actor) {
-            $source = Enrollment::with('courseSection')->lockForUpdate()->findOrFail($source->id);
+            $source = Enrollment::with('courseSection.semester.academicYear')->lockForUpdate()->findOrFail($source->id);
+
+            if ($source->courseSection?->semester?->academicYear?->isLocked()) {
+                return $this->failure('Enrollments in a closed academic year are read-only.');
+            }
 
             if ($source->status !== 'enrolled') {
                 return $this->failure('Only active enrollments can be transferred.');

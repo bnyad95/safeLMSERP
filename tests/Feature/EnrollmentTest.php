@@ -11,6 +11,7 @@ use App\Models\EnrollmentEvent;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
@@ -45,8 +46,16 @@ class EnrollmentTest extends TestCase
             'university_id' => $university->id,
             'name' => 'Fall',
             'academic_year' => '2026/2027',
+            'term_type' => 'regular',
+            'sequence' => 1,
             'start_date' => '2026-09-01',
             'end_date' => '2027-01-20',
+        ]);
+        $stage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 2',
+            'sequence' => 2,
         ]);
         $course = Course::create([
             'department_id' => $department->id,
@@ -73,7 +82,7 @@ class EnrollmentTest extends TestCase
             'status' => 'Active',
         ]);
 
-        return compact('course', 'semester', 'teacher', 'student');
+        return compact('course', 'semester', 'stage', 'teacher', 'student');
     }
 
     private function makeSection(array $setup, string $group = 'A', array $overrides = []): CourseSection
@@ -81,6 +90,7 @@ class EnrollmentTest extends TestCase
         return CourseSection::create(array_merge([
             'course_id' => $setup['course']->id,
             'semester_id' => $setup['semester']->id,
+            'stage_id' => $setup['stage']->id,
             'teacher_id' => $setup['teacher']->id,
             'section_code' => $group,
             'grade_level' => 'Stage 2',
@@ -98,6 +108,7 @@ class EnrollmentTest extends TestCase
             ->post(route('course-sections.store'), [
                 'course_id' => $setup['course']->id,
                 'semester_id' => $setup['semester']->id,
+                'stage_id' => $setup['stage']->id,
                 'teacher_id' => $setup['teacher']->id,
                 'section_code' => 'A',
                 'grade_level' => 'Stage 2',
@@ -105,11 +116,12 @@ class EnrollmentTest extends TestCase
                 'status' => 'active',
                 'notes' => 'Morning group',
             ])
-            ->assertRedirect(route('enrollments.index'));
+            ->assertRedirect(route('module-offerings.index'));
 
         $this->assertDatabaseHas('course_sections', [
             'course_id' => $setup['course']->id,
             'semester_id' => $setup['semester']->id,
+            'stage_id' => $setup['stage']->id,
             'teacher_id' => $setup['teacher']->id,
             'section_code' => 'A',
             'grade_level' => 'Stage 2',
@@ -227,17 +239,63 @@ class EnrollmentTest extends TestCase
         $section = $this->makeSection($setup);
 
         $this->actingAs($admin)
-            ->get(route('enrollments.index'))
+            ->get(route('module-offerings.index'))
             ->assertOk()
-            ->assertSee('Semester modules')
-            ->assertSee('CS201');
+            ->assertSee('Module Offerings')
+            ->assertSee('CS201')
+            ->assertSee('Program Semester 3');
 
         $this->actingAs($admin)
             ->get(route('course-sections.show', $section))
             ->assertOk()
             ->assertSee('Roster')
             ->assertSee('Waitlist')
-            ->assertSee('History');
+            ->assertSee('History')
+            ->assertSee('Program Semester 3');
+    }
+
+    public function test_module_offering_calculates_program_semester_eight_and_keeps_summer_separate(): void
+    {
+        $setup = $this->makeAcademicSetup();
+        $stageFour = Stage::create([
+            'university_id' => $setup['semester']->university_id,
+            'department_id' => $setup['course']->department_id,
+            'name' => 'Stage 4',
+            'sequence' => 4,
+        ]);
+        $secondSemester = Semester::create([
+            'university_id' => $setup['semester']->university_id,
+            'name' => 'Semester 2',
+            'academic_year' => '2026/2027',
+            'term_type' => 'regular',
+            'sequence' => 2,
+            'start_date' => '2027-01-21',
+            'end_date' => '2027-06-30',
+        ]);
+        $eighthSemesterSection = $this->makeSection($setup, 'B', [
+            'semester_id' => $secondSemester->id,
+            'stage_id' => $stageFour->id,
+        ]);
+
+        $this->assertSame(8, $eighthSemesterSection->programSemesterNumber());
+        $this->assertSame('Program Semester 8', $eighthSemesterSection->programSemesterLabel());
+
+        $summer = Semester::create([
+            'university_id' => $setup['semester']->university_id,
+            'name' => 'Summer Semester',
+            'academic_year' => '2026/2027',
+            'term_type' => 'summer',
+            'sequence' => 3,
+            'start_date' => '2027-07-01',
+            'end_date' => '2027-08-20',
+        ]);
+        $section = $this->makeSection($setup, 'S', [
+            'semester_id' => $summer->id,
+            'stage_id' => $stageFour->id,
+        ]);
+
+        $this->assertNull($section->programSemesterNumber());
+        $this->assertSame('Summer Semester', $section->programSemesterLabel());
     }
 
     public function test_inactive_student_or_closed_section_is_blocked(): void
@@ -451,7 +509,7 @@ class EnrollmentTest extends TestCase
 
         $this->actingAs($admin)
             ->delete(route('course-sections.destroy', $section))
-            ->assertRedirect(route('enrollments.index'))
+            ->assertRedirect(route('module-offerings.index'))
             ->assertSessionHas('success');
 
         $this->assertSoftDeleted('course_sections', ['id' => $section->id]);
@@ -490,12 +548,39 @@ class EnrollmentTest extends TestCase
         $user->roles()->attach($role);
 
         $this->actingAs($user)
-            ->get(route('enrollments.index'))
+            ->get(route('module-offerings.index'))
             ->assertOk()
             ->assertSee($ownCourse->name)
             ->assertDontSee($otherCourse->name);
 
         $this->actingAs($user)->get(route('course-sections.show', $ownSection))->assertOk();
         $this->actingAs($user)->get(route('course-sections.show', $otherSection))->assertNotFound();
+    }
+
+    public function test_enrollment_workspace_lists_student_registrations_separately_from_module_offerings(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $section = $this->makeSection($setup);
+        Enrollment::create([
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => '2026-09-01',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('enrollments.index'))
+            ->assertOk()
+            ->assertSee('Student Registrations')
+            ->assertSee($setup['student']->full_name)
+            ->assertSee($setup['course']->name)
+            ->assertSee('Open roster');
+
+        $this->actingAs($admin)
+            ->get(route('module-offerings.index'))
+            ->assertOk()
+            ->assertSee('Add Module')
+            ->assertSee($setup['course']->name);
     }
 }

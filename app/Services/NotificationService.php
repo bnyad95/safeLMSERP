@@ -209,7 +209,7 @@ class NotificationService
                 'description' => $body,
                 'starts_at' => $transaction->due_date->startOfDay(),
                 'ends_at' => null,
-                'action_url' => route('finance', ['student_id' => $student->id]),
+                'action_url' => route('student.finance'),
                 'data' => ['finance_transaction_id' => $transaction->id],
             ]
         );
@@ -217,7 +217,7 @@ class NotificationService
         $this->notifyStudent($student, $title, $body, [
             'type' => 'payment_due',
             'severity' => 'warning',
-            'action_url' => route('finance', ['student_id' => $student->id]),
+            'action_url' => route('student.finance'),
             'data' => ['finance_transaction_id' => $transaction->id],
         ]);
     }
@@ -243,7 +243,7 @@ class NotificationService
         return $this->notifyStudent($student, 'Tuition payment reminder', $body, [
             'type' => 'tuition_charge_reminder',
             'severity' => 'warning',
-            'action_url' => route('notifications.index'),
+            'action_url' => route('student.finance'),
             'data' => [
                 'balances' => $balanceRows->all(),
                 'sender_id' => $sender?->id,

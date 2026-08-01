@@ -5,7 +5,7 @@
                 <h2 class="text-xl font-semibold text-gray-900">Archived Modules</h2>
                 <p class="text-sm text-gray-600">Closed enrollment modules that were removed from the active directory.</p>
             </div>
-            <a href="{{ route('enrollments.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</a>
+            <a href="{{ route('module-offerings.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</a>
         </div>
     </x-slot>
 

@@ -3,7 +3,7 @@
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
                 <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Add Academic Year</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Create a new academic year record for one or more institutions. Semesters are managed separately from the Semesters page.</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Open a reusable academic period for one or more institutions, then manage its semesters from the year workspace.</p>
             </div>
             <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 Bologna Definition
@@ -27,11 +27,11 @@
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">New Academic Year</h3>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">This creates only the academic year record. Define semester entries from the Semesters card.</p>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Only one academic year can be active per institution.</p>
                 </div>
                 <form method="POST" action="{{ route('academic-years.store') }}" class="space-y-5 p-5">
                     @csrf
-                    <div class="grid gap-4 md:grid-cols-1">
+                    <div class="grid gap-4 md:grid-cols-2">
                         <div>
                             <label for="academic_year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Academic Year</label>
                             <input
@@ -43,6 +43,21 @@
                                 required
                                 class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                             >
+                        </div>
+                        <div>
+                            <label for="status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                            <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+                                <option value="upcoming" @selected(old('status', 'upcoming') === 'upcoming')>Upcoming</option>
+                                <option value="active" @selected(old('status') === 'active')>Active</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="starts_on" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Start date</label>
+                            <input id="starts_on" name="starts_on" type="date" value="{{ old('starts_on') }}" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                        </div>
+                        <div>
+                            <label for="ends_on" class="block text-sm font-medium text-gray-700 dark:text-gray-300">End date</label>
+                            <input id="ends_on" name="ends_on" type="date" value="{{ old('ends_on') }}" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                         </div>
                     </div>
 
@@ -65,6 +80,15 @@
                             @endforelse
                         </div>
                     </div>
+
+                    <label class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-950">
+                        <input type="hidden" name="generate_semesters" value="0">
+                        <input type="checkbox" name="generate_semesters" value="1" @checked(old('generate_semesters', true)) class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <span>
+                            <span class="block text-sm font-semibold text-gray-900 dark:text-gray-100">Generate regular semesters</span>
+                            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">Creates the institution's configured number of ordered semesters and divides the academic-year date range between them. Dates can be adjusted before modules are opened.</span>
+                        </span>
+                    </label>
 
                     <div class="flex flex-col gap-3 border-t border-gray-100 pt-5 dark:border-gray-800 sm:flex-row sm:justify-end">
                         <a href="{{ route('academic-years.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</a>

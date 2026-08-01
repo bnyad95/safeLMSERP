@@ -117,8 +117,8 @@
                                 @elseif($selectedStudent->user)
                                     <form method="POST" action="{{ route('finance.students.account-block.store', $selectedStudent) }}" class="flex w-full flex-col gap-2 lg:max-w-lg">
                                         @csrf
-                                        <input type="text" name="reason" placeholder="Reason, optional" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                        <button type="submit" class="w-full rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto" onclick="return confirm('Block this student login because of unpaid tuition?')">Block Account</button>
+                                        <input type="text" name="reason" required placeholder="Reason for overdue tuition hold" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <button type="submit" class="w-full rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto" onclick="return confirm('Block this student login because tuition is overdue?')">Block Account</button>
                                     </form>
                                 @else
                                     <span class="rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-600">No linked login account</span>
@@ -126,6 +126,40 @@
                             </div>
                         </div>
                     @endif
+                </section>
+
+                <section class="min-w-0 overflow-hidden border-y border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                    <div class="flex items-center justify-between gap-3 px-4 py-4 sm:px-5">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Tuition Agreements</h3>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Agreed annual tuition and payment schedules.</p>
+                        </div>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ $tuitionAgreements->count() }} recent</span>
+                    </div>
+                    <div class="divide-y divide-gray-100 border-t border-gray-100 dark:divide-gray-800 dark:border-gray-800">
+                        @forelse($tuitionAgreements as $agreement)
+                            <div class="grid gap-3 px-4 py-4 text-sm sm:grid-cols-4 sm:px-5">
+                                <div>
+                                    <p class="text-xs font-medium uppercase text-gray-500">Academic Year</p>
+                                    <p class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ $agreement->academicYear->name ?? 'Legacy agreement' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-medium uppercase text-gray-500">Method</p>
+                                    <p class="mt-1 text-gray-800 dark:text-gray-200">{{ $agreement->payment_method === 'semester' ? 'Semester installments' : 'Full payment' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-medium uppercase text-gray-500">Agreed Tuition</p>
+                                    <p class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $agreement->total_amount, 2) }} {{ $agreement->currency }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-medium uppercase text-gray-500">Schedule</p>
+                                    <p class="mt-1 text-gray-800 dark:text-gray-200">{{ $agreement->transactions_count }} record(s) / {{ ucfirst($agreement->status) }}</p>
+                                </div>
+                            </div>
+                        @empty
+                            <p class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">No tuition agreement has been recorded yet.</p>
+                        @endforelse
+                    </div>
                 </section>
 
                 @if($canCreateInvoice || $canRecordPayment)
@@ -184,8 +218,14 @@
                                 </select>
 
                                 <div x-show="paymentPlan === 'full'" class="mt-4 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-900">
-                                    One tuition invoice will be created for
-                                    <span class="font-semibold" x-text="formattedAmount()"></span>.
+                                    <p>One tuition invoice will be created for <span class="font-semibold" x-text="formattedAmount()"></span>.</p>
+                                    <label class="mt-3 flex items-start gap-2">
+                                        <input type="checkbox" name="collect_now" value="1" @checked(old('collect_now')) class="mt-0.5 rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                                        <span>
+                                            <span class="block font-semibold">Collect the full payment now</span>
+                                            <span class="block text-xs">Posts the payment immediately and generates a receipt.</span>
+                                        </span>
+                                    </label>
                                 </div>
 
                                 <div x-show="paymentPlan === 'semester'" class="mt-4 space-y-3">
@@ -222,14 +262,15 @@
                             </div>
                         @endif
 
-                        <div class="min-w-0">
+                        <div class="min-w-0" x-show="recordType !== 'invoice'">
                             <label class="block text-sm font-medium text-gray-700">Status</label>
-                            <select name="status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                            <select name="status" :disabled="recordType === 'invoice'" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                 @foreach(($creationStatuses ?? $statuses) as $value => $label)
                                     <option value="{{ $value }}" @selected(old('status', 'pending') === $value)>{{ $label }}</option>
                                 @endforeach
                             </select>
                         </div>
+                        <input type="hidden" name="status" value="pending" :disabled="recordType !== 'invoice'">
 
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div class="min-w-0">
@@ -249,7 +290,12 @@
                             </div>
                             <div class="min-w-0">
                                 <label class="block text-sm font-medium text-gray-700">Academic Year</label>
-                                <input type="text" name="academic_year" value="{{ old('academic_year') }}" placeholder="2026/2027" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <select name="academic_year_id" :required="recordType === 'invoice'" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">Select academic year</option>
+                                    @foreach($academicYearOptions as $academicYear)
+                                        <option value="{{ $academicYear->id }}" @selected(old('academic_year_id') == $academicYear->id)>{{ $academicYear->name }} / {{ ucfirst($academicYear->status) }}</option>
+                                    @endforeach
+                                </select>
                             </div>
                         </div>
 
@@ -270,7 +316,7 @@
                                 <option value="">No invoice allocation</option>
                                 @foreach($invoiceOptions as $invoice)
                                     <option value="{{ $invoice->id }}" @selected(old('invoice_transaction_id') == $invoice->id)>
-                                        {{ $invoice->documentNumber() }} / {{ number_format((float) $invoice->amount, 2) }} {{ $invoice->currency }} / {{ ucfirst($invoice->payment_status) }}
+                                        {{ $invoice->documentNumber() }} / {{ number_format((float) ($invoice->remaining_amount ?? $invoice->amount), 2) }} {{ $invoice->currency }} remaining / {{ ucfirst($invoice->payment_status) }}
                                     </option>
                                 @endforeach
                             </select>
@@ -382,6 +428,9 @@
                                 <div class="min-w-0">
                                     <p class="break-words text-sm font-semibold text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</p>
                                     <p class="mt-1 text-xs text-gray-500">{{ $transaction->transaction_date->format('Y-m-d') }} / {{ ucfirst($transaction->type) }}</p>
+                                    @if($transaction->receipt_number && $transaction->posting_status === 'posted' && $transaction->status !== 'cancelled')
+                                        <a href="{{ route('finance.transactions.receipt', $transaction) }}" target="_blank" class="mt-1 inline-block text-xs font-semibold text-blue-700 hover:text-blue-900">Print receipt</a>
+                                    @endif
                                 </div>
                                 <div class="shrink-0 text-right">
                                     <p class="text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }}</p>
@@ -417,9 +466,9 @@
                                     <p class="mt-1 break-words text-gray-700">{{ $transaction->approver->name ?? '-' }}</p>
                                 </div>
                             </div>
-                            @if(($canApproveFinance && $transaction->status === 'pending') || ($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id))
+                            @if(($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending') || ($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id))
                                 <div class="flex flex-col gap-2">
-                                    @if($canApproveFinance && $transaction->status === 'pending')
+                                    @if($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending')
                                         <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}">
                                             @csrf
                                             <button type="submit" class="w-full rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
@@ -428,7 +477,7 @@
                                     @if($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id)
                                         <form method="POST" action="{{ route('finance.transactions.void', $transaction) }}" class="space-y-2" onsubmit="return confirm('Void this finance record and create a reversal entry?')">
                                             @csrf
-                                            <input type="text" name="notes" placeholder="Reason" class="w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                            <input type="text" name="notes" required placeholder="Reason" class="w-full rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                             <button type="submit" class="w-full rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700">Void</button>
                                         </form>
                                     @endif
@@ -474,6 +523,9 @@
                                     <td class="px-5 py-3 text-sm text-gray-600">{{ $transaction->transaction_date->format('Y-m-d') }}</td>
                                     <td class="px-5 py-3 text-sm text-gray-600">
                                         <div class="font-medium text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</div>
+                                        @if($transaction->receipt_number && $transaction->posting_status === 'posted' && $transaction->status !== 'cancelled')
+                                            <a href="{{ route('finance.transactions.receipt', $transaction) }}" target="_blank" class="text-xs font-semibold text-blue-700 hover:text-blue-900">Print receipt</a>
+                                        @endif
                                         @if($transaction->invoice)
                                             <div class="text-xs text-blue-700">Applied to {{ $transaction->invoice->documentNumber() }}</div>
                                         @endif
@@ -508,7 +560,7 @@
                                     </td>
                                     <td class="px-5 py-3 text-right">
                                         <div class="flex flex-col items-end gap-2">
-                                            @if($canApproveFinance && $transaction->status === 'pending')
+                                            @if($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending')
                                                 <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}">
                                                     @csrf
                                                     <button type="submit" class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
@@ -517,7 +569,7 @@
                                             @if($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id)
                                                 <form method="POST" action="{{ route('finance.transactions.void', $transaction) }}" class="flex justify-end gap-2" onsubmit="return confirm('Void this finance record and create a reversal entry?')">
                                                     @csrf
-                                                    <input type="text" name="notes" placeholder="Reason" class="w-28 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                                    <input type="text" name="notes" required placeholder="Reason" class="w-28 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                                     <button type="submit" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Void</button>
                                                 </form>
                                             @endif

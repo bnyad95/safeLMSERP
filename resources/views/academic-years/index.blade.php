@@ -39,20 +39,30 @@
                                 <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Semesters</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Modules</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Status</th>
+                                @if($canManageAcademicSetup)<th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Action</th>@endif
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                             @forelse($academicYears as $year)
                                 <tr>
-                                    <td class="px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $year->name }}</td>
+                                    <td class="px-5 py-4 text-sm font-semibold"><a href="{{ route('academic-years.show', $year) }}" class="text-blue-700 hover:text-blue-900 dark:text-indigo-300 dark:hover:text-indigo-200">{{ $year->name }}</a></td>
                                     <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $year->university?->name ?? 'N/A' }}</td>
                                     <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $year->starts_on?->format('Y-m-d') ?? 'TBD' }} - {{ $year->ends_on?->format('Y-m-d') ?? 'TBD' }}</td>
-                                    <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $year->semesters_count }}</td>
+                                    <td class="px-5 py-4 text-sm"><a href="{{ route('academic-years.show', $year) }}" class="font-semibold text-blue-700 dark:text-indigo-300">{{ $year->semesters_count }}</a></td>
                                     <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $year->modules_count }}</td>
-                                    <td class="px-5 py-4"><span class="rounded-md px-2.5 py-1 text-xs font-semibold {{ $year->status === 'active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' }}">{{ ucfirst($year->status) }}</span></td>
+                                    <td class="px-5 py-4"><span class="rounded-md px-2.5 py-1 text-xs font-semibold {{ match($year->status) { 'active' => 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300', 'upcoming' => 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300', 'closed' => 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300', default => 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' } }}">{{ ucfirst($year->status) }}</span></td>
+                                    @if($canManageAcademicSetup)
+                                        <td class="px-5 py-4 text-sm">
+                                            @if(! in_array($year->status, ['closed', 'archived'], true))
+                                                <div class="flex gap-3"><a href="{{ route('academic-years.show', $year) }}" class="font-semibold text-blue-700 dark:text-indigo-300">Open</a><a href="{{ route('academic-years.edit', $year) }}" class="font-semibold text-gray-700 dark:text-gray-300">Edit</a></div>
+                                            @else
+                                                <span class="text-gray-400">Locked</span>
+                                            @endif
+                                        </td>
+                                    @endif
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No academic years have been created.</td></tr>
+                                <tr><td colspan="{{ $canManageAcademicSetup ? 7 : 6 }}" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No academic years have been created.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

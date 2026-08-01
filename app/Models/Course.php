@@ -12,6 +12,11 @@ class Course extends Model
 
     protected $fillable = ['department_id', 'university_id', 'code', 'name', 'credits', 'status'];
 
+    protected function casts(): array
+    {
+        return ['credits' => 'decimal:1'];
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Course $course) {

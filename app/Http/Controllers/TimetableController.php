@@ -124,6 +124,7 @@ class TimetableController extends Controller
             'sections' => CourseSection::with(['course.department', 'semester', 'teacher'])
                 ->withCount(['activeEnrollments as enrolled_count'])
                 ->whereIn('status', ['planned', 'active'])
+                ->whereHas('semester.academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
                 ->when($filters['department_id'], fn ($query, $departmentId) => $query->whereHas('course', fn ($courseQuery) => $courseQuery->where('department_id', $departmentId)))
                 ->when($filters['grade_level'] !== '', fn ($query) => $query->where('grade_level', $filters['grade_level']))
                 ->orderByDesc('created_at')
@@ -161,6 +162,11 @@ class TimetableController extends Controller
     {
         $this->requireAnyPermission('timetable.manage');
 
+        $timetable->load('courseSection.semester.academicYear');
+        if ($timetable->courseSection?->semester?->academicYear?->isLocked()) {
+            return back()->with('error', 'Timetable entries in a closed academic year are read-only.');
+        }
+
         $prepared = $this->prepareTimetableData($request, $timetable);
         if (! $prepared['ok']) {
             return back()->withInput()->with('error', $prepared['message']);
@@ -193,6 +199,11 @@ class TimetableController extends Controller
     {
         $this->requireAnyPermission('timetable.manage');
 
+        $timetable->load('courseSection.semester.academicYear');
+        if ($timetable->courseSection?->semester?->academicYear?->isLocked()) {
+            return back()->with('error', 'Timetable entries in a closed academic year are read-only.');
+        }
+
         $timetable->delete();
 
         return redirect()->route('timetables.index')->with('success', 'Timetable entry removed.');
@@ -213,7 +224,7 @@ class TimetableController extends Controller
         ]);
 
         $department = Department::findOrFail($validated['department_id']);
-        $section = CourseSection::with(['course.department', 'teacher', 'activeEnrollments'])
+        $section = CourseSection::with(['course.department', 'teacher', 'activeEnrollments', 'semester.academicYear'])
             ->findOrFail($validated['course_section_id']);
         $classroom = Classroom::findOrFail($validated['classroom_id']);
         $startTime = $validated['start_time'];
@@ -225,6 +236,10 @@ class TimetableController extends Controller
 
         if (($section->grade_level ?: '') !== $validated['grade_level']) {
             return ['ok' => false, 'message' => 'The selected module must match the selected stage.'];
+        }
+
+        if ($section->semester?->academicYear?->isLocked()) {
+            return ['ok' => false, 'message' => 'Timetable entries in a closed academic year are read-only.'];
         }
 
         if ($startTime >= $endTime) {

@@ -772,15 +772,15 @@ class AcademicYearClosureController extends Controller
                             'id' => $course?->id,
                             'code' => $course?->code,
                             'name' => $course?->name,
-                            'credits' => $course?->credits,
+                            'credits' => $this->archiveCreditValue($course?->credits),
                             'status' => $course?->status,
                         ],
                         'semester' => [
                             'id' => $section->semester?->id,
                             'name' => $section->semester?->name,
                             'academic_year' => $section->semester?->academic_year,
-                            'start_date' => $section->semester?->start_date,
-                            'end_date' => $section->semester?->end_date,
+                            'start_date' => $section->semester?->start_date?->toDateString(),
+                            'end_date' => $section->semester?->end_date?->toDateString(),
                         ],
                         'teacher' => [
                             'id' => $teacher?->id,
@@ -1817,5 +1817,16 @@ class AcademicYearClosureController extends Controller
                 })
                 ->orWhereHas('courseSection', fn ($section) => $section->where('section_code', 'like', "%{$search}%"));
         });
+    }
+
+    private function archiveCreditValue(mixed $credits): int|float|null
+    {
+        if ($credits === null || ! is_numeric($credits)) {
+            return null;
+        }
+
+        $numericCredits = (float) $credits;
+
+        return floor($numericCredits) === $numericCredits ? (int) $numericCredits : $numericCredits;
     }
 }

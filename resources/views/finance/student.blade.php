@@ -67,6 +67,9 @@
                                     <div class="min-w-0">
                                         <p class="break-words text-sm font-semibold text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</p>
                                         <p class="mt-1 text-xs text-gray-500">{{ $transaction->transaction_date->format('Y-m-d') }} / {{ ucfirst($transaction->type) }}</p>
+                                        @if($transaction->receipt_number && $transaction->posting_status === 'posted' && $transaction->status !== 'cancelled')
+                                            <a href="{{ route('student.finance.receipt', $transaction) }}" target="_blank" class="mt-1 inline-block text-xs font-semibold text-blue-700 hover:text-blue-900">View receipt</a>
+                                        @endif
                                     </div>
                                     <div class="shrink-0 text-right">
                                         <p class="text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }}</p>
@@ -121,6 +124,9 @@
                                         <td class="px-5 py-3 text-sm text-gray-600">{{ $transaction->transaction_date->format('Y-m-d') }}</td>
                                         <td class="px-5 py-3 text-sm">
                                             <div class="font-medium text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</div>
+                                            @if($transaction->receipt_number && $transaction->posting_status === 'posted' && $transaction->status !== 'cancelled')
+                                                <a href="{{ route('student.finance.receipt', $transaction) }}" target="_blank" class="text-xs font-semibold text-blue-700 hover:text-blue-900">View receipt</a>
+                                            @endif
                                             @if($transaction->reference)
                                                 <div class="text-xs text-gray-500">{{ $transaction->reference }}</div>
                                             @endif
@@ -141,6 +147,9 @@
                             </tbody>
                         </table>
                     </div>
+                    @if(method_exists($transactions, 'links'))
+                        <div class="border-t border-gray-100 px-4 py-4">{{ $transactions->links() }}</div>
+                    @endif
                 </section>
             @else
                 <div class="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">

@@ -9,6 +9,7 @@ use App\Models\Department;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Teacher;
 use App\Models\University;
 use App\Models\User;
@@ -118,6 +119,25 @@ class CourseCatalogTest extends TestCase
             ->assertSessionHasErrors('department_id');
     }
 
+    public function test_course_catalog_accepts_half_credit_values(): void
+    {
+        [, $college, $department] = $this->organization('CREDIT');
+        $admin = $this->superAdmin();
+
+        $this->actingAs($admin)
+            ->post(route('course-records.store'), [
+                'college_id' => $college->id,
+                'department_id' => $department->id,
+                'code' => 'CRD450',
+                'name' => 'Decimal Credit Course',
+                'credits' => 4.5,
+                'status' => 'active',
+            ])
+            ->assertRedirect(route('course-records.index'));
+
+        $this->assertSame('4.5', Course::where('code', 'CRD450')->firstOrFail()->credits);
+    }
+
     public function test_course_with_open_sections_must_be_closed_before_archive_and_can_be_restored(): void
     {
         [$university, , $department] = $this->organization('ARCH');
@@ -144,15 +164,16 @@ class CourseCatalogTest extends TestCase
     {
         [$university, , $department] = $this->organization('ASSIGN');
         $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026/2027']);
+        $stage = Stage::create(['university_id' => $university->id, 'department_id' => $department->id, 'name' => 'Stage 1', 'sequence' => 1]);
         $course = Course::create(['department_id' => $department->id, 'code' => 'ASSIGN101', 'name' => 'Assignment Course', 'credits' => 3, 'status' => 'active']);
         $teacher = Teacher::create(['university_id' => $university->id, 'department_id' => $department->id, 'staff_id' => 'T-ASSIGN', 'full_name' => 'Assigned Teacher', 'email' => 'assigned@example.com', 'status' => 'Active']);
         $manager = $this->userWithPermissions('enrollment_manager', ['enrollments.manage']);
-        $payload = ['course_id' => $course->id, 'semester_id' => $semester->id, 'teacher_id' => $teacher->id, 'section_code' => 'A', 'capacity' => 30, 'status' => 'active'];
+        $payload = ['course_id' => $course->id, 'semester_id' => $semester->id, 'stage_id' => $stage->id, 'teacher_id' => $teacher->id, 'section_code' => 'A', 'capacity' => 30, 'status' => 'active'];
 
         $this->actingAs($manager)->post(route('course-sections.store'), $payload)->assertForbidden();
 
         $assigner = $this->userWithPermissions('section_assigner', ['enrollments.manage', 'courses.assign_teacher']);
-        $this->actingAs($assigner)->post(route('course-sections.store'), $payload)->assertRedirect(route('enrollments.index'));
+        $this->actingAs($assigner)->post(route('course-sections.store'), $payload)->assertRedirect(route('module-offerings.index'));
         $this->assertDatabaseHas('course_sections', ['course_id' => $course->id, 'teacher_id' => $teacher->id]);
     }
 

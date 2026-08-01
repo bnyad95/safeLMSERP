@@ -77,6 +77,7 @@
                         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                             <thead class="bg-gray-50 dark:bg-gray-950">
                                 <tr>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">College / Department</th>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Stage</th>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Modules</th>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Catalog Courses</th>
@@ -88,6 +89,10 @@
                             <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
                                 @forelse($stageSummaries as $stage)
                                     <tr>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                            <span class="block font-semibold text-gray-900 dark:text-gray-100">{{ $stage['department'] }}</span>
+                                            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ $stage['college'] }} · {{ $stage['university'] }}</span>
+                                        </td>
                                         <td class="px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $stage['stage'] }}</td>
                                         <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['modules'] }}</td>
                                         <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $stage['courses'] }}</td>
@@ -97,7 +102,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No modules have been defined yet.</td>
+                                        <td colspan="7" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No modules have been defined yet.</td>
                                     </tr>
                                 @endforelse
                             </tbody>

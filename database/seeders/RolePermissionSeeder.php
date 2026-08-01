@@ -40,6 +40,7 @@ class RolePermissionSeeder extends Seeder
             'marks.publish' => 'Publish marks',
             'marks.request_change' => 'Request mark changes',
             'finance.view' => 'View finance data',
+            'finance.view_global' => 'View finance data across all organizations',
             'finance.create_invoice' => 'Create invoices',
             'finance.record_payment' => 'Record payments',
             'finance.approve_payment' => 'Approve payments',

@@ -29,6 +29,7 @@ class User extends Authenticatable
         'account_blocked_at',
         'account_blocked_by',
         'account_block_reason',
+        'account_block_type',
         'university_id',
         'college_id',
         'department_id',

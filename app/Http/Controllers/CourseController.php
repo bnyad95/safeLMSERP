@@ -193,7 +193,7 @@ class CourseController extends Controller
                 Rule::exists('departments', 'id')
                     ->where(fn ($query) => $query->where('college_id', $request->input('college_id'))),
             ],
-            'credits' => ['required', 'integer', 'min:1', 'max:10'],
+            'credits' => ['required', 'numeric', 'min:0.5', 'max:30'],
             'status' => ['required', Rule::in(['active', 'inactive'])],
         ]);
     }

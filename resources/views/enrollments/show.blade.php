@@ -3,7 +3,7 @@
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
                 <h2 class="text-xl font-semibold text-gray-900">{{ $section->course->code }} - {{ $section->course->name }}</h2>
-                <p class="text-sm text-gray-600">{{ $section->semester->name }} {{ $section->semester->academic_year }} / Group {{ $section->section_code }} / {{ $section->grade_level ?: 'No stage' }}</p>
+                <p class="text-sm text-gray-600">{{ $section->semester->name }} {{ $section->semester->academic_year }} / {{ $section->programSemesterLabel() }} / Group {{ $section->section_code }} / {{ $section->grade_level ?: 'No stage' }}</p>
             </div>
             <div class="flex flex-wrap gap-2">
                 <a href="{{ route('enrollments.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</a>
@@ -248,8 +248,8 @@
                                 @endif
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Stage</label>
-                                    <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                        <option value="">No managed stage</option>
+                                    <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                                        <option value="">Select a managed stage</option>
                                         @foreach($stages as $stage)
                                             <option value="{{ $stage->id }}" @selected(old('stage_id', $section->stage_id) == $stage->id)>{{ $stage->name }}</option>
                                         @endforeach

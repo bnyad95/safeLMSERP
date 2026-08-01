@@ -5,7 +5,7 @@
                 <h2 class="text-xl font-semibold text-gray-900">Add Course Module</h2>
                 <p class="text-sm text-gray-600">Create a semester module from an active catalog course.</p>
             </div>
-            <a href="{{ route('enrollments.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</a>
+            <a href="{{ route('module-offerings.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</a>
         </div>
     </x-slot>
 
@@ -65,10 +65,16 @@
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Semester</label>
-                        <select name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                        <select id="module-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                             <option value="">Select semester</option>
                             @foreach($semesters as $semester)
-                                <option value="{{ $semester->id }}" @selected(old('semester_id') == $semester->id)>{{ $semester->name }} {{ $semester->academic_year }}</option>
+                                <option
+                                    value="{{ $semester->id }}"
+                                    data-sequence="{{ $semester->sequence }}"
+                                    data-term-type="{{ $semester->term_type }}"
+                                    data-regular-semesters="{{ $semester->university?->expectedSemesterCount() ?? 2 }}"
+                                    @selected(old('semester_id') == $semester->id)
+                                >{{ $semester->name }} {{ $semester->academic_year }}</option>
                             @endforeach
                         </select>
                         @error('semester_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
@@ -95,13 +101,20 @@
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Stage</label>
-                        <select id="module-stage" name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <select id="module-stage" name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                             <option value="">Select a managed stage</option>
                             @foreach($stages as $stage)
-                                <option value="{{ $stage->id }}" data-department-id="{{ $stage->department_id }}" @selected(old('stage_id') == $stage->id)>{{ $stage->name }}</option>
+                                <option value="{{ $stage->id }}" data-department-id="{{ $stage->department_id }}" data-sequence="{{ $stage->sequence }}" @selected(old('stage_id') == $stage->id)>{{ $stage->name }}</option>
                             @endforeach
                         </select>
                         @error('stage_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <span class="block text-sm font-medium text-gray-700">Program Semester</span>
+                        <div id="program-semester-preview" class="mt-1 flex min-h-10 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-700">
+                            Select a stage and semester
+                        </div>
                     </div>
 
                     <div>
@@ -136,7 +149,26 @@
         document.addEventListener('DOMContentLoaded', () => {
             const course = document.querySelector('select[name="course_id"]');
             const stage = document.getElementById('module-stage');
-            if (!course || !stage) return;
+            const semester = document.getElementById('module-semester');
+            const preview = document.getElementById('program-semester-preview');
+            if (!course || !stage || !semester || !preview) return;
+
+            const updateProgramSemester = () => {
+                const stageSequence = Number(stage.selectedOptions[0]?.dataset.sequence || 0);
+                const semesterSequence = Number(semester.selectedOptions[0]?.dataset.sequence || 0);
+                const regularSemesters = Number(semester.selectedOptions[0]?.dataset.regularSemesters || 0);
+                const termType = semester.selectedOptions[0]?.dataset.termType || '';
+
+                if (!stageSequence || !semesterSequence || !regularSemesters) {
+                    preview.textContent = 'Select a stage and semester';
+                    return;
+                }
+
+                preview.textContent = termType === 'summer'
+                    ? 'Summer Semester'
+                    : `Program Semester ${((stageSequence - 1) * regularSemesters) + semesterSequence}`;
+            };
+
             const filterStages = () => {
                 const departmentId = course.selectedOptions[0]?.dataset.departmentId || '';
                 Array.from(stage.options).forEach((option) => {
@@ -144,8 +176,11 @@
                     option.hidden = departmentId !== '' && option.dataset.departmentId !== departmentId;
                     if (option.selected && option.hidden) stage.value = '';
                 });
+                updateProgramSemester();
             };
             course.addEventListener('change', filterStages);
+            stage.addEventListener('change', updateProgramSemester);
+            semester.addEventListener('change', updateProgramSemester);
             filterStages();
         });
     </script>

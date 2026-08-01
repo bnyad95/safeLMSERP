@@ -6,6 +6,7 @@ use App\Models\AssessmentSubmission;
 use App\Models\ClassMessage;
 use App\Models\ClassStreamPost;
 use App\Models\CourseMaterial;
+use App\Models\FinanceTransaction;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -26,6 +27,43 @@ Artisan::command('notifications:performance-warnings', function () {
 
 Schedule::command('notifications:performance-warnings')
     ->weeklyOn(1, '07:00')
+    ->withoutOverlapping();
+
+Artisan::command('finance:refresh-overdue', function () {
+    $updated = 0;
+
+    FinanceTransaction::query()
+        ->where('type', 'invoice')
+        ->where('posting_status', 'posted')
+        ->where('status', '!=', 'cancelled')
+        ->whereIn('payment_status', ['open', 'partial', 'overdue'])
+        ->withSum(['allocations as posted_credits' => function ($query) {
+            $query->where('posting_status', 'posted')
+                ->where('status', '!=', 'cancelled')
+                ->whereIn('type', FinanceTransaction::creditTypes());
+        }], 'amount')
+        ->chunkById(250, function ($invoices) use (&$updated) {
+            foreach ($invoices as $invoice) {
+                $paid = (float) ($invoice->posted_credits ?? 0);
+                $status = match (true) {
+                    $paid >= (float) $invoice->amount => 'paid',
+                    $invoice->due_date && $invoice->due_date->isPast() => 'overdue',
+                    $paid > 0 => 'partial',
+                    default => 'open',
+                };
+
+                if ($invoice->payment_status !== $status) {
+                    $invoice->update(['payment_status' => $status]);
+                    $updated++;
+                }
+            }
+        });
+
+    $this->info("Refreshed {$updated} tuition invoice status(es).");
+})->purpose('Refresh paid, partial, open, and overdue tuition invoice statuses');
+
+Schedule::command('finance:refresh-overdue')
+    ->dailyAt('00:10')
     ->withoutOverlapping();
 
 Artisan::command('files:migrate-protected', function () {

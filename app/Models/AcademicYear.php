@@ -31,4 +31,14 @@ class AcademicYear extends Model
     {
         return $this->hasMany(Semester::class);
     }
+
+    public function isLocked(): bool
+    {
+        return in_array($this->status, ['closed', 'archived'], true);
+    }
+
+    public function isWritable(): bool
+    {
+        return ! $this->isLocked();
+    }
 }

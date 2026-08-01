@@ -9,7 +9,23 @@ class University extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'code', 'email', 'phone', 'institution_type'];
+    protected $fillable = [
+        'name',
+        'code',
+        'email',
+        'phone',
+        'institution_type',
+        'expected_stage_count',
+        'expected_semesters_per_year',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'expected_stage_count' => 'integer',
+            'expected_semesters_per_year' => 'integer',
+        ];
+    }
 
     public function isInstitute(): bool
     {
@@ -18,7 +34,12 @@ class University extends Model
 
     public function expectedStageCount(): int
     {
-        return $this->isInstitute() ? 2 : 4;
+        return max(1, (int) ($this->expected_stage_count ?: ($this->isInstitute() ? 2 : 4)));
+    }
+
+    public function expectedSemesterCount(): int
+    {
+        return max(1, (int) ($this->expected_semesters_per_year ?: 2));
     }
 
     public function colleges()

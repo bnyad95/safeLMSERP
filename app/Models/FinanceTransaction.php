@@ -12,6 +12,8 @@ class FinanceTransaction extends Model
 
     protected $fillable = [
         'student_id',
+        'tuition_agreement_id',
+        'semester_id',
         'invoice_transaction_id',
         'original_transaction_id',
         'recorded_by',
@@ -24,6 +26,7 @@ class FinanceTransaction extends Model
         'balance_after',
         'currency',
         'status',
+        'posting_status',
         'payment_status',
         'invoice_number',
         'receipt_number',
@@ -46,6 +49,16 @@ class FinanceTransaction extends Model
     public function student()
     {
         return $this->belongsTo(Student::class);
+    }
+
+    public function tuitionAgreement()
+    {
+        return $this->belongsTo(TuitionAgreement::class);
+    }
+
+    public function semester()
+    {
+        return $this->belongsTo(Semester::class);
     }
 
     public function recorder()
@@ -98,6 +111,11 @@ class FinanceTransaction extends Model
         $amount = (float) $this->amount;
 
         return in_array($this->type, self::creditTypes(), true) ? -$amount : $amount;
+    }
+
+    public function isPosted(): bool
+    {
+        return $this->posting_status === 'posted';
     }
 
     public function documentNumber(): ?string

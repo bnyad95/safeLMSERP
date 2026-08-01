@@ -14,7 +14,7 @@
 
         <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">University</label>
-            <select name="university_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
+            <select id="department-university" name="university_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
                 <option value="">Select university</option>
                 @foreach($universities as $university)
                     <option value="{{ $university->id }}" @selected(old('university_id', $department->university_id ?? '') == $university->id)>{{ $university->name }}</option>
@@ -24,10 +24,10 @@
 
         <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">College</label>
-            <select name="college_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+            <select id="department-college" name="college_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                 <option value="">Select college</option>
                 @foreach($colleges as $college)
-                    <option value="{{ $college->id }}" @selected(old('college_id', $department->college_id ?? '') == $college->id)>{{ $college->name }}</option>
+                    <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected(old('college_id', $department->college_id ?? '') == $college->id)>{{ $college->name }}</option>
                 @endforeach
             </select>
         </div>
@@ -38,3 +38,26 @@
         <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{{ $isEdit ? 'Update Department' : 'Create Department' }}</button>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const university = document.getElementById('department-university');
+    const college = document.getElementById('department-college');
+    if (!university || !college) return;
+
+    const filterColleges = () => {
+        let selectedAvailable = false;
+        Array.from(college.options).forEach((option) => {
+            if (!option.value) return;
+            const visible = option.dataset.universityId === university.value;
+            option.hidden = !visible;
+            option.disabled = !visible;
+            if (visible && option.selected) selectedAvailable = true;
+        });
+        if (!selectedAvailable) college.value = '';
+    };
+
+    university.addEventListener('change', filterColleges);
+    filterColleges();
+});
+</script>

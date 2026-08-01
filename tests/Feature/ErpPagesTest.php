@@ -194,6 +194,18 @@ class ErpPagesTest extends TestCase
             ->assertSee('Academic Setup')
             ->assertSee('Academic Years')
             ->assertSee('Semester Credit Policy')
+            ->assertSee('Module Offerings')
+            ->assertSeeInOrder([
+                'Universities',
+                'Colleges',
+                'Departments',
+                'Stages',
+                'Semester Credit Policy',
+                'Course Catalog',
+                'Academic Years',
+                'Semesters',
+                'Module Offerings',
+            ])
             ->assertSee('Student Rankings')
             ->assertSee('Open rankings')
             ->assertSee('Stages And Credits')
@@ -203,11 +215,18 @@ class ErpPagesTest extends TestCase
             ->assertSee('Stage 1');
 
         $this->actingAs($user)
+            ->get(route('module-offerings.index'))
+            ->assertOk()
+            ->assertSee('Module Offerings')
+            ->assertSee('Programming');
+
+        $this->actingAs($user)
             ->get(route('bologna-definition.semester-credit-policy'))
             ->assertOk()
             ->assertSee('Semester Credit Policy')
             ->assertSee('ECTS/Credits Per Semester')
-            ->assertSee('Credits Required To Pass');
+            ->assertSee('Credits Required To Progress')
+            ->assertSee('Credits Required To Graduate');
 
         $this->actingAs($user)
             ->post(route('bologna-definition.semester-credit-policy.store'), [
@@ -215,6 +234,7 @@ class ErpPagesTest extends TestCase
                     $university->id => [
                         'semester_credits' => 30,
                         'passing_credits' => 18,
+                        'graduation_credits' => 240,
                     ],
                 ],
             ])
@@ -224,6 +244,7 @@ class ErpPagesTest extends TestCase
             'university_id' => $university->id,
             'semester_credits' => 30,
             'passing_credits' => 18,
+            'graduation_credits' => 240,
         ]);
 
         $this->actingAs($user)
@@ -276,6 +297,7 @@ class ErpPagesTest extends TestCase
             ['id' => 'R-2', 'name' => 'Complete Student', 'marks' => [80, 80]],
             ['id' => 'R-3', 'name' => 'Missing Result Student', 'marks' => [95, null]],
             ['id' => 'R-4', 'name' => 'Failed Module Student', 'marks' => [95, 49]],
+            ['id' => 'R-5', 'name' => 'Tied Student', 'marks' => [80, 80]],
         ])->map(function (array $record) use ($university, $department, $firstCourse, $secondCourse, $firstSection, $secondSection) {
             $student = Student::create([
                 'university_id' => $university->id,
@@ -304,14 +326,29 @@ class ErpPagesTest extends TestCase
         });
 
         $secondSection->delete();
+        SemesterCreditPolicy::create([
+            'university_id' => $university->id,
+            'semester_credits' => 6,
+            'passing_credits' => 6,
+            'graduation_credits' => 12,
+        ]);
 
-        $this->actingAs($admin)
+        $response = $this->actingAs($admin)
             ->get(route('bologna-definition.student-rankings'))
             ->assertOk()
-            ->assertSeeInOrder(['Weighted Winner', 'Complete Student'])
+            ->assertSeeInOrder(['Weighted Winner', 'Complete Student', 'Tied Student'])
             ->assertSee('83.3')
             ->assertDontSee($students[2]->full_name)
-            ->assertDontSee($students[3]->full_name);
+            ->assertDontSee($students[3]->full_name)
+            ->assertSee('6 this stage')
+            ->assertSee('Eligible');
+
+        $this->assertGreaterThanOrEqual(2, substr_count($response->getContent(), '#2'));
+
+        $this->actingAs($admin)
+            ->get(route('bologna-definition.student-rankings.export'))
+            ->assertOk()
+            ->assertHeader('content-type', 'text/csv; charset=UTF-8');
     }
 
     public function test_academic_administrator_can_open_new_academic_year_without_redefining_structure(): void
@@ -345,13 +382,18 @@ class ErpPagesTest extends TestCase
             ->post(route('academic-years.store'), [
                 'academic_year' => '2027/2028',
                 'university_ids' => [$university->id],
+                'starts_on' => '2027-09-01 00:00:00',
+                'ends_on' => '2028-06-30 00:00:00',
+                'status' => 'upcoming',
             ])
             ->assertRedirect(route('academic-years.index'));
 
         $this->assertDatabaseHas('academic_years', [
             'university_id' => $university->id,
-            'name' => '2027/2028',
-            'status' => 'active',
+                'name' => '2027/2028',
+                'status' => 'upcoming',
+                'starts_on' => '2027-09-01 00:00:00',
+                'ends_on' => '2028-06-30 00:00:00',
         ]);
 
         $this->assertDatabaseMissing('semesters', [
@@ -376,6 +418,9 @@ class ErpPagesTest extends TestCase
             ->post(route('academic-years.store'), [
                 'academic_year' => '2027/2029',
                 'university_ids' => [$university->id],
+                'starts_on' => '2027-09-01',
+                'ends_on' => '2028-06-30',
+                'status' => 'upcoming',
             ])
             ->assertSessionHasErrors('academic_year');
 
@@ -409,41 +454,67 @@ class ErpPagesTest extends TestCase
         AcademicYear::create(['university_id' => $university->id, 'name' => '2028/2029', 'status' => 'active']);
         AcademicYear::create(['university_id' => $institute->id, 'name' => '2028/2029', 'status' => 'active']);
 
-        foreach (range(1, 8) as $index) {
+        foreach (range(1, 2) as $index) {
             $this->actingAs($admin)
                 ->post(route('semesters.store'), [
                     'name' => 'Semester '.$index,
                     'academic_year' => '2028/2029',
                     'university_id' => $university->id,
+                    'term_type' => 'regular',
+                    'sequence' => $index,
+                    'start_date' => $index === 1 ? '2028-09-01' : '2029-02-01',
+                    'end_date' => $index === 1 ? '2029-01-31' : '2029-06-30',
                 ])
                 ->assertRedirect(route('semesters.index'));
         }
 
+        $this->actingAs($admin)->post(route('semesters.store'), [
+            'name' => 'Summer', 'academic_year' => '2028/2029', 'university_id' => $university->id,
+            'term_type' => 'summer', 'sequence' => 3, 'start_date' => '2029-07-01', 'end_date' => '2029-08-31',
+        ])->assertRedirect(route('semesters.index'));
+
         $this->actingAs($admin)
             ->post(route('semesters.store'), [
-                'name' => 'Semester 9',
+                'name' => 'Semester 4',
                 'academic_year' => '2028/2029',
                 'university_id' => $university->id,
+                'term_type' => 'regular',
+                'sequence' => 4,
+                'start_date' => '2029-09-01',
+                'end_date' => '2029-10-01',
             ])
-            ->assertSessionHasErrors('name');
+            ->assertSessionHasErrors('term_type');
 
-        foreach (range(1, 4) as $index) {
+        foreach (range(1, 2) as $index) {
             $this->actingAs($admin)
                 ->post(route('semesters.store'), [
                     'name' => 'Semester '.$index,
                     'academic_year' => '2028/2029',
                     'university_id' => $institute->id,
+                    'term_type' => 'regular',
+                    'sequence' => $index,
+                    'start_date' => $index === 1 ? '2028-09-01' : '2029-02-01',
+                    'end_date' => $index === 1 ? '2029-01-31' : '2029-06-30',
                 ])
                 ->assertRedirect(route('semesters.index'));
         }
 
+        $this->actingAs($admin)->post(route('semesters.store'), [
+            'name' => 'Summer', 'academic_year' => '2028/2029', 'university_id' => $institute->id,
+            'term_type' => 'summer', 'sequence' => 3, 'start_date' => '2029-07-01', 'end_date' => '2029-08-31',
+        ])->assertRedirect(route('semesters.index'));
+
         $this->actingAs($admin)
             ->post(route('semesters.store'), [
-                'name' => 'Semester 5',
+                'name' => 'Semester 4',
                 'academic_year' => '2028/2029',
                 'university_id' => $institute->id,
+                'term_type' => 'summer',
+                'sequence' => 4,
+                'start_date' => '2029-09-01',
+                'end_date' => '2029-10-01',
             ])
-            ->assertSessionHasErrors('name');
+            ->assertSessionHasErrors('term_type');
     }
 
     public function test_parent_academic_records_with_children_cannot_be_deleted(): void
@@ -494,6 +565,166 @@ class ErpPagesTest extends TestCase
             ->assertOk()
             ->assertSee('Computer Science')
             ->assertDontSee('Mathematics');
+    }
+
+    public function test_direct_academic_permission_is_limited_to_the_assigned_organization(): void
+    {
+        $firstUniversity = University::create(['name' => 'Scoped University', 'code' => 'SCU']);
+        $secondUniversity = University::create(['name' => 'Hidden University', 'code' => 'HDU']);
+        $firstCollege = College::create(['university_id' => $firstUniversity->id, 'name' => 'Scoped College', 'code' => 'SCC']);
+        $secondCollege = College::create(['university_id' => $secondUniversity->id, 'name' => 'Hidden College', 'code' => 'HDC']);
+        $firstDepartment = Department::create(['university_id' => $firstUniversity->id, 'college_id' => $firstCollege->id, 'name' => 'Scoped Department', 'code' => 'SCD']);
+        Department::create(['university_id' => $secondUniversity->id, 'college_id' => $secondCollege->id, 'name' => 'Hidden Department', 'code' => 'HDD']);
+        $role = Role::create(['name' => 'custom_academic_user', 'display_name' => 'Custom Academic User']);
+        $permission = Permission::create(['name' => 'academic_setup.view', 'display_name' => 'View academic setup']);
+        $user = User::factory()->create([
+            'university_id' => $firstUniversity->id,
+            'college_id' => $firstCollege->id,
+            'department_id' => $firstDepartment->id,
+        ]);
+        $user->roles()->attach($role);
+        $user->permissionOverrides()->attach($permission, ['effect' => 'grant']);
+
+        $this->actingAs($user)
+            ->get(route('universities.index'))
+            ->assertOk()
+            ->assertSee('Scoped University')
+            ->assertDontSee('Hidden University');
+
+        $this->actingAs($user)
+            ->get(route('departments.index'))
+            ->assertOk()
+            ->assertSee('Scoped Department')
+            ->assertDontSee('Hidden Department');
+    }
+
+    public function test_academic_year_dates_cannot_overlap_and_open_years_can_be_edited(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Calendar University', 'code' => 'CAL']);
+        $year = AcademicYear::create([
+            'university_id' => $university->id,
+            'name' => '2026/2027',
+            'starts_on' => '2026-09-01',
+            'ends_on' => '2027-06-30',
+            'status' => 'active',
+        ]);
+        Semester::create([
+            'university_id' => $university->id,
+            'academic_year_id' => $year->id,
+            'name' => 'Semester 1',
+            'term_type' => 'regular',
+            'sequence' => 1,
+            'start_date' => '2026-09-01',
+            'end_date' => '2027-01-15',
+        ]);
+        Semester::create([
+            'university_id' => $university->id,
+            'academic_year_id' => $year->id,
+            'name' => 'Semester 2',
+            'term_type' => 'regular',
+            'sequence' => 2,
+            'start_date' => '2027-01-16',
+            'end_date' => '2027-06-20',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('academic-years.store'), [
+                'academic_year' => '2027/2028',
+                'university_ids' => [$university->id],
+                'starts_on' => '2027-06-01',
+                'ends_on' => '2028-05-31',
+                'status' => 'upcoming',
+            ])
+            ->assertSessionHasErrors('starts_on');
+
+        $this->actingAs($admin)
+            ->put(route('academic-years.update', $year), [
+                'name' => '2026/2027',
+                'starts_on' => '2026-08-20',
+                'ends_on' => '2027-06-20',
+                'status' => 'active',
+            ])
+            ->assertRedirect(route('academic-years.index'));
+
+        $this->assertDatabaseHas('academic_years', [
+            'id' => $year->id,
+            'starts_on' => '2026-08-20 00:00:00',
+            'ends_on' => '2027-06-20 00:00:00',
+        ]);
+    }
+
+    public function test_active_academic_year_can_generate_its_regular_semesters(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create([
+            'name' => 'Generated Calendar University',
+            'code' => 'GCU',
+            'expected_semesters_per_year' => 2,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('academic-years.store'), [
+                'academic_year' => '2028/2029',
+                'university_ids' => [$university->id],
+                'starts_on' => '2028-09-01',
+                'ends_on' => '2029-06-30',
+                'status' => 'active',
+                'generate_semesters' => 1,
+            ])
+            ->assertRedirect(route('academic-years.index'));
+
+        $academicYear = AcademicYear::where('university_id', $university->id)
+            ->where('name', '2028/2029')
+            ->firstOrFail();
+
+        $this->assertSame('active', $academicYear->status);
+        $this->assertSame([1, 2], $academicYear->semesters()->orderBy('sequence')->pluck('sequence')->all());
+        $this->assertSame(2, $academicYear->semesters()->where('term_type', 'regular')->count());
+    }
+
+    public function test_semester_dates_cannot_overlap_and_closed_years_are_read_only(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Locked Calendar University', 'code' => 'LCU']);
+        $academicYear = AcademicYear::create([
+            'university_id' => $university->id,
+            'name' => '2028/2029',
+            'starts_on' => '2028-09-01',
+            'ends_on' => '2029-06-30',
+            'status' => 'upcoming',
+        ]);
+        Semester::create([
+            'academic_year_id' => $academicYear->id,
+            'name' => 'Semester 1',
+            'term_type' => 'regular',
+            'sequence' => 1,
+            'start_date' => '2028-09-01',
+            'end_date' => '2029-01-31',
+        ]);
+
+        $semesterPayload = [
+            'university_id' => $university->id,
+            'academic_year_id' => $academicYear->id,
+            'name' => 'Semester 2',
+            'term_type' => 'regular',
+            'sequence' => 2,
+            'start_date' => '2029-01-15',
+            'end_date' => '2029-06-30',
+        ];
+
+        $this->actingAs($admin)
+            ->post(route('semesters.store'), $semesterPayload)
+            ->assertSessionHasErrors('start_date');
+
+        $academicYear->update(['status' => 'closed']);
+
+        $this->actingAs($admin)
+            ->post(route('semesters.store'), [
+                ...$semesterPayload,
+                'start_date' => '2029-02-01',
+            ])
+            ->assertSessionHasErrors('academic_year_id');
     }
 
     public function test_students_page_lists_database_records(): void

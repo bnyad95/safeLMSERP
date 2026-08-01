@@ -23,6 +23,7 @@
                             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Name</th>
                             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Code</th>
                             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Structure</th>
                             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Email</th>
                             <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Phone</th>
                             @if($canManageUniversities)<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>@endif
@@ -34,6 +35,7 @@
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{{ $university->name }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{ $university->code }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{ $university->institution_type === 'institute' ? 'Institute' : 'University' }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{ $university->expectedStageCount() }} stages / {{ $university->expectedSemesterCount() }} semesters yearly</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{ $university->email ?? 'N/A' }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{ $university->phone ?? 'N/A' }}</td>
                                 @if($canManageUniversities)
@@ -49,7 +51,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="{{ $canManageUniversities ? 6 : 5 }}" class="px-6 py-8 text-center text-sm text-gray-500">No universities defined yet.</td>
+                                <td colspan="{{ $canManageUniversities ? 7 : 6 }}" class="px-6 py-8 text-center text-sm text-gray-500">No universities defined yet.</td>
                             </tr>
                         @endforelse
                     </tbody>

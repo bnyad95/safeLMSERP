@@ -34,6 +34,55 @@ class EnrollmentController extends Controller
             'department_id' => $request->integer('department_id') ?: null,
             'grade_level' => trim((string) $request->query('grade_level', '')),
             'semester_id' => $request->integer('semester_id') ?: null,
+            'status' => in_array($request->query('status'), ['enrolled', 'waitlisted', 'dropped'], true)
+                ? $request->query('status')
+                : '',
+        ];
+
+        $directoryQuery = $this->enrollmentDirectoryQuery($filters, $request->user());
+        $enrollments = (clone $directoryQuery)->paginate(25)->withQueryString();
+        $totals = (clone $directoryQuery)
+            ->reorder()
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw("SUM(CASE WHEN status = 'enrolled' THEN 1 ELSE 0 END) as enrolled_count")
+            ->selectRaw("SUM(CASE WHEN status = 'waitlisted' THEN 1 ELSE 0 END) as waitlisted_count")
+            ->selectRaw("SUM(CASE WHEN is_retake = 1 THEN 1 ELSE 0 END) as retake_count")
+            ->first();
+        $options = $this->directoryOptions($request->user());
+
+        return view('enrollments.registrations', [
+            'enrollments' => $enrollments,
+            'stats' => [
+                'total' => (int) ($totals?->total ?? 0),
+                'enrolled' => (int) ($totals?->enrolled_count ?? 0),
+                'waitlisted' => (int) ($totals?->waitlisted_count ?? 0),
+                'retakes' => (int) ($totals?->retake_count ?? 0),
+            ],
+            'filters' => $filters,
+            'colleges' => $options['colleges'],
+            'departments' => $options['departments'],
+            'semesters' => $options['semesters'],
+            'gradeOptions' => $options['gradeOptions'],
+            'abilities' => $this->abilities($request),
+        ]);
+    }
+
+    public function moduleOfferings(Request $request)
+    {
+        $user = $request->user();
+        abort_unless(
+            $user->hasAnyRole(['super_administrator', 'administrator'])
+                || $user->hasPermission('enrollments.view')
+                || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']),
+            403
+        );
+
+        $filters = [
+            'q' => trim((string) $request->query('q', '')),
+            'college_id' => $request->integer('college_id') ?: null,
+            'department_id' => $request->integer('department_id') ?: null,
+            'grade_level' => trim((string) $request->query('grade_level', '')),
+            'semester_id' => $request->integer('semester_id') ?: null,
             'group' => trim((string) $request->query('group', '')),
             'teacher_id' => $request->integer('teacher_id') ?: null,
             'status' => in_array($request->query('status'), ['planned', 'active', 'closed'], true)
@@ -41,9 +90,9 @@ class EnrollmentController extends Controller
                 : '',
         ];
 
-        $directoryQuery = $this->sectionDirectoryQuery($filters, $request->user());
+        $directoryQuery = $this->sectionDirectoryQuery($filters, $user);
         $sections = (clone $directoryQuery)->paginate(12)->withQueryString();
-        $classificationGroups = $this->sectionClassificationGroups($filters, $request->user());
+        $classificationGroups = $this->sectionClassificationGroups($filters, $user);
         $stats = [
             'sections' => $classificationGroups->sum('count'),
             'active' => $classificationGroups->sum('active'),
@@ -51,7 +100,7 @@ class EnrollmentController extends Controller
             'waitlisted' => $classificationGroups->sum('waitlisted'),
         ];
 
-        $options = $this->directoryOptions($request->user());
+        $options = $this->directoryOptions($user);
 
         return view('enrollments.index', [
             'sections' => $sections,
@@ -83,7 +132,10 @@ class EnrollmentController extends Controller
 
         $courseQuery = Course::with('department.college')->where('status', 'active');
         OrganizationScope::apply($courseQuery, $request->user(), 'course');
-        $semesterQuery = Semester::orderByDesc('academic_year')->orderBy('name');
+        $semesterQuery = Semester::with('university')
+            ->whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
+            ->orderByDesc('academic_year')
+            ->orderBy('sequence');
         OrganizationScope::apply($semesterQuery, $request->user(), 'semester');
         $teacherQuery = Teacher::where('status', 'Active');
         OrganizationScope::apply($teacherQuery, $request->user(), 'teacher');
@@ -126,7 +178,7 @@ class EnrollmentController extends Controller
         $this->requireAnyPermission('enrollments.view');
         $this->authorizeSection($courseSection, $request->user());
 
-        $courseSection->load(['course.department.college', 'semester', 'teacher', 'timetables.classroom'])
+        $courseSection->load(['course.department.college', 'semester.university', 'stage', 'teacher', 'timetables.classroom'])
             ->loadCount([
                 'activeEnrollments as enrolled_count',
                 'waitlistedEnrollments as waitlisted_count',
@@ -134,6 +186,7 @@ class EnrollmentController extends Controller
                 'materials',
                 'timetables',
             ]);
+        $courseSection->loadMissing('semester.academicYear');
 
         $activeEnrollments = $courseSection->activeEnrollments()
             ->with('student.department')
@@ -184,6 +237,12 @@ class EnrollmentController extends Controller
         OrganizationScope::apply($stageQuery, $request->user(), 'stage');
         OrganizationScope::apply($teacherQuery, $request->user(), 'teacher');
 
+        $abilities = $this->abilities($request);
+        if ($courseSection->semester?->academicYear?->isLocked()) {
+            $abilities['manage'] = false;
+            $abilities['assign_teacher'] = false;
+        }
+
         return view('enrollments.show', [
             'section' => $courseSection,
             'activeEnrollments' => $activeEnrollments,
@@ -194,7 +253,7 @@ class EnrollmentController extends Controller
             'transferTargets' => $transferTargets,
             'stages' => $stageQuery->get(),
             'teachers' => $teacherQuery->get(['id', 'full_name', 'staff_id']),
-            'abilities' => $this->abilities($request),
+            'abilities' => $abilities,
         ]);
     }
 
@@ -209,7 +268,7 @@ class EnrollmentController extends Controller
         $validated = $request->validate([
             'course_id' => ['required', 'exists:courses,id'],
             'semester_id' => ['required', 'exists:semesters,id'],
-            'stage_id' => ['nullable', 'exists:stages,id'],
+            'stage_id' => ['required', 'exists:stages,id'],
             'teacher_id' => ['nullable', 'exists:teachers,id'],
             'section_code' => [
                 'required',
@@ -227,9 +286,11 @@ class EnrollmentController extends Controller
 
         $course = $this->scopedCourse((int) $validated['course_id'], $request->user());
         $semester = $this->scopedSemester((int) $validated['semester_id'], $request->user());
+        $this->ensureSemesterWritable($semester);
         $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
         $this->validateSectionOrganization($course, $semester, $teacher);
         $stage = $this->resolveStage($course, $validated, $request->user());
+        $this->validateProgramSemester($stage, $semester);
         $validated['stage_id'] = $stage?->id;
         $validated['grade_level'] = $stage?->name ?? ($validated['grade_level'] ?? null);
 
@@ -243,7 +304,7 @@ class EnrollmentController extends Controller
         $section = CourseSection::create($validated);
         $destination = $request->boolean('open_section')
             ? route('course-sections.show', $section)
-            : route('enrollments.index');
+            : route('module-offerings.index');
 
         return redirect($destination)->with('success', 'Course module created.');
     }
@@ -259,7 +320,7 @@ class EnrollmentController extends Controller
 
         $validated = $request->validate([
             'teacher_id' => ['nullable', 'exists:teachers,id'],
-            'stage_id' => ['nullable', 'exists:stages,id'],
+            'stage_id' => ['required', 'exists:stages,id'],
             'grade_level' => ['nullable', 'string', 'max:50'],
             'capacity' => ['required', 'integer', 'min:1', 'max:500'],
             'status' => ['required', Rule::in(['planned', 'active', 'closed'])],
@@ -267,8 +328,11 @@ class EnrollmentController extends Controller
         ]);
         $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
         $course = $courseSection->course()->with('department')->firstOrFail();
+        $courseSection->load('semester.academicYear');
+        $this->ensureSemesterWritable($courseSection->semester);
         $this->validateSectionOrganization($course, $courseSection->semester, $teacher);
         $stage = $this->resolveStage($course, $validated, $request->user());
+        $this->validateProgramSemester($stage, $courseSection->semester);
         $validated['stage_id'] = $stage?->id;
         $validated['grade_level'] = $stage?->name ?? ($validated['grade_level'] ?? null);
 
@@ -470,6 +534,8 @@ class EnrollmentController extends Controller
     {
         $this->requireAnyPermission('enrollments.manage');
         $this->authorizeSection($courseSection, auth()->user());
+        $courseSection->load('semester.academicYear');
+        $this->ensureSemesterWritable($courseSection->semester);
 
         if ($courseSection->status !== 'closed') {
             return back()->with('error', 'Close the module before archiving it.');
@@ -480,7 +546,7 @@ class EnrollmentController extends Controller
 
         $courseSection->delete();
 
-        return redirect()->route('enrollments.index')->with('success', 'Course module archived.');
+        return redirect()->route('module-offerings.index')->with('success', 'Course module archived.');
     }
 
     public function archived(Request $request)
@@ -509,6 +575,8 @@ class EnrollmentController extends Controller
         OrganizationScope::apply($query, request()->user(), 'section');
         $section = $query->firstOrFail();
         abort_unless($section->trashed(), 404);
+        $section->load('semester.academicYear');
+        $this->ensureSemesterWritable($section->semester);
         $section->restore();
 
         return redirect()->route('course-sections.archived')->with('success', 'Course module restored.');
@@ -531,7 +599,7 @@ class EnrollmentController extends Controller
 
     private function sectionDirectoryQuery(array $filters, User $user)
     {
-        $query = CourseSection::with(['course.department.college', 'semester', 'teacher', 'stage'])
+        $query = CourseSection::with(['course.department.college', 'semester.university', 'teacher', 'stage'])
             ->withCount([
                 'activeEnrollments as enrolled_count',
                 'waitlistedEnrollments as waitlisted_count',
@@ -552,6 +620,47 @@ class EnrollmentController extends Controller
         OrganizationScope::apply($query, $user, 'section');
 
         return $query->orderByDesc('created_at');
+    }
+
+    private function enrollmentDirectoryQuery(array $filters, User $user)
+    {
+        $query = Enrollment::with([
+            'student.department.college',
+            'courseSection.course.department.college',
+            'courseSection.semester',
+            'courseSection.stage',
+        ])
+            ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
+                $search->whereHas('student', fn ($student) => $student
+                    ->where('student_id', 'like', "%{$filters['q']}%")
+                    ->orWhere('full_name', 'like', "%{$filters['q']}%")
+                    ->orWhere('email', 'like', "%{$filters['q']}%"))
+                    ->orWhereHas('courseSection', fn ($section) => $section
+                        ->where('section_code', 'like', "%{$filters['q']}%")
+                        ->orWhereHas('course', fn ($course) => $course
+                            ->where('code', 'like', "%{$filters['q']}%")
+                            ->orWhere('name', 'like', "%{$filters['q']}%")));
+            }))
+            ->when($filters['college_id'], fn ($query, $collegeId) => $query->whereHas(
+                'courseSection.course.department',
+                fn ($department) => $department->where('college_id', $collegeId)
+            ))
+            ->when($filters['department_id'], fn ($query, $departmentId) => $query->whereHas(
+                'courseSection.course',
+                fn ($course) => $course->where('department_id', $departmentId)
+            ))
+            ->when($filters['grade_level'] !== '', fn ($query) => $query->whereHas(
+                'courseSection',
+                fn ($section) => $section->where('grade_level', $filters['grade_level'])
+            ))
+            ->when($filters['semester_id'], fn ($query, $semesterId) => $query->whereHas(
+                'courseSection',
+                fn ($section) => $section->where('semester_id', $semesterId)
+            ))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']));
+        OrganizationScope::apply($query, $user, 'section_record');
+
+        return $query->orderByDesc('enrolled_at')->orderByDesc('id');
     }
 
     private function sectionClassificationGroups(array $filters, User $user)
@@ -675,10 +784,19 @@ class EnrollmentController extends Controller
 
     private function scopedSemester(int $semesterId, User $user): Semester
     {
-        $query = Semester::whereKey($semesterId);
+        $query = Semester::with(['academicYear', 'university'])->whereKey($semesterId);
         OrganizationScope::apply($query, $user, 'semester');
 
         return $query->firstOrFail();
+    }
+
+    private function ensureSemesterWritable(?Semester $semester): void
+    {
+        if (! $semester || $semester->academicYear?->isLocked()) {
+            throw ValidationException::withMessages([
+                'semester_id' => 'Closed and archived academic years are read-only.',
+            ]);
+        }
     }
 
     private function scopedTeacher(int $teacherId, User $user): Teacher
@@ -752,6 +870,42 @@ class EnrollmentController extends Controller
         }
         if ($teacher && $teacher->university_id !== $universityId) {
             throw ValidationException::withMessages(['teacher_id' => 'The selected teacher and course must belong to the same university.']);
+        }
+    }
+
+    private function validateProgramSemester(?Stage $stage, Semester $semester): void
+    {
+        if (! $stage) {
+            throw ValidationException::withMessages([
+                'stage_id' => 'Select a managed stage so the program semester can be calculated.',
+            ]);
+        }
+
+        $university = $semester->university;
+        if (! $university || (int) $stage->university_id !== (int) $university->id) {
+            throw ValidationException::withMessages([
+                'stage_id' => 'The selected stage and semester must belong to the same university.',
+            ]);
+        }
+
+        $stageSequence = (int) $stage->sequence;
+        if ($stageSequence < 1 || $stageSequence > $university->expectedStageCount()) {
+            throw ValidationException::withMessages([
+                'stage_id' => 'The selected stage is outside the university program structure.',
+            ]);
+        }
+
+        $regularSemesters = $university->expectedSemesterCount();
+        $semesterSequence = (int) $semester->sequence;
+        $termType = $semester->term_type ?? 'regular';
+        $validSequence = $termType === 'summer'
+            ? $semesterSequence === $regularSemesters + 1
+            : $semesterSequence >= 1 && $semesterSequence <= $regularSemesters;
+
+        if (! $validSequence) {
+            throw ValidationException::withMessages([
+                'semester_id' => 'The selected semester sequence does not match the university semester structure.',
+            ]);
         }
     }
 

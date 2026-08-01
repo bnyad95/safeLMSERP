@@ -25,7 +25,6 @@ class StudentProfileTest extends TestCase
         $this->actingAs($admin)
             ->post('/students', [
                 'full_name' => 'Expanded Profile Student',
-                'student_id' => 'STD-7001',
                 'email' => 'expanded@example.com',
                 'phone' => '0770000000',
                 'department_id' => $department->id,
@@ -45,7 +44,6 @@ class StudentProfileTest extends TestCase
 
         $this->assertDatabaseHas('students', [
             'university_id' => $university->id,
-            'student_id' => 'STD-7001',
             'admission_status' => 'Enrolled',
             'admission_type' => 'Scholarship',
             'previous_school' => 'Central High School',
