@@ -17,6 +17,50 @@ data.
 The Student Rankings query uses SQL window functions, so older MySQL or
 MariaDB releases are not supported.
 
+## Local XAMPP database
+
+The local application uses XAMPP MariaDB, not SQLite. Start the isolated
+SafeLMS database service from the project directory:
+
+```powershell
+composer mysql:start
+php artisan migrate
+```
+
+It listens on `127.0.0.1:3307` and maintains two ignored local databases:
+`safelms_local` for development and `safelms_test` for the test suite. The
+settings are already present in `.env.example`; keep real credentials in
+`.env`, which is not committed.
+
+## GitHub to cPanel deployment
+
+The repository includes `.cpanel.yml`. After cPanel pulls a committed revision,
+the deployment task runs `deploy/cpanel-git-deploy.sh` and:
+
+1. Copies application code to `/home/CPANEL_USER/safelms_app` while preserving
+   its `.env`, `storage`, and `vendor` directories.
+2. Installs production Composer dependencies when Composer is available.
+3. Runs pending MySQL migrations and refreshes role permissions.
+4. Publishes the committed `public/build` assets and other public files to
+   `/home/CPANEL_USER/public_html`.
+5. Preserves cPanel-managed `.well-known` and `cgi-bin` directories.
+
+Before the first Git deployment, create
+`/home/CPANEL_USER/safelms_app/.env` from `.env.cpanel.example` and enter the
+complete cPanel database name, username, password, and application URL. Keep
+`DB_CONNECTION=mysql`, `APP_ENV=production`, and `APP_DEBUG=false`.
+
+If the account uses different paths, add repository deployment environment
+variables in cPanel:
+
+```text
+SAFELMS_APP_DIR=/home/CPANEL_USER/safelms_app
+SAFELMS_PUBLIC_DIR=/home/CPANEL_USER/public_html
+```
+
+Never commit the production `.env` or database password. Build frontend assets
+locally with `npm run build` before committing a deployment revision.
+
 ## 1. Create the cPanel database
 
 In **cPanel > MySQL Databases**:

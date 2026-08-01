@@ -19,6 +19,7 @@ use App\Models\Timetable;
 use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class StudentPortalTest extends TestCase
@@ -27,6 +28,8 @@ class StudentPortalTest extends TestCase
 
     public function test_student_can_access_student_portal_and_see_own_data(): void
     {
+        $this->travelTo(Carbon::parse('2026-07-27 08:00:00', 'Asia/Baghdad'));
+
         $studentRole = Role::create([
             'name' => 'student',
             'display_name' => 'Student User',
