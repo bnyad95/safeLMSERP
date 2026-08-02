@@ -129,6 +129,40 @@ fi
 command -v rsync >/dev/null 2>&1 || fail "rsync is required to publish web assets"
 [[ -f public/.htaccess ]] || fail "public/.htaccess is missing from the repository"
 grep -q 'RewriteRule.*index.php' public/.htaccess || fail "public/.htaccess does not contain the Laravel front-controller rewrite"
+
+PUBLIC_CLEANUP_MARKER="${APP_DIR}/storage/app/private/2026-08-02-public-root-cleanup.completed"
+if [[ ! -f "${PUBLIC_CLEANUP_MARKER}" ]]; then
+    [[ "${SOURCE_DIR}" != "${PUBLIC_DIR}" ]] || fail "the Git repository must be separate from public_html before private files can be quarantined"
+
+    LEGACY_PUBLIC_BACKUP="${HOME_DIR}/safelms_public_legacy_20260802"
+    mkdir -p "${LEGACY_PUBLIC_BACKUP}"
+    chmod 700 "${LEGACY_PUBLIC_BACKUP}"
+
+    PRIVATE_PUBLIC_ENTRIES=(
+        .git .github .cpanel.yml .editorconfig .env .env.backup
+        .env.cpanel.example .env.example .env.production .gitattributes
+        .gitignore .phpunit.cache .phpunit.result.cache
+        app artisan auth.json bootstrap composer.json composer.lock config
+        database deploy dist node_modules package.json package-lock.json
+        phpunit.xml postcss.config.js public README.md resources routes scripts
+        storage tailwind.config.js tests vendor vite.config.js
+        DEPLOYMENT.md IMPLEMENTATION_GUIDE.md
+    )
+
+    for entry in "${PRIVATE_PUBLIC_ENTRIES[@]}"; do
+        source_entry="${PUBLIC_DIR}/${entry}"
+        backup_entry="${LEGACY_PUBLIC_BACKUP}/${entry}"
+
+        [[ -e "${source_entry}" || -L "${source_entry}" ]] || continue
+        [[ "${entry}" != 'storage' || ! -L "${source_entry}" ]] || continue
+        [[ ! -e "${backup_entry}" && ! -L "${backup_entry}" ]] || fail "legacy backup already contains ${entry}; review ${LEGACY_PUBLIC_BACKUP} before deploying"
+
+        mv "${source_entry}" "${backup_entry}"
+    done
+
+    printf 'Completed %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "${PUBLIC_CLEANUP_MARKER}"
+fi
+
 rsync -a \
     --exclude='.well-known/' \
     --exclude='cgi-bin/' \

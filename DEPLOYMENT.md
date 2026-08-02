@@ -88,6 +88,13 @@ production cleanup. Its matching completion marker is stored under
 `storage/app/private`, so that request cannot run more than once on the same
 installation.
 
+When an older cPanel repository was incorrectly located in `public_html`, the
+first deployment from the separate repository moves private Laravel source
+files into `/home/CPANEL_USER/safelms_public_legacy_20260802`. The public root
+keeps only web assets and receives the correct public storage link. Review the
+backup after confirming the application works, then remove it through File
+Manager when it is no longer needed.
+
 ## 1. Create the cPanel database
 
 In **cPanel > MySQL Databases**:
