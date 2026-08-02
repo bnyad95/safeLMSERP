@@ -83,6 +83,11 @@ Super Administrators. After success, the marker is renamed to
 `clear-institution-data.completed`, so later deployments cannot repeat the
 reset. Back up the cPanel database before creating the request file.
 
+The versioned request in `deploy/requests` is used for the approved initial
+production cleanup. Its matching completion marker is stored under
+`storage/app/private`, so that request cannot run more than once on the same
+installation.
+
 ## 1. Create the cPanel database
 
 In **cPanel > MySQL Databases**:

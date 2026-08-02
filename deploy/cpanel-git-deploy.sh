@@ -103,13 +103,23 @@ trap restore_application EXIT
 "${PHP_BIN}" artisan migrate --force
 "${PHP_BIN}" artisan db:seed --class='Database\Seeders\RolePermissionSeeder' --force
 
-RESET_REQUEST="${APP_DIR}/storage/app/private/clear-institution-data.request"
-if [[ -f "${RESET_REQUEST}" ]]; then
-    RESET_CONFIRMATION="$(tr -d '\r\n' < "${RESET_REQUEST}")"
-    [[ "${RESET_CONFIRMATION}" == 'DELETE-UNIVERSITY-DATA' ]] || fail "the institution-data reset marker has invalid confirmation text"
+RESET_REQUEST_ID='2026-08-02-initial-data-reset'
+TRACKED_RESET_REQUEST="${APP_DIR}/deploy/requests/${RESET_REQUEST_ID}.request"
+MANUAL_RESET_REQUEST="${APP_DIR}/storage/app/private/clear-institution-data.request"
+RESET_COMPLETED="${APP_DIR}/storage/app/private/${RESET_REQUEST_ID}.completed"
+
+if [[ ! -f "${RESET_COMPLETED}" && ( -f "${TRACKED_RESET_REQUEST}" || -f "${MANUAL_RESET_REQUEST}" ) ]]; then
+    RESET_SOURCE="${TRACKED_RESET_REQUEST}"
+    [[ -f "${MANUAL_RESET_REQUEST}" ]] && RESET_SOURCE="${MANUAL_RESET_REQUEST}"
+    RESET_CONFIRMATION="$(tr -d '\r\n' < "${RESET_SOURCE}")"
+    [[ "${RESET_CONFIRMATION}" == 'DELETE-UNIVERSITY-DATA' ]] || fail "the institution-data reset request has invalid confirmation text"
 
     "${PHP_BIN}" artisan safelms:clear-institution-data --confirm='DELETE-UNIVERSITY-DATA'
-    mv "${RESET_REQUEST}" "${APP_DIR}/storage/app/private/clear-institution-data.completed"
+    printf 'Completed %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "${RESET_COMPLETED}"
+
+    if [[ -f "${MANUAL_RESET_REQUEST}" ]]; then
+        mv "${MANUAL_RESET_REQUEST}" "${APP_DIR}/storage/app/private/clear-institution-data.completed"
+    fi
 fi
 
 "${PHP_BIN}" artisan files:migrate-protected
