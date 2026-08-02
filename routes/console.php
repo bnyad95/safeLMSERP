@@ -9,6 +9,7 @@ use App\Models\CourseMaterial;
 use App\Models\FinanceTransaction;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\InstitutionDataResetService;
 use App\Services\NotificationService;
 use App\Services\ProtectedFileService;
 use Database\Seeders\RolePermissionSeeder;
@@ -158,3 +159,26 @@ Artisan::command('safelms:create-super-admin {email : Login email for the first 
 
     return 0;
 })->purpose('Create or restore the first production Super Administrator safely');
+
+Artisan::command('safelms:clear-institution-data {--confirm= : Enter DELETE-UNIVERSITY-DATA to authorize the deletion}', function () {
+    if (! hash_equals('DELETE-UNIVERSITY-DATA', (string) $this->option('confirm'))) {
+        $this->error('Confirmation failed. No data was deleted.');
+
+        return 1;
+    }
+
+    try {
+        $result = app(InstitutionDataResetService::class)->clear();
+    } catch (Throwable $exception) {
+        $this->error($exception->getMessage());
+
+        return 1;
+    }
+
+    $this->info('Institution data was cleared successfully.');
+    $this->line("Cleared tables: {$result['cleared_tables']}");
+    $this->line("Deleted non-administrator users: {$result['deleted_users']}");
+    $this->line("Preserved Super Administrators: {$result['preserved_administrators']}");
+
+    return 0;
+})->purpose('Clear university data while preserving Super Administrators, roles, and permissions');

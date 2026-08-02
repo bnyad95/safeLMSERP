@@ -102,6 +102,16 @@ trap restore_application EXIT
 "${PHP_BIN}" artisan optimize:clear
 "${PHP_BIN}" artisan migrate --force
 "${PHP_BIN}" artisan db:seed --class='Database\Seeders\RolePermissionSeeder' --force
+
+RESET_REQUEST="${APP_DIR}/storage/app/private/clear-institution-data.request"
+if [[ -f "${RESET_REQUEST}" ]]; then
+    RESET_CONFIRMATION="$(tr -d '\r\n' < "${RESET_REQUEST}")"
+    [[ "${RESET_CONFIRMATION}" == 'DELETE-UNIVERSITY-DATA' ]] || fail "the institution-data reset marker has invalid confirmation text"
+
+    "${PHP_BIN}" artisan safelms:clear-institution-data --confirm='DELETE-UNIVERSITY-DATA'
+    mv "${RESET_REQUEST}" "${APP_DIR}/storage/app/private/clear-institution-data.completed"
+fi
+
 "${PHP_BIN}" artisan files:migrate-protected
 "${PHP_BIN}" artisan optimize
 "${PHP_BIN}" artisan queue:restart || true

@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $mysqlRoot = 'C:\xampp\mysql'
-$dataDir = Join-Path $projectRoot '.runtime\mysql\data'
+$dataDir = Join-Path $projectRoot '.runtime\mysql'
 $configPath = Join-Path $projectRoot '.runtime\mysql\my.ini'
 $mysql = Join-Path $mysqlRoot 'bin\mysql.exe'
 $mysqlAdmin = Join-Path $mysqlRoot 'bin\mysqladmin.exe'
@@ -38,14 +38,22 @@ host=127.0.0.1
 "@
 Set-Content -Path $configPath -Value $config -Encoding Ascii
 
-& $mysqlAdmin --defaults-file=$configPath ping 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+function Test-MariaDbReady {
+    $probe = Start-Process -FilePath $mysqlAdmin `
+        -ArgumentList "--defaults-file=$configPath", 'ping' `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+
+    return $probe.ExitCode -eq 0
+}
+
+if (-not (Test-MariaDbReady)) {
     Start-Process -FilePath $mysqld -ArgumentList "--defaults-file=$configPath" -WindowStyle Hidden
     $ready = $false
     foreach ($attempt in 1..30) {
         Start-Sleep -Milliseconds 500
-        & $mysqlAdmin --defaults-file=$configPath ping 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        if (Test-MariaDbReady) {
             $ready = $true
             break
         }

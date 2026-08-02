@@ -61,6 +61,28 @@ SAFELMS_PUBLIC_DIR=/home/CPANEL_USER/public_html
 Never commit the production `.env` or database password. Build frontend assets
 locally with `npm run build` before committing a deployment revision.
 
+### One-time institution data reset
+
+To clear a live installation while preserving Super Administrator accounts,
+roles, permissions, and migrations, create this file with cPanel File Manager:
+
+```text
+/home/CPANEL_USER/safelms_app/storage/app/private/clear-institution-data.request
+```
+
+Its complete contents must be:
+
+```text
+DELETE-UNIVERSITY-DATA
+```
+
+Deploy the current Git revision from cPanel. The deployment clears academic,
+LMS, finance, notification, audit, and other operational data, removes every
+non-Super-Administrator user, and removes organization scope from retained
+Super Administrators. After success, the marker is renamed to
+`clear-institution-data.completed`, so later deployments cannot repeat the
+reset. Back up the cPanel database before creating the request file.
+
 ## 1. Create the cPanel database
 
 In **cPanel > MySQL Databases**:
