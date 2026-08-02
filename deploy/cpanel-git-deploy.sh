@@ -107,6 +107,8 @@ trap restore_application EXIT
 "${PHP_BIN}" artisan queue:restart || true
 
 command -v rsync >/dev/null 2>&1 || fail "rsync is required to publish web assets"
+[[ -f public/.htaccess ]] || fail "public/.htaccess is missing from the repository"
+grep -q 'RewriteRule.*index.php' public/.htaccess || fail "public/.htaccess does not contain the Laravel front-controller rewrite"
 rsync -a \
     --exclude='.well-known/' \
     --exclude='cgi-bin/' \
@@ -114,6 +116,10 @@ rsync -a \
     --exclude='hot' \
     --exclude='storage' \
     public/ "${PUBLIC_DIR}/"
+
+# Dotfiles are easy to miss in File Manager and archive workflows. Install the
+# rewrite file explicitly so LiteSpeed sends clean Laravel URLs to index.php.
+install -m 644 public/.htaccess "${PUBLIC_DIR}/.htaccess"
 
 APP_PATH_ESCAPED="$(printf '%s' "${APP_DIR}" | sed 's/[&]/\\&/g')"
 sed \
