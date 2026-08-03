@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicYear;
 use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseSection;
@@ -12,6 +13,7 @@ use App\Models\Semester;
 use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
+use App\Models\University;
 use App\Models\User;
 use App\Services\EnrollmentService;
 use App\Support\OrganizationScope;
@@ -46,7 +48,7 @@ class EnrollmentController extends Controller
             ->selectRaw('COUNT(*) as total')
             ->selectRaw("SUM(CASE WHEN status = 'enrolled' THEN 1 ELSE 0 END) as enrolled_count")
             ->selectRaw("SUM(CASE WHEN status = 'waitlisted' THEN 1 ELSE 0 END) as waitlisted_count")
-            ->selectRaw("SUM(CASE WHEN is_retake = 1 THEN 1 ELSE 0 END) as retake_count")
+            ->selectRaw('SUM(CASE WHEN is_retake = 1 THEN 1 ELSE 0 END) as retake_count')
             ->first();
         $options = $this->directoryOptions($request->user());
 
@@ -124,52 +126,102 @@ class EnrollmentController extends Controller
 
         $filters = [
             'q' => trim((string) $request->query('q', '')),
+            'university_id' => $request->integer('university_id') ?: null,
+            'academic_year_id' => $request->integer('academic_year_id') ?: null,
             'college_id' => $request->integer('college_id') ?: null,
             'department_id' => $request->integer('department_id') ?: null,
             'teacher_q' => trim((string) $request->query('teacher_q', '')),
         ];
         $canAssignTeachers = $this->canAssignTeachers($request);
 
+        $universityQuery = University::orderBy('name');
+        $academicYearQuery = AcademicYear::with('university')
+            ->whereIn('status', ['upcoming', 'active'])
+            ->orderByDesc('starts_on')
+            ->orderByDesc('name');
+        $collegeQuery = College::with('university')->orderBy('name');
+        $departmentQuery = Department::with('college')->orderBy('name');
         $courseQuery = Course::with('department.college')->where('status', 'active');
         OrganizationScope::apply($courseQuery, $request->user(), 'course');
-        $semesterQuery = Semester::with('university')
+        $semesterQuery = Semester::with(['university', 'academicYear'])
             ->whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
             ->orderByDesc('academic_year')
             ->orderBy('sequence');
+        $teacherQuery = Teacher::with('department')->where('status', 'Active');
+        $stageQuery = Stage::with('department.college')->orderBy('department_id')->orderBy('sequence');
+
+        OrganizationScope::apply($universityQuery, $request->user(), 'university');
+        OrganizationScope::apply($academicYearQuery, $request->user(), 'academic_year');
+        OrganizationScope::apply($collegeQuery, $request->user(), 'college');
+        OrganizationScope::apply($departmentQuery, $request->user(), 'department');
         OrganizationScope::apply($semesterQuery, $request->user(), 'semester');
-        $teacherQuery = Teacher::where('status', 'Active');
         OrganizationScope::apply($teacherQuery, $request->user(), 'teacher');
-        $stageQuery = Stage::with('department')->orderBy('department_id')->orderBy('sequence');
         OrganizationScope::apply($stageQuery, $request->user(), 'stage');
-        [$colleges, $departments] = $this->organizationOptions($request->user());
+
+        $universities = $universityQuery->get(['id', 'name', 'code', 'expected_semesters_per_year']);
+        $academicYears = $academicYearQuery
+            ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
+            ->get();
+        $colleges = $collegeQuery
+            ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
+            ->get(['id', 'university_id', 'name', 'code']);
+        $departments = $departmentQuery
+            ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
+            ->when($filters['college_id'], fn ($query, $collegeId) => $query->where('college_id', $collegeId))
+            ->get(['id', 'university_id', 'college_id', 'name', 'code']);
+        $semesters = $semesterQuery
+            ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
+            ->when($filters['academic_year_id'], fn ($query, $academicYearId) => $query->where('academic_year_id', $academicYearId))
+            ->get();
+        $stages = $stageQuery
+            ->when($filters['department_id'], fn ($query, $departmentId) => $query->where('department_id', $departmentId))
+            ->get();
+        $courses = $courseQuery
+            ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
+                $search->where('code', 'like', "%{$filters['q']}%")
+                    ->orWhere('name', 'like', "%{$filters['q']}%");
+            }))
+            ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
+            ->when($filters['college_id'], fn ($query, $collegeId) => $query->whereHas('department', fn ($department) => $department->where('college_id', $collegeId)))
+            ->when($filters['department_id'], fn ($query, $departmentId) => $query->where('department_id', $departmentId))
+            ->orderBy('code')
+            ->limit(100)
+            ->get();
+        $teachers = $canAssignTeachers
+            ? $teacherQuery
+                ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
+                ->when($filters['department_id'], fn ($query, $departmentId) => $query->where('department_id', $departmentId))
+                ->when($filters['teacher_q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
+                    $search->where('full_name', 'like', "%{$filters['teacher_q']}%")
+                        ->orWhere('staff_id', 'like', "%{$filters['teacher_q']}%");
+                }))
+                ->orderBy('full_name')
+                ->limit(100)
+                ->get()
+            : collect();
+
+        $setupIssues = collect([
+            $universities->isEmpty() ? 'Define an accessible university.' : null,
+            $academicYears->isEmpty() ? 'Add an active or upcoming academic year.' : null,
+            $semesters->isEmpty() ? 'Generate semesters for the academic year.' : null,
+            $colleges->isEmpty() ? 'Define a college.' : null,
+            $departments->isEmpty() ? 'Define a department.' : null,
+            $courses->isEmpty() ? 'Add an active course to the Course Catalog.' : null,
+            $stages->isEmpty() ? 'Define stages for the department.' : null,
+        ])->filter()->values();
 
         return view('enrollments.create-section', [
-            'courses' => $courseQuery
-                ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
-                    $search->where('code', 'like', "%{$filters['q']}%")
-                        ->orWhere('name', 'like', "%{$filters['q']}%");
-                }))
-                ->when($filters['college_id'], fn ($query, $collegeId) => $query->whereHas('department', fn ($department) => $department->where('college_id', $collegeId)))
-                ->when($filters['department_id'], fn ($query, $departmentId) => $query->where('department_id', $departmentId))
-                ->orderBy('code')
-                ->limit(100)
-                ->get(),
-            'semesters' => $semesterQuery->get(),
-            'stages' => $stageQuery->get(),
-            'teachers' => $canAssignTeachers
-                ? $teacherQuery
-                    ->when($filters['teacher_q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
-                        $search->where('full_name', 'like', "%{$filters['teacher_q']}%")
-                            ->orWhere('staff_id', 'like', "%{$filters['teacher_q']}%");
-                    }))
-                    ->orderBy('full_name')
-                    ->limit(100)
-                    ->get()
-                : collect(),
+            'universities' => $universities,
+            'academicYears' => $academicYears,
+            'courses' => $courses,
+            'semesters' => $semesters,
+            'stages' => $stages,
+            'teachers' => $teachers,
             'colleges' => $colleges,
             'departments' => $departments,
             'filters' => $filters,
             'canAssignTeachers' => $canAssignTeachers,
+            'setupIssues' => $setupIssues,
         ]);
     }
 
@@ -266,6 +318,10 @@ class EnrollmentController extends Controller
         }
 
         $validated = $request->validate([
+            'university_id' => ['nullable', 'exists:universities,id'],
+            'academic_year_id' => ['nullable', 'exists:academic_years,id'],
+            'college_id' => ['nullable', 'exists:colleges,id'],
+            'department_id' => ['nullable', 'exists:departments,id'],
             'course_id' => ['required', 'exists:courses,id'],
             'semester_id' => ['required', 'exists:semesters,id'],
             'stage_id' => ['required', 'exists:stages,id'],
@@ -288,6 +344,7 @@ class EnrollmentController extends Controller
         $semester = $this->scopedSemester((int) $validated['semester_id'], $request->user());
         $this->ensureSemesterWritable($semester);
         $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
+        $this->validateOfferingHierarchy($course, $semester, $validated, $request->user());
         $this->validateSectionOrganization($course, $semester, $teacher);
         $stage = $this->resolveStage($course, $validated, $request->user());
         $this->validateProgramSemester($stage, $semester);
@@ -301,6 +358,7 @@ class EnrollmentController extends Controller
             throw ValidationException::withMessages(['teacher_id' => 'Only active teachers can be assigned to a module.']);
         }
 
+        unset($validated['university_id'], $validated['academic_year_id'], $validated['college_id'], $validated['department_id']);
         $section = CourseSection::create($validated);
         $destination = $request->boolean('open_section')
             ? route('course-sections.show', $section)
@@ -776,8 +834,24 @@ class EnrollmentController extends Controller
 
     private function scopedCourse(int $courseId, User $user): Course
     {
-        $query = Course::with('department')->whereKey($courseId);
+        $query = Course::with('department.college')->whereKey($courseId);
         OrganizationScope::apply($query, $user, 'course');
+
+        return $query->firstOrFail();
+    }
+
+    private function scopedUniversity(int $universityId, User $user): University
+    {
+        $query = University::whereKey($universityId);
+        OrganizationScope::apply($query, $user, 'university');
+
+        return $query->firstOrFail();
+    }
+
+    private function scopedAcademicYear(int $academicYearId, User $user): AcademicYear
+    {
+        $query = AcademicYear::whereKey($academicYearId);
+        OrganizationScope::apply($query, $user, 'academic_year');
 
         return $query->firstOrFail();
     }
@@ -870,6 +944,41 @@ class EnrollmentController extends Controller
         }
         if ($teacher && $teacher->university_id !== $universityId) {
             throw ValidationException::withMessages(['teacher_id' => 'The selected teacher and course must belong to the same university.']);
+        }
+    }
+
+    private function validateOfferingHierarchy(Course $course, Semester $semester, array $validated, User $user): void
+    {
+        $courseUniversityId = (int) $course->department->university_id;
+
+        if (! empty($validated['university_id'])) {
+            $university = $this->scopedUniversity((int) $validated['university_id'], $user);
+            if ((int) $university->id !== $courseUniversityId || (int) $semester->university_id !== (int) $university->id) {
+                throw ValidationException::withMessages([
+                    'university_id' => 'The selected university must match the course and semester.',
+                ]);
+            }
+        }
+
+        if (! empty($validated['academic_year_id'])) {
+            $academicYear = $this->scopedAcademicYear((int) $validated['academic_year_id'], $user);
+            if ((int) $academicYear->university_id !== $courseUniversityId || (int) $semester->academic_year_id !== (int) $academicYear->id) {
+                throw ValidationException::withMessages([
+                    'academic_year_id' => 'The selected academic year must contain the selected semester and course university.',
+                ]);
+            }
+        }
+
+        if (! empty($validated['college_id']) && (int) $course->department->college_id !== (int) $validated['college_id']) {
+            throw ValidationException::withMessages([
+                'college_id' => 'The selected college must contain the course department.',
+            ]);
+        }
+
+        if (! empty($validated['department_id']) && (int) $course->department_id !== (int) $validated['department_id']) {
+            throw ValidationException::withMessages([
+                'department_id' => 'The selected department must own the catalog course.',
+            ]);
         }
     }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AcademicYear;
 use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseSection;
@@ -41,7 +42,16 @@ class EnrollmentTest extends TestCase
     private function makeAcademicSetup(): array
     {
         $university = University::create(['name' => 'BND University', 'code' => 'BND']);
-        $department = Department::create(['university_id' => $university->id, 'name' => 'Computer Science']);
+        $college = College::create([
+            'university_id' => $university->id,
+            'name' => 'College of Science',
+            'code' => 'SCI',
+        ]);
+        $department = Department::create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'name' => 'Computer Science',
+        ]);
         $semester = Semester::create([
             'university_id' => $university->id,
             'name' => 'Fall',
@@ -82,7 +92,9 @@ class EnrollmentTest extends TestCase
             'status' => 'Active',
         ]);
 
-        return compact('course', 'semester', 'stage', 'teacher', 'student');
+        $academicYear = $semester->academicYear;
+
+        return compact('university', 'academicYear', 'college', 'department', 'course', 'semester', 'stage', 'teacher', 'student');
     }
 
     private function makeSection(array $setup, string $group = 'A', array $overrides = []): CourseSection
@@ -128,6 +140,105 @@ class EnrollmentTest extends TestCase
             'capacity' => 35,
             'status' => 'active',
         ]);
+    }
+
+    public function test_add_module_offering_follows_the_academic_setup_lifecycle(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+
+        $this->actingAs($admin)
+            ->get(route('course-sections.create'))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'University',
+                'Academic Year',
+                'Semester',
+                'College',
+                'Department',
+                'Catalog Course',
+                'Stage',
+                'Group',
+                'Teacher',
+                'Capacity',
+                'Status',
+            ])
+            ->assertSee($setup['university']->name)
+            ->assertSee($setup['academicYear']->name)
+            ->assertSee($setup['college']->name)
+            ->assertSee($setup['course']->name)
+            ->assertSee('Create Offering');
+    }
+
+    public function test_add_module_offering_is_limited_to_the_users_university(): void
+    {
+        $setup = $this->makeAcademicSetup();
+        $otherUniversity = University::create(['name' => 'Other University', 'code' => 'OTHER']);
+        $otherCollege = College::create(['university_id' => $otherUniversity->id, 'name' => 'Other College', 'code' => 'OC']);
+        $otherDepartment = Department::create([
+            'university_id' => $otherUniversity->id,
+            'college_id' => $otherCollege->id,
+            'name' => 'Other Department',
+        ]);
+        Semester::create([
+            'university_id' => $otherUniversity->id,
+            'name' => 'Other Fall',
+            'academic_year' => '2026/2027',
+            'term_type' => 'regular',
+            'sequence' => 1,
+        ]);
+        Course::create([
+            'department_id' => $otherDepartment->id,
+            'code' => 'OTHER101',
+            'name' => 'Hidden Catalog Course',
+            'credits' => 3,
+        ]);
+
+        $manageEnrollments = Permission::create(['name' => 'enrollments.manage', 'display_name' => 'Manage enrollments']);
+        $assignTeachers = Permission::create(['name' => 'courses.assign_teacher', 'display_name' => 'Assign teachers']);
+        $role = Role::create(['name' => 'university_administrator', 'display_name' => 'University Administrator']);
+        $role->permissions()->attach([$manageEnrollments->id, $assignTeachers->id]);
+        $user = User::factory()->create(['university_id' => $setup['university']->id]);
+        $user->roles()->attach($role);
+
+        $this->actingAs($user)
+            ->get(route('course-sections.create'))
+            ->assertOk()
+            ->assertSee($setup['university']->name)
+            ->assertSee($setup['course']->name)
+            ->assertDontSee($otherUniversity->name)
+            ->assertDontSee('Hidden Catalog Course');
+    }
+
+    public function test_module_offering_rejects_an_academic_year_outside_the_selected_semester(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $otherAcademicYear = AcademicYear::create([
+            'university_id' => $setup['university']->id,
+            'name' => '2027/2028',
+            'status' => 'upcoming',
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('course-sections.create'))
+            ->post(route('course-sections.store'), [
+                'university_id' => $setup['university']->id,
+                'academic_year_id' => $otherAcademicYear->id,
+                'college_id' => $setup['college']->id,
+                'department_id' => $setup['department']->id,
+                'course_id' => $setup['course']->id,
+                'semester_id' => $setup['semester']->id,
+                'stage_id' => $setup['stage']->id,
+                'teacher_id' => $setup['teacher']->id,
+                'section_code' => 'A',
+                'capacity' => 35,
+                'status' => 'active',
+            ])
+            ->assertRedirect(route('course-sections.create'))
+            ->assertSessionHasErrors('academic_year_id');
+
+        $this->assertDatabaseCount('course_sections', 0);
     }
 
     public function test_admin_can_enroll_student_into_section(): void
