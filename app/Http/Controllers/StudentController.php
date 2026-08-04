@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\Student;
 use App\Models\StudentDocument;
 use App\Models\StudentGuardian;
+use App\Models\University;
 use App\Models\User;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class StudentController extends Controller
 {
@@ -45,14 +47,16 @@ class StudentController extends Controller
 
         $classificationGroups = $this->studentClassificationGroups((clone $directoryQuery));
         $stats = $this->studentStatusStats((clone $directoryQuery));
-        $colleges = College::orderBy('name')->get(['id', 'name']);
-        $departments = Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']);
-        $gradeOptions = CourseSection::whereNotNull('grade_level')
+        $colleges = $this->scopedColleges($request->user());
+        $departments = $this->scopedDepartments($request->user());
+        $gradeQuery = CourseSection::whereNotNull('grade_level');
+        OrganizationScope::apply($gradeQuery, $request->user(), 'section');
+        $gradeOptions = $gradeQuery
             ->distinct()
             ->orderBy('grade_level')
             ->pluck('grade_level');
         $abilities = $this->studentAbilities($request);
-        $archivedCount = Student::onlyTrashed()->count();
+        $archivedCount = $this->scopedStudentQuery($request->user(), true)->count();
 
         return view('students.index', compact('students', 'classificationGroups', 'colleges', 'departments', 'gradeOptions', 'filters', 'stats', 'abilities', 'archivedCount'));
     }
@@ -64,10 +68,12 @@ class StudentController extends Controller
     {
         $this->requireAnyPermission('students.create');
 
-        $departments = Department::orderBy('name')->get();
+        $universities = $this->scopedUniversities(request()->user());
+        $colleges = $this->scopedColleges(request()->user());
+        $departments = $this->scopedDepartments(request()->user());
         $suggestedStudentId = Student::suggestedStudentIdentifier();
 
-        return view('students.create', compact('departments', 'suggestedStudentId'));
+        return view('students.create', compact('universities', 'colleges', 'departments', 'suggestedStudentId'));
     }
 
     /**
@@ -78,9 +84,9 @@ class StudentController extends Controller
         $this->requireAnyPermission('students.create');
 
         $validated = $this->validateStudent($request, null);
-
-        $department = Department::findOrFail($validated['department_id']);
+        $department = $this->validateOrganizationSelection($validated, $request->user());
         $validated['university_id'] = $department->university_id;
+        unset($validated['college_id']);
         $temporaryPassword = $validated['password'];
         unset($validated['password'], $validated['password_confirmation']);
 
@@ -129,10 +135,12 @@ class StudentController extends Controller
         $this->requireAnyPermission('students.update');
         $this->authorizeStudentScope(request(), $student);
 
-        $student->load(['guardians', 'documents.uploader']);
-        $departments = Department::orderBy('name')->get();
+        $student->load(['department.college', 'guardians', 'documents.uploader']);
+        $universities = $this->scopedUniversities(request()->user());
+        $colleges = $this->scopedColleges(request()->user());
+        $departments = $this->scopedDepartments(request()->user());
 
-        return view('students.edit', compact('student', 'departments'));
+        return view('students.edit', compact('student', 'universities', 'colleges', 'departments'));
     }
 
     /**
@@ -144,9 +152,9 @@ class StudentController extends Controller
         $this->authorizeStudentScope($request, $student);
 
         $validated = $this->validateStudent($request, $student);
-
-        $department = Department::findOrFail($validated['department_id']);
+        $department = $this->validateOrganizationSelection($validated, $request->user());
         $validated['university_id'] = $department->university_id;
+        unset($validated['college_id']);
 
         $accountCreated = DB::transaction(function () use ($student, $validated) {
             $student->update($validated);
@@ -292,7 +300,7 @@ class StudentController extends Controller
         $this->requireAnyPermission('students.archive');
 
         $search = trim((string) $request->query('q', ''));
-        $students = Student::onlyTrashed()
+        $students = $this->scopedStudentQuery($request->user(), true)
             ->with(['department.college'])
             ->when($search !== '', fn ($query) => $query->where(function ($searchQuery) use ($search) {
                 $searchQuery->where('full_name', 'like', "%{$search}%")
@@ -310,9 +318,8 @@ class StudentController extends Controller
     {
         $this->requireAnyPermission('students.archive');
 
-        $student = Student::withTrashed()->findOrFail($studentId);
+        $student = $this->scopedStudentQuery($request->user(), true)->findOrFail($studentId);
         abort_unless($student->trashed(), 404);
-        $this->authorizeStudentScope($request, $student);
 
         $accountCreated = DB::transaction(function () use ($student) {
             $student->restore();
@@ -369,9 +376,11 @@ class StudentController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'email' => $emailRules,
             'phone' => ['nullable', 'string', 'max:50'],
+            'university_id' => ['nullable', 'exists:universities,id'],
+            'college_id' => ['nullable', 'exists:colleges,id'],
             'department_id' => ['required', 'exists:departments,id'],
             'status' => ['required', 'in:Active,Inactive,Graduated'],
-            'admission_status' => ['nullable', 'string', 'max:100'],
+            'admission_status' => ['nullable', Rule::in(['Applicant', 'Admitted', 'Enrolled', 'Deferred', 'Withdrawn', 'Graduated'])],
             'admission_date' => ['nullable', 'date'],
             'admission_type' => ['nullable', 'string', 'max:100'],
             'previous_school' => ['nullable', 'string', 'max:255'],
@@ -409,11 +418,17 @@ class StudentController extends Controller
     {
         $user = $request->user();
 
-        if ($user->hasRole('super_administrator') || $user->hasAnyPermission(['students.view', 'students.update'])) {
+        if ($user->hasRole('super_administrator')) {
             return true;
         }
 
-        if ($user->hasRole('student') && $user->email === $document->student->email) {
+        if ($user->hasAnyPermission(['students.view', 'students.update'])) {
+            return $this->scopedStudentQuery($user)
+                ->whereKey($document->student_id)
+                ->exists();
+        }
+
+        if ($user->hasRole('student') && ((int) $document->student?->user_id === (int) $user->id || $user->email === $document->student?->email)) {
             return true;
         }
 
@@ -597,6 +612,55 @@ class StudentController extends Controller
         return $query;
     }
 
+    private function scopedUniversities(User $user)
+    {
+        $query = University::orderBy('name');
+        OrganizationScope::apply($query, $user, 'university');
+
+        return $query->get(['id', 'name', 'code']);
+    }
+
+    private function scopedColleges(User $user)
+    {
+        $query = College::with('university')->orderBy('name');
+        OrganizationScope::apply($query, $user, 'college');
+
+        return $query->get(['id', 'name', 'code', 'university_id']);
+    }
+
+    private function scopedDepartments(User $user)
+    {
+        $query = Department::with('college')->orderBy('name');
+        OrganizationScope::apply($query, $user, 'department');
+
+        return $query->get(['id', 'name', 'code', 'college_id', 'university_id']);
+    }
+
+    private function validateOrganizationSelection(array $validated, User $user): Department
+    {
+        $department = $this->scopedDepartments($user)->firstWhere('id', (int) $validated['department_id']);
+
+        if (! $department) {
+            throw ValidationException::withMessages([
+                'department_id' => 'The selected department is outside your organization scope.',
+            ]);
+        }
+
+        if (! empty($validated['university_id']) && (int) $department->university_id !== (int) $validated['university_id']) {
+            throw ValidationException::withMessages([
+                'department_id' => 'The selected department does not belong to the selected university.',
+            ]);
+        }
+
+        if (! empty($validated['college_id']) && (int) $department->college_id !== (int) $validated['college_id']) {
+            throw ValidationException::withMessages([
+                'department_id' => 'The selected department does not belong to the selected college.',
+            ]);
+        }
+
+        return $department;
+    }
+
     private function authorizeStudentScope(Request $request, Student $student): void
     {
         $query = $student->trashed()
@@ -608,6 +672,7 @@ class StudentController extends Controller
 
     private function syncStudentUser(Student $student, ?string $temporaryPassword = null, bool $forcePasswordChange = false): bool
     {
+        $student->loadMissing('department');
         $user = $this->linkedUser($student)
             ?: User::withTrashed()->where('email', $student->email)->first();
         $accountCreated = ! $user;
@@ -625,6 +690,7 @@ class StudentController extends Controller
             'name' => $student->full_name,
             'email' => $student->email,
             'university_id' => $student->university_id,
+            'college_id' => $student->department?->college_id,
             'department_id' => $student->department_id,
         ]);
 

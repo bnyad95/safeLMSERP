@@ -7,11 +7,13 @@ use App\Models\Department;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Student;
+use App\Models\StudentDocument;
 use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class StudentDirectoryTest extends TestCase
@@ -157,7 +159,127 @@ class StudentDirectoryTest extends TestCase
         $this->assertSame('Updated Student', $account->name);
         $this->assertSame('updated.student@example.com', $account->email);
         $this->assertSame($university->id, $account->university_id);
+        $this->assertSame($department->college_id, $account->college_id);
         $this->assertSame($department->id, $account->department_id);
+    }
+
+    public function test_scoped_administrator_only_sees_and_assigns_students_inside_their_organization(): void
+    {
+        [$university, $college, $department] = $this->organization('SCOPED');
+        [$otherUniversity, $otherCollege, $otherDepartment] = $this->organization('OUTSIDE');
+        $admin = $this->userWithPermissions('university_administrator', ['students.view', 'students.create', 'students.update'], [
+            'university_id' => $university->id,
+        ]);
+        $student = $this->student($university, $department, [
+            'full_name' => 'Scoped Student',
+            'email' => 'scoped.student@example.com',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('students.create'))
+            ->assertOk()
+            ->assertSeeInOrder(['University', 'College', 'Department'])
+            ->assertSee($university->name)
+            ->assertSee($college->name)
+            ->assertSee($department->name)
+            ->assertDontSee($otherUniversity->name)
+            ->assertDontSee($otherCollege->name)
+            ->assertDontSee($otherDepartment->name);
+
+        $this->actingAs($admin)
+            ->from(route('students.create'))
+            ->post(route('students.store'), $this->studentPayload($otherDepartment, [
+                'university_id' => $otherUniversity->id,
+                'college_id' => $otherCollege->id,
+                'email' => 'outside.create@example.com',
+            ]))
+            ->assertRedirect(route('students.create'))
+            ->assertSessionHasErrors('department_id');
+
+        $this->actingAs($admin)
+            ->from(route('students.edit', $student))
+            ->put(route('students.update', $student), $this->studentPayload($otherDepartment, [
+                'university_id' => $otherUniversity->id,
+                'college_id' => $otherCollege->id,
+                'full_name' => $student->full_name,
+                'email' => $student->email,
+            ]))
+            ->assertRedirect(route('students.edit', $student))
+            ->assertSessionHasErrors('department_id');
+
+        $this->assertDatabaseMissing('students', ['email' => 'outside.create@example.com']);
+        $this->assertSame($department->id, $student->fresh()->department_id);
+    }
+
+    public function test_student_filters_and_archived_records_follow_organization_scope(): void
+    {
+        [$university, $college, $department] = $this->organization('ARCHSCOPE');
+        [$otherUniversity, $otherCollege, $otherDepartment] = $this->organization('ARCHOTHER');
+        $visible = $this->student($university, $department, ['full_name' => 'Visible Archived Student']);
+        $hidden = $this->student($otherUniversity, $otherDepartment, ['full_name' => 'Hidden Archived Student']);
+        $visible->delete();
+        $hidden->delete();
+
+        $admin = $this->userWithPermissions('college_administrator', ['students.view', 'students.archive'], [
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('students.index'))
+            ->assertOk()
+            ->assertSee('Archived (1)')
+            ->assertSee($college->name)
+            ->assertDontSee($otherCollege->name);
+
+        $this->actingAs($admin)
+            ->get(route('students.archived'))
+            ->assertOk()
+            ->assertSee($visible->full_name)
+            ->assertDontSee($hidden->full_name);
+
+        $this->actingAs($admin)
+            ->patch(route('students.restore', $hidden->id))
+            ->assertNotFound();
+    }
+
+    public function test_student_document_download_hides_records_outside_organization_scope(): void
+    {
+        Storage::fake('local');
+        [$university, $college] = $this->organization('DOCSCOPE');
+        [$otherUniversity, , $otherDepartment] = $this->organization('DOCOTHER');
+        $student = $this->student($otherUniversity, $otherDepartment);
+        $document = StudentDocument::create([
+            'student_id' => $student->id,
+            'type' => 'Admission',
+            'title' => 'Protected document',
+            'file_path' => 'student-documents/protected.pdf',
+            'original_name' => 'protected.pdf',
+            'status' => 'Submitted',
+        ]);
+        Storage::disk('local')->put($document->file_path, 'protected content');
+        $admin = $this->userWithPermissions('college_administrator', ['students.view'], [
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('student-documents.download', $document))
+            ->assertNotFound();
+    }
+
+    public function test_student_admission_status_rejects_unknown_values(): void
+    {
+        [, , $department] = $this->organization('ADMISSION');
+        $admin = $this->superAdmin();
+
+        $this->actingAs($admin)
+            ->from(route('students.create'))
+            ->post(route('students.store'), $this->studentPayload($department, [
+                'admission_status' => 'Unknown status',
+            ]))
+            ->assertRedirect(route('students.create'))
+            ->assertSessionHasErrors('admission_status');
     }
 
     public function test_registrar_creates_student_login_account_when_adding_student(): void

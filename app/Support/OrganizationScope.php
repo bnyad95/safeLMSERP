@@ -21,7 +21,10 @@ class OrganizationScope
             $roleNames->contains('university_administrator') => 'university',
             $roleNames->intersect(['examination_administrator', 'examination_committee'])->isNotEmpty() => self::examinationScope($user),
             $roleNames->intersect(['admission_officer', 'receptionist'])->isNotEmpty() => 'department',
+            $roleNames->contains('administrator') => null,
+            $roleNames->contains('hr_manager') => self::assignedScope($user),
             self::hasDirectAcademicSetupGrant($user) => self::assignedScope($user),
+            self::hasTeacherManagementAccess($user) => self::assignedScope($user),
             default => null,
         };
 
@@ -76,6 +79,16 @@ class OrganizationScope
             return in_array($permission->name, ['academic_setup.view', 'academic_setup.manage'], true)
                 && $permission->pivot->effect === 'grant';
         });
+    }
+
+    private static function hasTeacherManagementAccess(User $user): bool
+    {
+        return $user->hasAnyPermission([
+            'teachers.view',
+            'teachers.create',
+            'teachers.update',
+            'teachers.archive',
+        ]);
     }
 
     private static function scopeCollege(Builder $query, User $user, string $scope): void

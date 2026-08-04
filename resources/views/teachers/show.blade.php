@@ -65,7 +65,7 @@
             <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
                     <h3 class="font-semibold text-gray-900 dark:text-gray-100">Assigned Classes</h3>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Assignments are managed from Enrollments.</p>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Assignments are managed from Bologna Definition &rarr; Module Offerings.</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">

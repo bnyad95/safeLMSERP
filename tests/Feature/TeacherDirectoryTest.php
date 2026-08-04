@@ -25,7 +25,9 @@ class TeacherDirectoryTest extends TestCase
     {
         [$university, , $department] = $this->organization('VIEW');
         $teacher = $this->teacher($university, $department, ['full_name' => 'Read Only Teacher']);
-        $user = $this->userWithPermissions('hr_manager', ['teachers.view']);
+        $user = $this->userWithPermissions('hr_manager', ['teachers.view'], [
+            'university_id' => $university->id,
+        ]);
 
         $this->actingAs($user)
             ->get(route('teachers.index'))
@@ -39,6 +41,8 @@ class TeacherDirectoryTest extends TestCase
             ->get(route('teachers.show', $teacher))
             ->assertOk()
             ->assertSee('Teacher profile, organization placement, and assigned workload.')
+            ->assertSee('Bologna Definition')
+            ->assertSee('Module Offerings')
             ->assertDontSee('Edit Profile')
             ->assertDontSee('Archive Teacher');
 
@@ -195,6 +199,29 @@ class TeacherDirectoryTest extends TestCase
         $this->actingAs($departmentAdmin)->get(route('teachers.show', $outsideTeacher))->assertNotFound();
     }
 
+    public function test_hr_and_custom_teacher_managers_are_limited_to_their_assigned_organization(): void
+    {
+        [$university, , $department] = $this->organization('HR-SCOPE');
+        [$outsideUniversity, , $outsideDepartment] = $this->organization('HR-OUT');
+        $this->teacher($university, $department, ['full_name' => 'Scoped HR Teacher']);
+        $this->teacher($outsideUniversity, $outsideDepartment, ['full_name' => 'Outside HR Teacher']);
+
+        $hrManager = $this->userWithPermissions('hr_manager', ['teachers.view'], [
+            'university_id' => $university->id,
+        ]);
+        $customManager = $this->userWithPermissions('custom_teacher_manager', ['teachers.view'], [
+            'university_id' => $university->id,
+        ]);
+
+        foreach ([$hrManager, $customManager] as $manager) {
+            $this->actingAs($manager)
+                ->get(route('teachers.index'))
+                ->assertOk()
+                ->assertSee('Scoped HR Teacher')
+                ->assertDontSee('Outside HR Teacher');
+        }
+    }
+
     public function test_teacher_requires_department_and_account_is_securely_provisioned_and_synced(): void
     {
         Notification::fake();
@@ -204,6 +231,10 @@ class TeacherDirectoryTest extends TestCase
         $this->actingAs($admin)
             ->post(route('teachers.store'), $this->teacherPayload($university, $department, ['department_id' => null]))
             ->assertSessionHasErrors('department_id');
+
+        $this->actingAs($admin)
+            ->post(route('teachers.store'), $this->teacherPayload($university, $department, ['college_id' => null]))
+            ->assertSessionHasErrors('college_id');
 
         $this->actingAs($admin)
             ->post(route('teachers.store'), $this->teacherPayload($university, $department, [
@@ -234,6 +265,91 @@ class TeacherDirectoryTest extends TestCase
         $this->assertSame($department->id, $account->department_id);
     }
 
+    public function test_creating_teacher_cannot_overwrite_an_existing_login_account(): void
+    {
+        [$university, , $department] = $this->organization('ACCOUNT');
+        $admin = $this->superAdmin();
+        $existingUser = User::factory()->create([
+            'name' => 'Protected Account',
+            'email' => 'protected@example.com',
+            'password' => 'OriginalPassword@123',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('teachers.store'), $this->teacherPayload($university, $department, [
+                'full_name' => 'Attempted Teacher',
+                'email' => $existingUser->email,
+                'password' => 'ReplacementPassword@123',
+                'password_confirmation' => 'ReplacementPassword@123',
+            ]))
+            ->assertSessionHasErrors('email');
+
+        $existingUser->refresh();
+        $this->assertSame('Protected Account', $existingUser->name);
+        $this->assertTrue(Hash::check('OriginalPassword@123', $existingUser->password));
+        $this->assertFalse($existingUser->roles()->where('name', 'teacher')->exists());
+        $this->assertDatabaseMissing('teachers', ['email' => $existingUser->email]);
+    }
+
+    public function test_updating_legacy_teacher_without_login_creates_recovery_account(): void
+    {
+        Notification::fake();
+        [$university, , $department] = $this->organization('LEGACY');
+        $admin = $this->superAdmin();
+        $teacher = $this->teacher($university, $department, [
+            'full_name' => 'Legacy Teacher',
+            'email' => 'legacy.teacher@example.com',
+            'user_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('teachers.update', $teacher), $this->teacherPayload($university, $department, [
+                'full_name' => $teacher->full_name,
+                'email' => $teacher->email,
+            ]))
+            ->assertRedirect(route('teachers.show', $teacher));
+
+        $teacher->refresh();
+        $account = User::findOrFail($teacher->user_id);
+        $this->assertSame($teacher->email, $account->email);
+        $this->assertTrue($account->roles()->where('name', 'teacher')->exists());
+    }
+
+    public function test_inactive_teacher_login_is_suspended_and_restored_when_reactivated(): void
+    {
+        Notification::fake();
+        [$university, , $department] = $this->organization('ACCESS');
+        $admin = $this->superAdmin();
+
+        $this->actingAs($admin)->post(route('teachers.store'), $this->teacherPayload($university, $department, [
+            'full_name' => 'Access Teacher',
+            'email' => 'access.teacher@example.com',
+        ]));
+        $teacher = Teacher::where('email', 'access.teacher@example.com')->firstOrFail();
+        $userId = $teacher->user_id;
+
+        $this->actingAs($admin)
+            ->put(route('teachers.update', $teacher), $this->teacherPayload($university, $department, [
+                'full_name' => $teacher->full_name,
+                'email' => $teacher->email,
+                'status' => 'Inactive',
+            ]))
+            ->assertRedirect(route('teachers.show', $teacher));
+
+        $this->assertSoftDeleted('users', ['id' => $userId]);
+
+        $this->actingAs($admin)
+            ->put(route('teachers.update', $teacher), $this->teacherPayload($university, $department, [
+                'full_name' => $teacher->full_name,
+                'email' => $teacher->email,
+                'status' => 'Active',
+            ]))
+            ->assertRedirect(route('teachers.show', $teacher));
+
+        $this->assertDatabaseHas('users', ['id' => $userId, 'deleted_at' => null]);
+        $this->assertTrue(User::findOrFail($userId)->roles()->where('name', 'teacher')->exists());
+    }
+
     public function test_open_classes_block_retirement_and_archive_until_reassigned_or_closed(): void
     {
         Notification::fake();
@@ -243,6 +359,15 @@ class TeacherDirectoryTest extends TestCase
         $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026/2027']);
         $course = Course::create(['department_id' => $department->id, 'code' => 'LOAD101', 'name' => 'Teaching Load', 'credits' => 3, 'semester' => 'Fall']);
         $section = CourseSection::create(['course_id' => $course->id, 'semester_id' => $semester->id, 'teacher_id' => $teacher->id, 'section_code' => 'A', 'status' => 'active']);
+
+        $this->actingAs($admin)
+            ->put(route('teachers.update', $teacher), $this->teacherPayload($university, $department, [
+                'staff_id' => $teacher->staff_id,
+                'full_name' => $teacher->full_name,
+                'email' => $teacher->email,
+                'status' => 'Inactive',
+            ]))
+            ->assertSessionHasErrors('status');
 
         $this->actingAs($admin)
             ->put(route('teachers.update', $teacher), $this->teacherPayload($university, $department, [

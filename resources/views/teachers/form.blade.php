@@ -74,7 +74,8 @@
     </section>
 
     <section>
-        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Access Status</h3>
+        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Employment and Access</h3>
+        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Inactive and retired teachers cannot use teacher login access.</p>
         <div class="mt-4 max-w-xs">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
             <select name="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">

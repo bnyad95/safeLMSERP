@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -66,16 +67,16 @@ class TeacherController extends Controller
         unset($validated['password']);
         unset($validated['college_id']);
 
-        [$teacher, $accountCreated] = DB::transaction(function () use ($validated, $temporaryPassword) {
+        $teacher = DB::transaction(function () use ($validated, $temporaryPassword) {
             $teacher = Teacher::create($validated);
-            $accountCreated = $this->syncTeacherUser($teacher, $temporaryPassword, true);
+            $this->syncTeacherUser($teacher, $temporaryPassword, true, false);
 
-            return [$teacher, $accountCreated];
+            return $teacher;
         });
 
-        $message = $accountCreated
+        $message = $teacher->status === 'Active'
             ? 'Teacher created successfully. Temporary password set. Teacher must change password at first login.'
-            : 'Teacher created successfully. The existing login account was linked to the teacher profile.';
+            : 'Teacher created successfully. Login access will remain suspended until the teacher is active.';
 
         return redirect()->route('teachers.index')->with('success', $message);
     }
@@ -126,9 +127,9 @@ class TeacherController extends Controller
         $this->validateOrganizationSelection($validated);
         unset($validated['college_id']);
 
-        if ($validated['status'] === 'Retired' && $this->hasOpenAssignments($teacher)) {
+        if ($validated['status'] !== 'Active' && $this->hasOpenAssignments($teacher)) {
             throw ValidationException::withMessages([
-                'status' => 'Reassign or close the teacher\'s planned and active classes before retirement.',
+                'status' => 'Reassign or close the teacher\'s planned and active classes before changing the teacher to inactive or retired.',
             ]);
         }
 
@@ -138,7 +139,7 @@ class TeacherController extends Controller
             return $this->syncTeacherUser($teacher);
         });
 
-        if ($accountCreated) {
+        if ($accountCreated && $teacher->status === 'Active') {
             Password::sendResetLink(['email' => $teacher->email]);
         }
 
@@ -204,7 +205,7 @@ class TeacherController extends Controller
             return $this->syncTeacherUser($teacher);
         });
 
-        if ($accountCreated) {
+        if ($accountCreated && $teacher->status === 'Active') {
             Password::sendResetLink(['email' => $teacher->email]);
         }
 
@@ -213,18 +214,18 @@ class TeacherController extends Controller
 
     private function validateTeacher(Request $request, ?Teacher $teacher = null): array
     {
-        $linkedUser = $teacher ? $this->linkedUser($teacher) : null;
+        $linkedUser = $teacher
+            ? ($this->linkedUser($teacher) ?: $this->legacyTeacherUser($teacher))
+            : null;
         $emailRules = ['required', 'email', 'max:255', Rule::unique('teachers', 'email')->ignore($teacher)];
-        if ($teacher) {
-            $emailRules[] = Rule::unique('users', 'email')->ignore($linkedUser?->id);
-        }
+        $emailRules[] = Rule::unique('users', 'email')->ignore($linkedUser?->id);
 
         $rules = [
             'full_name' => ['required', 'string', 'max:255'],
             'email' => $emailRules,
             'title' => ['nullable', 'string', 'max:100'],
             'university_id' => ['required', 'exists:universities,id'],
-            'college_id' => ['nullable', 'exists:colleges,id'],
+            'college_id' => ['required', 'exists:colleges,id'],
             'department_id' => ['required', 'exists:departments,id'],
             'status' => ['required', Rule::in(['Active', 'Inactive', 'Retired'])],
         ];
@@ -394,7 +395,10 @@ class TeacherController extends Controller
 
     private function hasOpenAssignments(Teacher $teacher): bool
     {
-        return $teacher->courseSections()->whereIn('status', ['planned', 'active'])->exists();
+        return $teacher->courseSections()
+            ->withoutGlobalScope('organization')
+            ->whereIn('status', ['planned', 'active'])
+            ->exists();
     }
 
     private function scopedTeacherQuery(User $user, bool $onlyTrashed = false)
@@ -440,16 +444,21 @@ class TeacherController extends Controller
 
     private function authorizeDepartmentScope(User $user, Department $department): void
     {
-        $visible = $this->scopedDepartments($user)
-            ->contains('id', $department->id);
+        $query = Department::query();
+        OrganizationScope::apply($query, $user, 'department');
+        $visible = $query->whereKey($department->id)->exists();
 
         abort_unless($visible, 403);
     }
 
-    private function syncTeacherUser(Teacher $teacher, ?string $temporaryPassword = null, bool $forcePasswordChange = false): bool
-    {
+    private function syncTeacherUser(
+        Teacher $teacher,
+        ?string $temporaryPassword = null,
+        bool $forcePasswordChange = false,
+        bool $allowLegacyLink = true
+    ): bool {
         $user = $this->linkedUser($teacher)
-            ?: User::withTrashed()->where('email', $teacher->email)->first();
+            ?: ($allowLegacyLink ? $this->legacyTeacherUser($teacher) : null);
         $accountCreated = ! $user;
 
         if (! $user) {
@@ -481,7 +490,13 @@ class TeacherController extends Controller
             ['name' => 'teacher'],
             ['display_name' => 'Instructor', 'description' => 'Teacher role']
         );
-        $user->roles()->syncWithoutDetaching([$teacherRole->id]);
+        if ($teacher->status === 'Active') {
+            $user->roles()->syncWithoutDetaching([$teacherRole->id]);
+        } elseif ($user->roles()->where('roles.id', '!=', $teacherRole->id)->exists()) {
+            $user->roles()->detach($teacherRole->id);
+        } else {
+            $user->delete();
+        }
 
         if ($teacher->user_id !== $user->id) {
             $teacher->update(['user_id' => $user->id]);
@@ -494,6 +509,14 @@ class TeacherController extends Controller
     {
         return $teacher->user_id
             ? User::withTrashed()->find($teacher->user_id)
-            : User::withTrashed()->where('email', $teacher->getRawOriginal('email'))->first();
+            : null;
+    }
+
+    private function legacyTeacherUser(Teacher $teacher): ?User
+    {
+        return User::withTrashed()
+            ->where('email', $teacher->getRawOriginal('email'))
+            ->whereHas('roles', fn ($query) => $query->where('name', 'teacher'))
+            ->first();
     }
 }
