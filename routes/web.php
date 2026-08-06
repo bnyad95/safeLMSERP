@@ -298,6 +298,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('assessment-submissions.grade');
     Route::get('/assessment-submissions/{submission}/file', [AssessmentController::class, 'downloadSubmissionFile'])
         ->name('assessment-submissions.file');
+    Route::get('/finance/dashboard', [FinanceController::class, 'dashboard'])
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->name('finance.dashboard');
     Route::get('/finance', [FinanceController::class, 'index'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance');

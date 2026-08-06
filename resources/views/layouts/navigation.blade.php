@@ -112,7 +112,7 @@
                         })
                         ->exists();
                 @endphp
-                <x-nav-link :href="$sidebarUsesStudentPortal ? route('student-portal') : route('dashboard')" :active="request()->routeIs('dashboard') || ($sidebarUsesStudentPortal && request()->routeIs('student-portal'))">
+                <x-nav-link :href="$sidebarUsesStudentPortal ? route('student-portal') : route('dashboard')" :active="request()->routeIs('dashboard', 'finance.dashboard') || ($sidebarUsesStudentPortal && request()->routeIs('student-portal'))">
                     {{ __('Dashboard') }}
                 </x-nav-link>
                 <x-nav-link :href="route('notifications.index')" :active="request()->routeIs('notifications.*')" :class="$hasNewNotifications && ! request()->routeIs('notifications.*') ? 'font-bold text-gray-900 dark:text-gray-100' : ''">

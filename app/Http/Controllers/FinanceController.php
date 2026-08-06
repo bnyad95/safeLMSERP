@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
+use App\Models\AppNotification;
 use App\Models\FinanceTransaction;
 use App\Models\Semester;
 use App\Models\Student;
@@ -17,6 +18,112 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FinanceController extends Controller
 {
+    public function dashboard(Request $request)
+    {
+        $this->requireAnyPermission('finance.view');
+
+        $user = $request->user();
+        $user->loadMissing(['university', 'college', 'department']);
+
+        $financeQuery = $this->scopedFinanceQuery($user);
+        $studentQuery = $this->scopedStudentQuery($user);
+        $outstanding = $this->balancesByCurrencyQuery($financeQuery)
+            ->filter(fn (array $balance) => $balance['balance'] > 0)
+            ->values();
+        $collectedToday = (clone $financeQuery)
+            ->withoutEagerLoads()
+            ->reorder()
+            ->where('type', 'payment')
+            ->where('posting_status', 'posted')
+            ->whereDate('transaction_date', today())
+            ->select('currency')
+            ->selectRaw('SUM(amount) as amount')
+            ->groupBy('currency')
+            ->orderBy('currency')
+            ->get()
+            ->map(fn ($row) => ['currency' => $row->currency ?: 'IQD', 'amount' => (float) $row->amount]);
+
+        $overdueQuery = (clone $financeQuery)
+            ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->where('payment_status', 'overdue');
+        $pendingQuery = (clone $financeQuery)
+            ->where('posting_status', 'pending')
+            ->where('status', 'pending');
+        $dueSoonQuery = (clone $financeQuery)
+            ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('payment_status', ['open', 'partial'])
+            ->whereBetween('due_date', [today(), today()->addDays(30)]);
+
+        $overdueInvoices = (clone $overdueQuery)
+            ->with(['student.department'])
+            ->oldest('due_date')
+            ->limit(6)
+            ->get()
+            ->each(fn (FinanceTransaction $invoice) => $invoice->setAttribute('remaining_amount', $this->remainingInvoiceAmount($invoice)));
+        $upcomingInvoices = (clone $dueSoonQuery)
+            ->with('student')
+            ->oldest('due_date')
+            ->limit(6)
+            ->get()
+            ->each(fn (FinanceTransaction $invoice) => $invoice->setAttribute('remaining_amount', $this->remainingInvoiceAmount($invoice)));
+        $recentTransactions = (clone $financeQuery)
+            ->with('student')
+            ->latest('transaction_date')
+            ->latest('id')
+            ->limit(8)
+            ->get();
+        $recentReminders = AppNotification::query()
+            ->with('student')
+            ->where('type', 'tuition_charge_reminder')
+            ->whereIn('student_id', (clone $studentQuery)->select('students.id'))
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        $scopeLabel = match (true) {
+            $this->hasGlobalFinanceScope($user) => 'All institutions',
+            filled($user->department_id) => $user->department?->name ?? 'Assigned department',
+            filled($user->college_id) => $user->college?->name ?? 'Assigned college',
+            filled($user->university_id) => $user->university?->name ?? 'Assigned university',
+            default => 'No organization assigned',
+        };
+
+        return view('finance.dashboard', [
+            'scopeLabel' => $scopeLabel,
+            'stats' => [
+                ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($outstanding, 'balance'), 'detail' => 'Posted balance in your organization scope', 'tone' => 'blue'],
+                ['label' => 'Collected Today', 'value' => $this->formatCurrencyTotals($collectedToday, 'amount'), 'detail' => 'Posted student payments today', 'tone' => 'emerald'],
+                ['label' => 'Overdue Students', 'value' => number_format((clone $overdueQuery)->distinct()->count('student_id')), 'detail' => number_format((clone $overdueQuery)->count()).' overdue invoice(s)', 'tone' => 'red'],
+                ['label' => 'Pending Approvals', 'value' => number_format((clone $pendingQuery)->count()), 'detail' => 'Finance records waiting for approval', 'tone' => 'amber'],
+            ],
+            'operationalStats' => [
+                'overdueInvoices' => (clone $overdueQuery)->count(),
+                'dueSoon' => (clone $dueSoonQuery)->count(),
+                'blockedAccounts' => (clone $studentQuery)
+                    ->whereHas('user', fn ($account) => $account
+                        ->whereNotNull('account_blocked_at')
+                        ->where('account_block_type', 'finance'))
+                    ->count(),
+                'remindersLastSevenDays' => AppNotification::query()
+                    ->where('type', 'tuition_charge_reminder')
+                    ->whereIn('student_id', (clone $studentQuery)->select('students.id'))
+                    ->where('created_at', '>=', now()->subDays(7))
+                    ->count(),
+            ],
+            'overdueInvoices' => $overdueInvoices,
+            'upcomingInvoices' => $upcomingInvoices,
+            'recentTransactions' => $recentTransactions,
+            'recentReminders' => $recentReminders,
+            'canCreateRecord' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.create_invoice', 'finance.record_payment', 'finance.record_expense', 'finance.refund']),
+            'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
+            'canSendTuitionReminder' => $this->canSendTuitionReminder($user),
+        ]);
+    }
+
     public function index(Request $request)
     {
         $this->requireAnyPermission('finance.view');

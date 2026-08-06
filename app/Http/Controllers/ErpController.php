@@ -74,6 +74,10 @@ class ErpController extends Controller
             return $this->examinationDashboard($user);
         }
 
+        if ($user?->hasAnyRole(['chief_accountant', 'accountant']) && ! $user->hasRole('super_administrator')) {
+            return redirect()->route('finance.dashboard');
+        }
+
         $studentsCount = Student::count();
         $activeStudentsCount = Student::where('status', 'Active')->count();
         $teachersCount = Teacher::count();
