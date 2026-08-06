@@ -6,6 +6,189 @@ window.Alpine = Alpine;
 
 Alpine.start();
 
+const initializeFinanceDashboardCharts = async () => {
+	const root = document.querySelector('[data-finance-charts]');
+	const payloadElement = document.getElementById('finance-dashboard-chart-data');
+
+	if (!root || !payloadElement) {
+		return;
+	}
+
+	let source;
+	try {
+		source = JSON.parse(payloadElement.textContent);
+	} catch (error) {
+		return;
+	}
+
+	const { default: Chart } = await import('chart.js/auto');
+
+	let currency = source.currencies?.[0] || 'IQD';
+	let charts = [];
+	const statuses = ['paid', 'partial', 'open', 'overdue'];
+	const agingBuckets = ['1-30 days', '31-60 days', '61-90 days', '90+ days'];
+	const colors = {
+		blue: '#2563eb',
+		emerald: '#059669',
+		amber: '#d97706',
+		red: '#dc2626',
+	};
+
+	const valueFor = (rows, matcher, field) => Number(rows.find(matcher)?.[field] || 0);
+	const money = (value) => new Intl.NumberFormat('en-US', {
+		maximumFractionDigits: currency === 'IQD' ? 0 : 2,
+	}).format(value);
+	const compactNumber = (value) => new Intl.NumberFormat('en-US', {
+		notation: 'compact',
+		maximumFractionDigits: 1,
+	}).format(value);
+	const localDate = (date) => [
+		date.getFullYear(),
+		String(date.getMonth() + 1).padStart(2, '0'),
+		String(date.getDate()).padStart(2, '0'),
+	].join('-');
+	const openFiltered = (baseUrl, params) => {
+		const url = new URL(baseUrl, window.location.origin);
+		Object.entries(params).forEach(([key, value]) => {
+			if (value !== null && value !== undefined && value !== '') {
+				url.searchParams.set(key, value);
+			}
+		});
+		window.location.href = url.toString();
+	};
+	const theme = () => {
+		const dark = document.documentElement.classList.contains('dark');
+		return {
+			text: dark ? '#cbd5e1' : '#475569',
+			grid: dark ? 'rgba(71, 85, 105, 0.35)' : 'rgba(203, 213, 225, 0.7)',
+		};
+	};
+	const baseOptions = (axisFormatter = (value) => value, tooltipFormatter = axisFormatter, tooltipUnit = '') => {
+		const palette = theme();
+		return {
+			responsive: true,
+			maintainAspectRatio: false,
+			interaction: { intersect: false, mode: 'index' },
+			plugins: {
+				legend: { display: false },
+				tooltip: {
+					callbacks: {
+						label: (context) => `${context.dataset.label}: ${tooltipFormatter(context.raw)}${tooltipUnit ? ` ${tooltipUnit}` : ''}`,
+					},
+				},
+			},
+			scales: {
+				x: { ticks: { color: palette.text }, grid: { display: false }, border: { color: palette.grid } },
+				y: { beginAtZero: true, ticks: { color: palette.text, callback: axisFormatter }, grid: { color: palette.grid }, border: { display: false } },
+			},
+		};
+	};
+	const createChart = (id, config) => {
+		const canvas = document.getElementById(id);
+		if (!canvas) return null;
+		const chart = new Chart(canvas, config);
+		charts.push(chart);
+		return chart;
+	};
+
+	const render = () => {
+		charts.forEach((chart) => chart.destroy());
+		charts = [];
+
+		const collectionRows = source.collections.filter((row) => row.currency === currency);
+		const collectionValues = source.dates.map((date) => valueFor(collectionRows, (row) => row.date === date, 'amount'));
+		const collectionOptions = baseOptions(compactNumber, money, currency);
+		collectionOptions.onClick = (_event, elements) => {
+			if (!elements.length) return;
+			const date = source.dates[elements[0].index];
+			openFiltered(source.financeUrl, { type: 'payment', currency, date_from: date, date_to: date });
+		};
+		createChart('finance-collections-chart', {
+			type: 'line',
+			data: {
+				labels: source.dates.map((date) => new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(`${date}T00:00:00`))),
+				datasets: [{ label: 'Collected', data: collectionValues, borderColor: colors.emerald, backgroundColor: 'rgba(5, 150, 105, 0.12)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }],
+			},
+			options: collectionOptions,
+		});
+
+		const collegeRows = source.outstandingByCollege.filter((row) => row.currency === currency).slice(0, 10);
+		const collegeOptions = baseOptions(compactNumber, money, currency);
+		collegeOptions.indexAxis = 'y';
+		collegeOptions.onClick = (_event, elements) => {
+			if (!elements.length) return;
+			openFiltered(source.financeUrl, { college_id: collegeRows[elements[0].index]?.college_id || '', currency });
+		};
+		createChart('finance-college-chart', {
+			type: 'bar',
+			data: { labels: collegeRows.map((row) => row.college), datasets: [{ label: 'Outstanding', data: collegeRows.map((row) => row.balance), backgroundColor: colors.blue, borderRadius: 3 }] },
+			options: collegeOptions,
+		});
+
+		const statusRows = source.invoiceStatuses.filter((row) => row.currency === currency);
+		const statusOptions = baseOptions((value) => Number(value).toLocaleString());
+		statusOptions.onClick = (_event, elements) => {
+			if (!elements.length) return;
+			openFiltered(source.financeUrl, { payment_status: statuses[elements[0].index], currency });
+		};
+		createChart('finance-status-chart', {
+			type: 'bar',
+			data: {
+				labels: statuses.map((status) => status.charAt(0).toUpperCase() + status.slice(1)),
+				datasets: [{ label: 'Invoices', data: statuses.map((status) => valueFor(statusRows, (row) => row.status === status, 'total')), backgroundColor: [colors.emerald, colors.amber, colors.blue, colors.red], borderRadius: 3 }],
+			},
+			options: statusOptions,
+		});
+
+		const agingRows = source.overdueAging.filter((row) => row.currency === currency);
+		const agingOptions = baseOptions(compactNumber, money, currency);
+		agingOptions.onClick = (_event, elements) => {
+			if (!elements.length) return;
+			const index = elements[0].index;
+			const today = new Date();
+			const ranges = [[1, 30], [31, 60], [61, 90], [91, null]];
+			const [minimum, maximum] = ranges[index];
+			const dateTo = new Date(today);
+			dateTo.setDate(today.getDate() - minimum);
+			const dateFrom = maximum ? new Date(today) : null;
+			if (dateFrom) dateFrom.setDate(today.getDate() - maximum);
+			openFiltered(source.remindersUrl, {
+				payment_status: 'overdue',
+				currency,
+				date_from: dateFrom ? localDate(dateFrom) : null,
+				date_to: localDate(dateTo),
+			});
+		};
+		createChart('finance-aging-chart', {
+			type: 'bar',
+			data: { labels: agingBuckets, datasets: [{ label: 'Overdue balance', data: agingBuckets.map((bucket) => valueFor(agingRows, (row) => row.bucket === bucket, 'balance')), backgroundColor: [colors.amber, '#ea580c', colors.red, '#991b1b'], borderRadius: 3 }] },
+			options: agingOptions,
+		});
+
+		root.querySelectorAll('[data-chart-currency]').forEach((button) => {
+			const active = button.dataset.chartCurrency === currency;
+			button.setAttribute('aria-pressed', active ? 'true' : 'false');
+			button.classList.toggle('bg-gray-900', active);
+			button.classList.toggle('text-white', active);
+			button.classList.toggle('dark:bg-blue-600', active);
+			button.classList.toggle('text-gray-600', !active);
+			button.classList.toggle('dark:text-gray-300', !active);
+		});
+	};
+
+	root.querySelectorAll('[data-chart-currency]').forEach((button) => {
+		button.addEventListener('click', () => {
+			currency = button.dataset.chartCurrency;
+			render();
+		});
+	});
+
+	new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+	render();
+};
+
+initializeFinanceDashboardCharts();
+
 const debounce = (callback, delay = 250) => {
 	let timeoutId;
 

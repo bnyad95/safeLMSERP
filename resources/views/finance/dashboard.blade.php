@@ -51,6 +51,47 @@
                 </div>
             </section>
 
+            <section data-finance-charts class="space-y-4">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Finance Charts</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select a currency to keep every financial comparison consistent.</p>
+                    </div>
+                    <div class="inline-flex self-start rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900" role="group" aria-label="Chart currency">
+                        @foreach($chartData['currencies'] as $currency)
+                            <button type="button" data-chart-currency="{{ $currency }}" class="min-w-20 rounded-md px-4 py-2 text-sm font-semibold transition hover:bg-gray-100 dark:hover:bg-gray-800" aria-pressed="false">
+                                {{ $currency }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="grid min-w-0 gap-6 xl:grid-cols-2">
+                    <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Collections Trend</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Posted payments over the last 30 days.</p>
+                        <div class="mt-5 h-72 min-w-0"><canvas id="finance-collections-chart"></canvas></div>
+                    </article>
+                    <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Outstanding Balance by College</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Top colleges by unpaid posted balance.</p>
+                        <div class="mt-5 h-72 min-w-0"><canvas id="finance-college-chart"></canvas></div>
+                    </article>
+                    <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Invoice Status</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paid, partial, open, and overdue invoice counts.</p>
+                        <div class="mt-5 h-72 min-w-0"><canvas id="finance-status-chart"></canvas></div>
+                    </article>
+                    <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Overdue Aging</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Remaining overdue balances grouped by age.</p>
+                        <div class="mt-5 h-72 min-w-0"><canvas id="finance-aging-chart"></canvas></div>
+                    </article>
+                </div>
+
+                <script id="finance-dashboard-chart-data" type="application/json">@json($chartData)</script>
+            </section>
+
             <div class="grid min-w-0 gap-6 xl:grid-cols-2">
                 <section class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="flex items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800">

@@ -94,6 +94,7 @@ class FinanceController extends Controller
 
         return view('finance.dashboard', [
             'scopeLabel' => $scopeLabel,
+            'chartData' => $this->financeDashboardChartData($financeQuery, $overdueQuery),
             'stats' => [
                 ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($outstanding, 'balance'), 'detail' => 'Posted balance in your organization scope', 'tone' => 'blue'],
                 ['label' => 'Collected Today', 'value' => $this->formatCurrencyTotals($collectedToday, 'amount'), 'detail' => 'Posted student payments today', 'tone' => 'emerald'],
@@ -122,6 +123,111 @@ class FinanceController extends Controller
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
             'canSendTuitionReminder' => $this->canSendTuitionReminder($user),
         ]);
+    }
+
+    private function financeDashboardChartData($financeQuery, $overdueQuery): array
+    {
+        $collectionStart = today()->subDays(29);
+        $collectionRows = (clone $financeQuery)
+            ->withoutEagerLoads()
+            ->reorder()
+            ->where('type', 'payment')
+            ->where('posting_status', 'posted')
+            ->where('transaction_date', '>=', $collectionStart)
+            ->select('transaction_date', 'currency')
+            ->selectRaw('SUM(amount) as amount')
+            ->groupBy('transaction_date', 'currency')
+            ->orderBy('transaction_date')
+            ->get()
+            ->map(fn ($row) => [
+                'date' => $row->transaction_date->format('Y-m-d'),
+                'currency' => $row->currency ?: 'IQD',
+                'amount' => (float) $row->amount,
+            ]);
+
+        $collegeRows = (clone $financeQuery)
+            ->withoutEagerLoads()
+            ->reorder()
+            ->leftJoin('students as dashboard_students', 'finance_transactions.student_id', '=', 'dashboard_students.id')
+            ->leftJoin('departments as dashboard_departments', 'dashboard_students.department_id', '=', 'dashboard_departments.id')
+            ->leftJoin('colleges as dashboard_colleges', 'dashboard_departments.college_id', '=', 'dashboard_colleges.id')
+            ->where('finance_transactions.posting_status', 'posted')
+            ->selectRaw('COALESCE(dashboard_colleges.id, 0) as college_id')
+            ->selectRaw("COALESCE(dashboard_colleges.name, 'Unassigned college') as college")
+            ->addSelect('finance_transactions.currency')
+            ->selectRaw(
+                'SUM(CASE WHEN finance_transactions.type IN (?, ?) THEN finance_transactions.amount ELSE 0 END) - SUM(CASE WHEN finance_transactions.type IN (?, ?, ?) THEN finance_transactions.amount ELSE 0 END) as balance',
+                [...FinanceTransaction::chargeTypes(), ...FinanceTransaction::creditTypes()]
+            )
+            ->groupBy('dashboard_colleges.id', 'dashboard_colleges.name', 'finance_transactions.currency')
+            ->orderByDesc('balance')
+            ->get()
+            ->filter(fn ($row) => (float) $row->balance > 0)
+            ->map(fn ($row) => [
+                'college_id' => (int) $row->college_id,
+                'college' => $row->college,
+                'currency' => $row->currency ?: 'IQD',
+                'balance' => (float) $row->balance,
+            ])
+            ->values();
+
+        $invoiceStatusRows = (clone $financeQuery)
+            ->withoutEagerLoads()
+            ->reorder()
+            ->where('type', 'invoice')
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('payment_status', ['paid', 'partial', 'open', 'overdue'])
+            ->select('payment_status', 'currency')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('payment_status', 'currency')
+            ->get()
+            ->map(fn ($row) => [
+                'status' => $row->payment_status,
+                'currency' => $row->currency ?: 'IQD',
+                'total' => (int) $row->total,
+            ]);
+
+        $allocationTotals = FinanceTransaction::query()
+            ->select('invoice_transaction_id')
+            ->selectRaw('SUM(amount) as allocated_amount')
+            ->whereNotNull('invoice_transaction_id')
+            ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->groupBy('invoice_transaction_id');
+        $agingCase = "CASE
+            WHEN DATEDIFF(CURRENT_DATE, finance_transactions.due_date) <= 30 THEN '1-30 days'
+            WHEN DATEDIFF(CURRENT_DATE, finance_transactions.due_date) <= 60 THEN '31-60 days'
+            WHEN DATEDIFF(CURRENT_DATE, finance_transactions.due_date) <= 90 THEN '61-90 days'
+            ELSE '90+ days'
+        END";
+        $agingRows = (clone $overdueQuery)
+            ->withoutEagerLoads()
+            ->reorder()
+            ->leftJoinSub($allocationTotals, 'dashboard_allocations', fn ($join) => $join
+                ->on('finance_transactions.id', '=', 'dashboard_allocations.invoice_transaction_id'))
+            ->addSelect('finance_transactions.currency')
+            ->selectRaw("{$agingCase} as age_bucket")
+            ->selectRaw('SUM(GREATEST(finance_transactions.amount - COALESCE(dashboard_allocations.allocated_amount, 0), 0)) as balance')
+            ->groupBy('finance_transactions.currency', 'age_bucket')
+            ->get()
+            ->map(fn ($row) => [
+                'bucket' => $row->age_bucket,
+                'currency' => $row->currency ?: 'IQD',
+                'balance' => (float) $row->balance,
+            ]);
+
+        return [
+            'currencies' => ['IQD', 'USD'],
+            'dates' => collect(range(0, 29))
+                ->map(fn (int $offset) => $collectionStart->copy()->addDays($offset)->format('Y-m-d')),
+            'collections' => $collectionRows,
+            'outstandingByCollege' => $collegeRows,
+            'invoiceStatuses' => $invoiceStatusRows,
+            'overdueAging' => $agingRows,
+            'financeUrl' => route('finance'),
+            'remindersUrl' => route('finance.tuition-reminders.index'),
+        ];
     }
 
     public function index(Request $request)

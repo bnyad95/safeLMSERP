@@ -30,6 +30,10 @@ class FinanceDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('Finance Dashboard')
             ->assertSee('Outstanding Tuition')
+            ->assertSee('Collections Trend')
+            ->assertSee('Outstanding Balance by College')
+            ->assertSee('Invoice Status')
+            ->assertSee('Overdue Aging')
             ->assertDontSee('Academic Structure')
             ->assertDontSee('Marks Queue');
     }
