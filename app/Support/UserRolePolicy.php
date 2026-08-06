@@ -23,6 +23,12 @@ final class UserRolePolicy
         'examination_administrator',
         'examination_committee',
         'hr_manager',
+        'chief_accountant',
+        'accountant',
+        'lms_administrator',
+        'librarian',
+        'it_support',
+        'parent_user',
     ];
 
     public const HIGH_RISK_ROLES = [
@@ -76,5 +82,10 @@ final class UserRolePolicy
             'flexible' => self::FLEXIBLE_SCOPED_ROLES,
         ])->flatMap(fn (array $roles, string $scope) => collect($roles)->mapWithKeys(fn (string $role) => [$role => $scope]))
             ->all();
+    }
+
+    public static function isHighRisk(string $roleName): bool
+    {
+        return in_array($roleName, self::HIGH_RISK_ROLES, true);
     }
 }

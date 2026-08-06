@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <h2 class="text-2xl font-semibold text-gray-900">Accounting & Finance</h2>
+                <h2 class="text-2xl font-semibold text-gray-900">Student Finance</h2>
                 <p class="mt-1 text-sm text-gray-600">Search students and record invoices, payments, discounts, scholarships, and refunds.</p>
             </div>
             <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -18,7 +18,7 @@
         </div>
     </x-slot>
 
-    <div class="py-5 sm:py-8">
+    <div class="finance-workspace py-5 sm:py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 @foreach($stats as $stat)

@@ -170,6 +170,8 @@
                         $canFinance = $isSuper
                             || $navUser->hasAnyRole(['chief_accountant', 'accountant'])
                             || $navUser->hasDirectPermissionGrant('finance.view');
+                        $canTuitionReminders = $canFinance && ($isSuper
+                            || ($navUser->hasPermission('finance.view') && $navUser->hasAnyPermission(['finance.create_invoice', 'finance.record_payment'])));
                         $canAnalytics = $navUser->hasAnyRole(['super_administrator', 'administrator', 'university_president']);
                         $canDataExchange = $navUser->hasAnyRole(['administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'examination_administrator', 'lms_administrator'])
                             && ($isSuper || $navUser->hasAnyPermission(['students.view', 'students.create', 'students.update', 'courses.view', 'courses.create', 'courses.update', 'marks.view', 'marks.enter', 'marks.review', 'marks.approve', 'marks.publish']));
@@ -204,10 +206,15 @@
                         <x-nav-link :href="route('analytics.index')" :active="request()->routeIs('analytics.*')">{{ __('Institution Analytics') }}</x-nav-link>
                     @endif
 
-                    @if($canFinance || $canDataExchange)
+                    @if($canFinance)
+                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Accounting &amp; Finance</p>
+                        <x-nav-link :href="route('finance')" :active="request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export')">{{ __('Student Finance') }}</x-nav-link>
+                        @if($canTuitionReminders)<x-nav-link :href="route('finance.tuition-reminders.index')" :active="request()->routeIs('finance.tuition-reminders.*')">{{ __('Tuition Reminders') }}</x-nav-link>@endif
+                    @endif
+
+                    @if($canDataExchange)
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Operations</p>
-                        @if($canFinance)<x-nav-link :href="route('finance')" :active="request()->routeIs('finance', 'finance.*')">{{ __('Finance') }}</x-nav-link>@endif
-                        @if($canDataExchange)<x-nav-link :href="route('integrations.index')" :active="request()->routeIs('integrations.*')">{{ __('Data Import / Export') }}</x-nav-link>@endif
+                        <x-nav-link :href="route('integrations.index')" :active="request()->routeIs('integrations.*')">{{ __('Data Import / Export') }}</x-nav-link>
                     @endif
 
                     @if($canStructure)
@@ -219,7 +226,7 @@
 
                     @if($canUserManagement || $isSuper)
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">System</p>
-                        @if($canUserManagement)<x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">{{ __('Users') }}</x-nav-link>@endif
+                        @if($canUserManagement)<x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">{{ __('User Management') }}</x-nav-link>@endif
                         @if($isSuper)<x-nav-link :href="route('access-matrix')" :active="request()->routeIs('access-matrix')">{{ __('Access Matrix') }}</x-nav-link>@endif
                     @endif
                 @endif

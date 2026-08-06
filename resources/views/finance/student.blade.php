@@ -11,7 +11,7 @@
         </div>
     </x-slot>
 
-    <div class="py-5 sm:py-8">
+    <div class="finance-workspace py-5 sm:py-8">
         <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
             @if($student)
                 <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">

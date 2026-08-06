@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Attendance;
 use App\Models\CourseMaterial;
 use App\Models\FinanceTransaction;
 use App\Models\Student;
 use App\Models\StudentDocument;
 use App\Models\StudentGuardian;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 
 class RoleWorkspaceController extends Controller
@@ -34,12 +34,19 @@ class RoleWorkspaceController extends Controller
             ->when($filters['visibility'] !== '', fn ($query) => $query->where('visibility', $filters['visibility']))
             ->latest();
 
+        $this->scopeCourseMaterials($materialsQuery, $request);
+
+        $resourceStats = CourseMaterial::query();
+        $this->scopeCourseMaterials($resourceStats, $request);
+        $documentStats = StudentDocument::query();
+        OrganizationScope::apply($documentStats, $request->user(), 'student_record');
+
         $materials = (clone $materialsQuery)->paginate(12)->withQueryString();
         $stats = [
-            ['label' => 'Resources', 'value' => number_format(CourseMaterial::count()), 'detail' => 'Course materials in the LMS'],
-            ['label' => 'Published', 'value' => number_format(CourseMaterial::where('visibility', 'published')->count()), 'detail' => 'Visible learning resources'],
-            ['label' => 'Drafts', 'value' => number_format(CourseMaterial::where('visibility', 'draft')->count()), 'detail' => 'Need teacher publication'],
-            ['label' => 'Student Documents', 'value' => number_format(StudentDocument::count()), 'detail' => 'Academic document records'],
+            ['label' => 'Resources', 'value' => number_format((clone $resourceStats)->count()), 'detail' => 'Course materials in the LMS'],
+            ['label' => 'Published', 'value' => number_format((clone $resourceStats)->where('visibility', 'published')->count()), 'detail' => 'Visible learning resources'],
+            ['label' => 'Drafts', 'value' => number_format((clone $resourceStats)->where('visibility', 'draft')->count()), 'detail' => 'Need teacher publication'],
+            ['label' => 'Student Documents', 'value' => number_format($documentStats->count()), 'detail' => 'Academic document records'],
         ];
         $fileTypes = CourseMaterial::getFileTypeOptions();
 
@@ -101,7 +108,10 @@ class RoleWorkspaceController extends Controller
             'status' => in_array($request->query('status'), ['Active', 'Inactive', 'Graduated'], true) ? $request->query('status') : '',
         ];
 
-        $students = Student::with(['department.college', 'guardians'])
+        $studentsQuery = Student::with(['department.college', 'guardians']);
+        OrganizationScope::apply($studentsQuery, $request->user(), 'student');
+
+        $students = $studentsQuery
             ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
                 $search->where('full_name', 'like', "%{$filters['q']}%")
                     ->orWhere('student_id', 'like', "%{$filters['q']}%")
@@ -113,10 +123,15 @@ class RoleWorkspaceController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        $studentStats = Student::query();
+        OrganizationScope::apply($studentStats, $request->user(), 'student');
+        $guardianStats = StudentGuardian::query();
+        OrganizationScope::apply($guardianStats, $request->user(), 'student_record');
+
         $stats = [
-            ['label' => 'Students', 'value' => number_format(Student::count()), 'detail' => 'Available front-desk records'],
-            ['label' => 'Active', 'value' => number_format(Student::where('status', 'Active')->count()), 'detail' => 'Currently active students'],
-            ['label' => 'With Guardians', 'value' => number_format(StudentGuardian::distinct('student_id')->count('student_id')), 'detail' => 'Emergency or guardian contacts'],
+            ['label' => 'Students', 'value' => number_format((clone $studentStats)->count()), 'detail' => 'Available front-desk records'],
+            ['label' => 'Active', 'value' => number_format((clone $studentStats)->where('status', 'Active')->count()), 'detail' => 'Currently active students'],
+            ['label' => 'With Guardians', 'value' => number_format($guardianStats->distinct('student_id')->count('student_id')), 'detail' => 'Emergency or guardian contacts'],
         ];
 
         return view('workspaces.reception', compact('students', 'filters', 'stats'));
@@ -134,5 +149,12 @@ class RoleWorkspaceController extends Controller
             'value' => $balance > 0 ? number_format($balance, 2).' '.$currency : 'No balance',
             'detail' => $balance > 0 ? 'Outstanding tuition balance' : 'No unpaid tuition charges',
         ];
+    }
+
+    private function scopeCourseMaterials($query, Request $request): void
+    {
+        $query->whereHas('course', function ($course) use ($request) {
+            OrganizationScope::apply($course, $request->user(), 'course');
+        });
     }
 }

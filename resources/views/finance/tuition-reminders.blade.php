@@ -6,12 +6,12 @@
                 <p class="mt-1 text-sm text-gray-600">Filter unpaid tuition charges, select students, and send payment notifications.</p>
             </div>
             <a href="{{ route('finance') }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">
-                Back to Finance
+                Back to Student Finance
             </a>
         </div>
     </x-slot>
 
-    <div class="py-5 sm:py-8">
+    <div class="finance-workspace py-5 sm:py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             <div class="grid gap-4 sm:grid-cols-3">
                 @foreach($stats as $stat)

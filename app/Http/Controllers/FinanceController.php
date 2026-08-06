@@ -126,6 +126,7 @@ class FinanceController extends Controller
 
         $transactionQuery = $this->scopedFinanceQuery($user)
             ->with(['student.department.college', 'recorder', 'approver', 'voider', 'invoice', 'originalTransaction'])
+            ->where('student_id', $student->id)
             ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
             ->latest('transaction_date')
             ->latest();
@@ -136,6 +137,9 @@ class FinanceController extends Controller
         $selectedPaymentStatus = $this->paymentStatusForBalances($selectedBalances);
         $nextDueInvoice = $this->nextDueInvoiceQuery($student);
         $paymentPlanSummary = $this->paymentPlanSummaryQuery($student);
+        $allowedEntryTypes = $this->allowedFinanceEntryTypes($user);
+        $canPostImmediately = $user->hasRole('super_administrator');
+        $canCollectPayment = $canPostImmediately || $user->hasPermission('finance.record_payment');
 
         return view('finance.show', [
             'filters' => $filters,
@@ -178,13 +182,18 @@ class FinanceController extends Controller
                 'refund' => 'Refund',
             ],
             'statuses' => ['pending' => 'Pending', 'paid' => 'Paid', 'partial' => 'Partial', 'approved' => 'Approved', 'cancelled' => 'Cancelled'],
-            'creationStatuses' => ['pending' => 'Pending', 'paid' => 'Paid'],
+            'creationStatuses' => $canPostImmediately
+                ? ['pending' => 'Pending approval', 'paid' => 'Post immediately']
+                : ['pending' => 'Pending approval'],
             'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'paid' => 'Paid', 'overdue' => 'Overdue', 'cancelled' => 'Cancelled'],
             'canCreateInvoice' => $user->hasRole('super_administrator') || $user->hasPermission('finance.create_invoice'),
             'canRecordPayment' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.record_payment', 'finance.record_expense', 'finance.refund']),
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
             'canVoidFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.refund', 'finance.approve_payment', 'finance.approve_expense']),
             'canManageAccountBlock' => $this->canManageStudentAccountBlock($user),
+            'allowedEntryTypes' => $allowedEntryTypes,
+            'canCollectPayment' => $canCollectPayment,
+            'canPostImmediately' => $canPostImmediately,
         ]);
     }
 
@@ -257,6 +266,7 @@ class FinanceController extends Controller
         ]);
 
         $validated['recorded_by'] = $request->user()->id;
+        $this->validateFinancePostingAuthority($request, $validated);
 
         $transactions = DB::transaction(function () use (&$validated, $request) {
             $this->scopedStudentQuery($request->user())
@@ -274,7 +284,10 @@ class FinanceController extends Controller
                 ? $this->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency'])
                 : null;
             $validated['payment_status'] = $this->paymentStatusForTransaction($validated);
-            $transactions = $this->createFinanceTransactions($validated);
+            $transactions = $this->createFinanceTransactions(
+                $validated,
+                $request->user()->hasRole('super_administrator')
+            );
 
             if ($transactions->isNotEmpty()) {
                 $firstTransaction = $transactions->first();
@@ -360,6 +373,29 @@ class FinanceController extends Controller
 
             abort_if($financeTransaction->status === 'cancelled' || $financeTransaction->original_transaction_id, 422);
 
+            if ($financeTransaction->type === 'invoice') {
+                $hasAllocations = $financeTransaction->allocations()
+                    ->where('status', '!=', 'cancelled')
+                    ->exists();
+                if ($hasAllocations) {
+                    throw ValidationException::withMessages([
+                        'transaction' => 'Reverse the payments and credits allocated to this invoice before voiding it.',
+                    ]);
+                }
+
+                $hasInstallmentSchedule = $financeTransaction->tuition_agreement_id
+                    && FinanceTransaction::where('tuition_agreement_id', $financeTransaction->tuition_agreement_id)
+                        ->where('type', 'invoice')
+                        ->where('status', '!=', 'cancelled')
+                        ->whereKeyNot($financeTransaction->id)
+                        ->exists();
+                if ($hasInstallmentSchedule) {
+                    throw ValidationException::withMessages([
+                        'transaction' => 'A semester installment cannot be voided by itself because it would break the tuition agreement schedule.',
+                    ]);
+                }
+            }
+
             if (! $financeTransaction->isPosted()) {
                 $financeTransaction->update([
                     'status' => 'cancelled',
@@ -424,11 +460,18 @@ class FinanceController extends Controller
     public function blockStudentAccount(Request $request, Student $student)
     {
         $this->authorizeStudentAccountBlock($request);
+        $this->authorizeStudentScope($request->user(), $student);
 
         $student->load(['user.roles']);
         $account = $student->user;
         abort_unless($account, 404, 'Student login account was not found.');
         abort_unless($account->roles()->where('name', 'student')->exists(), 403, 'Only student login accounts can be blocked from finance.');
+
+        if ($account->account_blocked_at && $account->account_block_type !== 'finance') {
+            return redirect()
+                ->route('finance.students.show', $student)
+                ->with('error', 'This account has a non-finance hold. Finance cannot replace it.');
+        }
 
         $this->refreshStudentInvoiceStatuses($student);
         $overdueInvoices = $this->overdueInvoiceQuery($student)->exists();
@@ -457,10 +500,17 @@ class FinanceController extends Controller
     public function unblockStudentAccount(Request $request, Student $student)
     {
         $this->authorizeStudentAccountBlock($request);
+        $this->authorizeStudentScope($request->user(), $student);
 
         $student->load('user');
         $account = $student->user;
         abort_unless($account, 404, 'Student login account was not found.');
+
+        if ($account->account_block_type !== 'finance') {
+            return redirect()
+                ->route('finance.students.show', $student)
+                ->with('error', 'Only a finance hold can be removed from this workspace.');
+        }
 
         $account->update([
             'account_blocked_at' => null,
@@ -674,31 +724,31 @@ class FinanceController extends Controller
             }
 
             $query->chunk(200, function ($transactions) use ($output) {
-                    foreach ($transactions as $transaction) {
-                        fputcsv($output, [
-                            $transaction->transaction_date?->format('Y-m-d'),
-                            $transaction->student->student_id ?? '',
-                            $transaction->student->full_name ?? '',
-                            $transaction->type,
-                            $transaction->invoice_number,
-                            $transaction->receipt_number,
-                            $transaction->invoice?->documentNumber(),
-                            $transaction->reference,
-                            $transaction->amount,
-                            $transaction->currency,
-                            $transaction->status,
-                            $transaction->posting_status,
-                            $transaction->payment_status,
-                            $transaction->balance_after,
-                            $transaction->due_date?->format('Y-m-d'),
-                            $transaction->academic_year,
-                            $transaction->recorder->name ?? '',
-                            $transaction->approver->name ?? '',
-                            $transaction->voided_at?->format('Y-m-d H:i'),
-                            $transaction->notes,
-                        ]);
-                    }
-                });
+                foreach ($transactions as $transaction) {
+                    fputcsv($output, [
+                        $transaction->transaction_date?->format('Y-m-d'),
+                        $transaction->student->student_id ?? '',
+                        $transaction->student->full_name ?? '',
+                        $transaction->type,
+                        $transaction->invoice_number,
+                        $transaction->receipt_number,
+                        $transaction->invoice?->documentNumber(),
+                        $transaction->reference,
+                        $transaction->amount,
+                        $transaction->currency,
+                        $transaction->status,
+                        $transaction->posting_status,
+                        $transaction->payment_status,
+                        $transaction->balance_after,
+                        $transaction->due_date?->format('Y-m-d'),
+                        $transaction->academic_year,
+                        $transaction->recorder->name ?? '',
+                        $transaction->approver->name ?? '',
+                        $transaction->voided_at?->format('Y-m-d H:i'),
+                        $transaction->notes,
+                    ]);
+                }
+            });
 
             fclose($output);
         };
@@ -1099,13 +1149,53 @@ class FinanceController extends Controller
         ];
     }
 
-    private function createFinanceTransactions(array $validated)
+    private function createFinanceTransactions(array $validated, bool $canPostImmediately)
     {
         if ($validated['type'] === 'invoice') {
             $semesters = ($validated['payment_plan'] ?? 'full') === 'semester'
                 ? $this->selectedTuitionSemesters($validated)
                 : collect();
             $academicYear = $this->tuitionAcademicYear($validated, $semesters);
+            $agreementKey = $this->tuitionAgreementKey(
+                (int) $validated['student_id'],
+                $academicYear?->id,
+                $academicYear?->name ?? ($validated['academic_year'] ?? null)
+            );
+            $existingAgreement = TuitionAgreement::query()
+                ->where('student_id', $validated['student_id'])
+                ->where('status', '!=', 'cancelled')
+                ->where(function ($query) use ($academicYear, $agreementKey, $validated) {
+                    $query->where('agreement_key', $agreementKey);
+
+                    if ($academicYear) {
+                        $query->orWhere('academic_year_id', $academicYear->id)
+                            ->orWhere(function ($legacy) use ($academicYear) {
+                                $legacy->whereNull('agreement_key')
+                                    ->whereNull('academic_year_id')
+                                    ->whereHas('transactions', fn ($transactions) => $transactions->where('academic_year', $academicYear->name));
+                            });
+
+                        return;
+                    }
+
+                    $legacyYear = trim((string) ($validated['academic_year'] ?? ''));
+                    $query->orWhere(function ($legacy) use ($legacyYear) {
+                        $legacy->whereNull('agreement_key')
+                            ->whereNull('academic_year_id');
+
+                        if ($legacyYear !== '') {
+                            $legacy->whereHas('transactions', fn ($transactions) => $transactions->where('academic_year', $legacyYear));
+                        } else {
+                            $legacy->whereDoesntHave('transactions', fn ($transactions) => $transactions->whereNotNull('academic_year'));
+                        }
+                    });
+                })
+                ->exists();
+            if ($existingAgreement) {
+                throw ValidationException::withMessages([
+                    'academic_year_id' => 'This student already has a tuition agreement for the selected academic year.',
+                ]);
+            }
             $agreement = TuitionAgreement::create([
                 'student_id' => $validated['student_id'],
                 'academic_year_id' => $academicYear?->id,
@@ -1116,6 +1206,7 @@ class FinanceController extends Controller
                 'status' => 'active',
                 'agreed_at' => $validated['transaction_date'],
                 'notes' => $validated['notes'] ?? null,
+                'agreement_key' => $agreementKey,
             ]);
             $validated['tuition_agreement_id'] = $agreement->id;
             $validated['academic_year_id'] = $academicYear?->id;
@@ -1130,19 +1221,21 @@ class FinanceController extends Controller
             $transactions = collect([$invoice]);
 
             if (! empty($validated['collect_now'])) {
+                $paymentStatus = $canPostImmediately ? 'approved' : 'pending';
+                $paymentPostingStatus = $canPostImmediately ? 'posted' : 'pending';
                 $payment = FinanceTransaction::create([
                     'student_id' => $invoice->student_id,
                     'tuition_agreement_id' => $agreement->id,
                     'invoice_transaction_id' => $invoice->id,
                     'recorded_by' => $validated['recorded_by'],
-                    'approved_by' => $validated['recorded_by'],
-                    'approved_at' => now(),
+                    'approved_by' => $canPostImmediately ? $validated['recorded_by'] : null,
+                    'approved_at' => $canPostImmediately ? now() : null,
                     'type' => 'payment',
                     'amount' => $invoice->amount,
                     'currency' => $invoice->currency,
-                    'status' => 'approved',
-                    'posting_status' => 'posted',
-                    'payment_status' => 'paid',
+                    'status' => $paymentStatus,
+                    'posting_status' => $paymentPostingStatus,
+                    'payment_status' => $canPostImmediately ? 'paid' : 'open',
                     'receipt_number' => $this->documentNumber([
                         'type' => 'payment',
                         'transaction_date' => $validated['transaction_date'],
@@ -1154,7 +1247,9 @@ class FinanceController extends Controller
                     'notes' => 'Collected with full tuition agreement.',
                 ]);
                 $transactions->push($payment);
-                $agreement->update(['status' => 'completed']);
+                if ($canPostImmediately) {
+                    $agreement->update(['status' => 'completed']);
+                }
             }
 
             return $transactions;
@@ -1292,6 +1387,41 @@ class FinanceController extends Controller
         abort_unless($user->hasPermission($permission), 403);
     }
 
+    private function validateFinancePostingAuthority(Request $request, array $validated): void
+    {
+        $user = $request->user();
+        if ($user->hasRole('super_administrator')) {
+            return;
+        }
+
+        if ($validated['type'] !== 'invoice' && $validated['status'] === 'paid') {
+            throw ValidationException::withMessages([
+                'status' => 'Finance credits must be recorded as pending and approved by another authorized user.',
+            ]);
+        }
+
+        if ($validated['type'] === 'invoice' && ! empty($validated['collect_now']) && ! $user->hasPermission('finance.record_payment')) {
+            throw ValidationException::withMessages([
+                'collect_now' => 'Recording a collected tuition payment requires the Record Payments permission.',
+            ]);
+        }
+    }
+
+    private function allowedFinanceEntryTypes(User $user): array
+    {
+        if ($user->hasRole('super_administrator')) {
+            return ['invoice', 'payment', 'discount', 'scholarship', 'refund'];
+        }
+
+        return collect([
+            'invoice' => 'finance.create_invoice',
+            'payment' => 'finance.record_payment',
+            'discount' => 'finance.record_expense',
+            'scholarship' => 'finance.record_expense',
+            'refund' => 'finance.refund',
+        ])->filter(fn (string $permission) => $user->hasPermission($permission))->keys()->all();
+    }
+
     private function authorizeFinanceApproval(FinanceTransaction $transaction): void
     {
         $user = auth()->user();
@@ -1407,7 +1537,6 @@ class FinanceController extends Controller
         if (
             $user->hasRole('super_administrator')
             || $user->hasDirectPermissionGrant('finance.view_global')
-            || ($user->hasAnyRole(['chief_accountant', 'accountant']) && ! $user->university_id && ! $user->college_id && ! $user->department_id)
         ) {
             return;
         }
@@ -1691,7 +1820,17 @@ class FinanceController extends Controller
 
         $agreement->update([
             'status' => $invoiceCount === 0 ? 'cancelled' : ($hasUnpaid ? 'active' : 'completed'),
+            'agreement_key' => $invoiceCount === 0 ? null : $agreement->agreement_key,
         ]);
+    }
+
+    private function tuitionAgreementKey(int $studentId, ?int $academicYearId, ?string $academicYear): string
+    {
+        $yearKey = $academicYearId
+            ? 'id:'.$academicYearId
+            : 'name:'.strtolower(trim($academicYear ?: 'legacy'));
+
+        return hash('sha256', $studentId.'|'.$yearKey);
     }
 
     private function reversalType(string $type): string

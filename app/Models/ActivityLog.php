@@ -22,4 +22,9 @@ class ActivityLog extends Model
     protected $casts = [
         'properties' => 'json',
     ];
+
+    public function causer()
+    {
+        return $this->morphTo();
+    }
 }

@@ -13,10 +13,10 @@
         </div>
     </x-slot>
 
-    <div class="py-5 sm:py-8">
+    <div class="finance-workspace py-5 sm:py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             @php
-                $initialFinanceType = old('type', $canCreateInvoice ? 'invoice' : 'payment');
+                $initialFinanceType = old('type', $allowedEntryTypes[0] ?? 'invoice');
                 $initialPaymentPlan = old('payment_plan', 'full');
                 $initialSemesterIds = collect(old('semester_ids', []))->map(fn ($id) => (string) $id)->values();
             @endphp
@@ -183,7 +183,7 @@
                             <label class="block text-sm font-medium text-gray-700">Type</label>
                             <select name="type" x-model="recordType" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                 @foreach($types as $value => $label)
-                                    @if(($value === 'invoice' && $canCreateInvoice) || ($value !== 'invoice' && $canRecordPayment))
+                                    @if(in_array($value, $allowedEntryTypes, true))
                                         <option value="{{ $value }}" @selected($initialFinanceType === $value)>{{ $label }}</option>
                                     @endif
                                 @endforeach
@@ -219,13 +219,15 @@
 
                                 <div x-show="paymentPlan === 'full'" class="mt-4 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-900">
                                     <p>One tuition invoice will be created for <span class="font-semibold" x-text="formattedAmount()"></span>.</p>
+                                    @if($canCollectPayment)
                                     <label class="mt-3 flex items-start gap-2">
                                         <input type="checkbox" name="collect_now" value="1" @checked(old('collect_now')) class="mt-0.5 rounded border-blue-300 text-blue-600 focus:ring-blue-500">
                                         <span>
                                             <span class="block font-semibold">Collect the full payment now</span>
-                                            <span class="block text-xs">Posts the payment immediately and generates a receipt.</span>
+                                            <span class="block text-xs">{{ $canPostImmediately ? 'Posts immediately and generates a receipt.' : 'Records a payment for independent approval before posting.' }}</span>
                                         </span>
                                     </label>
+                                    @endif
                                 </div>
 
                                 <div x-show="paymentPlan === 'semester'" class="mt-4 space-y-3">

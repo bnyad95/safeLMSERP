@@ -19,6 +19,7 @@ class TuitionAgreement extends Model
         'status',
         'agreed_at',
         'notes',
+        'agreement_key',
     ];
 
     protected function casts(): array

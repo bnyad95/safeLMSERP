@@ -63,6 +63,26 @@
                 </div>
             </form>
             @endif
+
+            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div class="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Recent Account Activity</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Role, permission, password, and account record changes.</p>
+                </div>
+                <div class="divide-y divide-gray-100 dark:divide-gray-800">
+                    @forelse($activityLogs as $activity)
+                        <div class="flex flex-col gap-1 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ str($activity->description)->replace('_', ' ')->headline() }}</p>
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">By {{ $activity->causer?->name ?? 'System' }}</p>
+                            </div>
+                            <time class="text-xs text-gray-500 dark:text-gray-400" datetime="{{ $activity->created_at?->toIso8601String() }}">{{ $activity->created_at?->timezone(config('app.timezone'))->format('Y-m-d H:i') }}</time>
+                        </div>
+                    @empty
+                        <p class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No account activity has been recorded.</p>
+                    @endforelse
+                </div>
+            </section>
         </div>
     </div>
 </x-app-layout>

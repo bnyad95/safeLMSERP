@@ -8,6 +8,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\University;
 use App\Models\User;
+use App\Support\RoleAccessPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -64,6 +65,7 @@ class UserManagementTest extends TestCase
 
         $admin = User::factory()->create();
         $admin->roles()->attach($superAdminRole->id);
+        $university = University::create(['name' => 'Library University', 'code' => 'LIB']);
 
         $response = $this->actingAs($admin)->post('/users', [
             'name' => 'New Librarian',
@@ -71,6 +73,7 @@ class UserManagementTest extends TestCase
             'password' => 'Password123',
             'password_confirmation' => 'Password123',
             'roles' => [$librarianRole->id],
+            'university_id' => $university->id,
         ]);
 
         $createdUser = User::where('email', 'librarian@example.com')->first();
@@ -111,6 +114,8 @@ class UserManagementTest extends TestCase
         $this->actingAs($admin)
             ->patch(route('users.permissions.update', $teacher), [
                 'permission_ids' => [$financeView->id],
+                'permission_signature' => RoleAccessPolicy::userPermissionSignature($teacher),
+                'confirm_permission_change' => '1',
             ])
             ->assertRedirect(route('users.index'));
 
@@ -211,7 +216,15 @@ class UserManagementTest extends TestCase
         $accountantRole = Role::create(['name' => 'accountant', 'display_name' => 'Accountant']);
         $teachingAssistantRole = Role::create(['name' => 'teaching_assistant', 'display_name' => 'Teaching Assistant']);
 
-        $support = User::factory()->create();
+        $university = University::create(['name' => 'Support University', 'code' => 'SUP']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Support College', 'code' => 'SC']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Support Department', 'code' => 'SD']);
+
+        $support = User::factory()->create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+        ]);
         $support->roles()->attach($supportRole);
 
         $this->actingAs($support)
@@ -226,6 +239,7 @@ class UserManagementTest extends TestCase
                 'password' => 'Password123',
                 'password_confirmation' => 'Password123',
                 'roles' => [$librarianRole->id],
+                'department_id' => $department->id,
             ])
             ->assertRedirect(route('users.index'));
 
@@ -237,6 +251,7 @@ class UserManagementTest extends TestCase
                 'name' => 'Updated Librarian',
                 'email' => $created->email,
                 'roles' => [$librarianRole->id],
+                'department_id' => $department->id,
             ])
             ->assertRedirect(route('users.index'));
 
@@ -363,9 +378,18 @@ class UserManagementTest extends TestCase
             $supportRole->permissions()->attach($permission);
         }
         $publishPermission = Permission::create(['name' => 'marks.publish', 'display_name' => 'Publish marks']);
-        $support = User::factory()->create();
+        $department = Department::factory()->create();
+        $support = User::factory()->create([
+            'university_id' => $department->university_id,
+            'college_id' => $department->college_id,
+            'department_id' => $department->id,
+        ]);
         $support->roles()->attach($supportRole);
-        $protected = User::factory()->create();
+        $protected = User::factory()->create([
+            'university_id' => $department->university_id,
+            'college_id' => $department->college_id,
+            'department_id' => $department->id,
+        ]);
         $protected->roles()->attach($librarianRole);
         $protected->permissionOverrides()->attach($publishPermission, ['effect' => 'grant']);
 
@@ -419,5 +443,74 @@ class UserManagementTest extends TestCase
             ->assertSessionHasErrors('roles');
 
         $this->assertTrue($admin->fresh()->hasRole('super_administrator'));
+    }
+
+    public function test_permission_update_rejects_a_stale_access_form(): void
+    {
+        $superRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $librarianRole = Role::create(['name' => 'librarian', 'display_name' => 'Library Administrator']);
+        $permission = Permission::create(['name' => 'lms.view', 'display_name' => 'View LMS']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superRole);
+        $user = User::factory()->create();
+        $user->roles()->attach($librarianRole);
+        $staleSignature = RoleAccessPolicy::userPermissionSignature($user);
+        $user->permissionOverrides()->attach($permission, ['effect' => 'grant']);
+
+        $this->actingAs($admin)
+            ->patch(route('users.permissions.update', $user), [
+                'permission_ids' => [$permission->id],
+                'permission_signature' => $staleSignature,
+                'confirm_permission_change' => '1',
+            ])
+            ->assertSessionHasErrors('permissions');
+    }
+
+    public function test_super_admin_cannot_combine_two_privileged_operational_roles(): void
+    {
+        $superRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $financeRole = Role::create(['name' => 'accountant', 'display_name' => 'Accountant']);
+        $lmsRole = Role::create(['name' => 'lms_administrator', 'display_name' => 'LMS Administrator']);
+        $university = University::create(['name' => 'Privilege University', 'code' => 'PRV']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superRole);
+
+        $this->actingAs($admin)->post(route('users.store'), [
+            'name' => 'Conflicting Operator',
+            'email' => 'conflicting@example.com',
+            'password' => 'Password123',
+            'password_confirmation' => 'Password123',
+            'roles' => [$financeRole->id, $lmsRole->id],
+            'university_id' => $university->id,
+        ])->assertSessionHasErrors('roles');
+    }
+
+    public function test_it_support_cannot_assign_a_user_outside_its_organization(): void
+    {
+        $supportRole = Role::create(['name' => 'it_support', 'display_name' => 'Technical Support']);
+        foreach (['users.create', 'users.assign_roles'] as $permissionName) {
+            $permission = Permission::create(['name' => $permissionName, 'display_name' => $permissionName]);
+            $supportRole->permissions()->attach($permission);
+        }
+        $librarianRole = Role::create(['name' => 'librarian', 'display_name' => 'Library Administrator']);
+        $ownDepartment = Department::factory()->create();
+        $outsideDepartment = Department::factory()->create();
+        $support = User::factory()->create([
+            'university_id' => $ownDepartment->university_id,
+            'college_id' => $ownDepartment->college_id,
+            'department_id' => $ownDepartment->id,
+        ]);
+        $support->roles()->attach($supportRole);
+
+        $this->actingAs($support)->post(route('users.store'), [
+            'name' => 'Outside Librarian',
+            'email' => 'outside-librarian@example.com',
+            'password' => 'Password123',
+            'password_confirmation' => 'Password123',
+            'roles' => [$librarianRole->id],
+            'department_id' => $outsideDepartment->id,
+        ])->assertForbidden();
+
+        $this->assertDatabaseMissing('users', ['email' => 'outside-librarian@example.com']);
     }
 }

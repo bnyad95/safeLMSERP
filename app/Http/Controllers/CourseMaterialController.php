@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Services\CourseMaterialService;
 use App\Services\ProtectedFileService;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -180,14 +181,22 @@ class CourseMaterialController extends Controller
 
     private function canInspectCourse(Course $course): bool
     {
-        return Auth::user()->hasAnyRole([
+        $user = Auth::user();
+        if (! $user->hasAnyRole([
             'administrator',
             'super_administrator',
             'university_administrator',
             'college_administrator',
             'department_administrator',
             'lms_administrator',
-        ]);
+        ])) {
+            return false;
+        }
+
+        $query = Course::whereKey($course->id);
+        OrganizationScope::apply($query, $user, 'course');
+
+        return $query->exists();
     }
 
     private function canManageCourse(Course $course, ?CourseMaterial $material = null): bool
@@ -274,6 +283,7 @@ class CourseMaterialController extends Controller
         $user = $request->user();
         $sections = CourseSection::where('course_id', $course->id);
         $sections->whereIn('status', ['planned', 'active']);
+        OrganizationScope::apply($sections, $user, 'section');
 
         if ($user->hasRole('teacher') && ! $user->hasRole('super_administrator')) {
             $teacher = Teacher::where('email', $user->email)->first();
@@ -289,7 +299,7 @@ class CourseMaterialController extends Controller
             return (clone $sections)->whereKey($request->integer('section_id'))->firstOrFail();
         }
 
-        if ($user->hasAnyRole(['administrator', 'super_administrator'])) {
+        if ($user->hasAnyRole(['administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'lms_administrator'])) {
             return null;
         }
 

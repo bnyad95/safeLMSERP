@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\College;
 use App\Models\Department;
 use App\Models\Permission;
@@ -9,6 +10,8 @@ use App\Models\Role;
 use App\Models\University;
 use App\Models\User;
 use App\Services\RolePermissionService;
+use App\Support\PermissionRiskPolicy;
+use App\Support\RoleAccessPolicy;
 use App\Support\UserRolePolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +53,8 @@ class UserManagementController extends Controller
             ->when($filters['verification'] === 'unverified', fn ($query) => $query->whereNull('email_verified_at'))
             ->orderBy('name');
 
+        $this->applyManagedUserScope($directoryQuery, $request->user());
+
         $users = $directoryQuery->paginate(15)->withQueryString();
         $tracksLastActivity = config('session.driver') === 'database';
         $lastActivities = $tracksLastActivity
@@ -67,12 +72,20 @@ class UserManagementController extends Controller
 
         $roles = Role::orderBy('display_name')->get();
         [$universities, $colleges, $departments] = $this->organizationOptions();
+        $availableAccounts = User::query();
+        $blockedAccounts = User::query();
+        $archivedAccounts = User::onlyTrashed();
+        $superAdmins = User::query();
+        $unverifiedAccounts = User::query();
+        foreach ([$availableAccounts, $blockedAccounts, $archivedAccounts, $superAdmins, $unverifiedAccounts] as $statsQuery) {
+            $this->applyManagedUserScope($statsQuery, $request->user());
+        }
         $stats = [
-            ['label' => 'Available Accounts', 'value' => number_format(User::whereNull('account_blocked_at')->count()), 'detail' => 'Not archived or blocked'],
-            ['label' => 'Blocked Accounts', 'value' => number_format(User::whereNotNull('account_blocked_at')->count()), 'detail' => 'Login currently blocked'],
-            ['label' => 'Archived Users', 'value' => number_format(User::onlyTrashed()->count()), 'detail' => 'Soft-deleted accounts'],
-            ['label' => 'Super Admins', 'value' => number_format(User::whereHas('roles', fn ($role) => $role->where('name', 'super_administrator'))->count()), 'detail' => 'Highest access accounts'],
-            ['label' => 'Unverified Email', 'value' => number_format(User::whereNull('email_verified_at')->count()), 'detail' => 'Email not verified'],
+            ['label' => 'Available Accounts', 'value' => number_format($availableAccounts->whereNull('account_blocked_at')->count()), 'detail' => 'Not archived or blocked'],
+            ['label' => 'Blocked Accounts', 'value' => number_format($blockedAccounts->whereNotNull('account_blocked_at')->count()), 'detail' => 'Login currently blocked'],
+            ['label' => 'Archived Users', 'value' => number_format($archivedAccounts->count()), 'detail' => 'Soft-deleted accounts'],
+            ['label' => 'Super Admins', 'value' => number_format($superAdmins->whereHas('roles', fn ($role) => $role->where('name', 'super_administrator'))->count()), 'detail' => 'Highest access accounts'],
+            ['label' => 'Unverified Email', 'value' => number_format($unverifiedAccounts->whereNull('email_verified_at')->count()), 'detail' => 'Email not verified'],
         ];
         $abilities = $this->userManagementAbilities();
         $organizationRoleScopes = UserRolePolicy::organizationRoleScopes();
@@ -88,8 +101,9 @@ class UserManagementController extends Controller
         $roleGroups = $this->roleGroups($roles);
         [$universities, $colleges, $departments] = $this->organizationOptions();
         $organizationRoleScopes = UserRolePolicy::organizationRoleScopes();
+        $highRiskRoleNames = UserRolePolicy::HIGH_RISK_ROLES;
 
-        return view('users.create', compact('roles', 'roleGroups', 'universities', 'colleges', 'departments', 'organizationRoleScopes'));
+        return view('users.create', compact('roles', 'roleGroups', 'universities', 'colleges', 'departments', 'organizationRoleScopes', 'highRiskRoleNames'));
     }
 
     public function store(Request $request, RolePermissionService $rolePermissionService)
@@ -112,6 +126,7 @@ class UserManagementController extends Controller
         $this->validateRoleCombination($roleIds);
         unset($validated['roles']);
         $validated = array_merge($validated, $this->normalizedOrganization($roleIds, $validated));
+        $this->authorizeOrganizationAssignment($validated);
 
         $user = DB::transaction(function () use ($validated, $roleIds, $rolePermissionService) {
             $user = new User($validated);
@@ -143,9 +158,16 @@ class UserManagementController extends Controller
         $userRoleIds = $user->roles()->pluck('roles.id')->all();
         [$universities, $colleges, $departments] = $this->organizationOptions();
         $organizationRoleScopes = UserRolePolicy::organizationRoleScopes();
+        $highRiskRoleNames = UserRolePolicy::HIGH_RISK_ROLES;
         $abilities = $this->userManagementAbilities();
+        $activityLogs = ActivityLog::with('causer')
+            ->where('subject_type', User::class)
+            ->where('subject_id', $user->id)
+            ->latest()
+            ->limit(20)
+            ->get();
 
-        return view('users.edit', compact('user', 'roles', 'roleGroups', 'userRoleIds', 'universities', 'colleges', 'departments', 'organizationRoleScopes', 'profileManaged', 'abilities'));
+        return view('users.edit', compact('user', 'roles', 'roleGroups', 'userRoleIds', 'universities', 'colleges', 'departments', 'organizationRoleScopes', 'highRiskRoleNames', 'profileManaged', 'abilities', 'activityLogs'));
     }
 
     public function update(Request $request, User $user, RolePermissionService $rolePermissionService)
@@ -171,6 +193,7 @@ class UserManagementController extends Controller
         $this->protectOwnSuperAdminRole($user, $roleIds);
 
         $validated = array_merge($validated, $this->normalizedOrganization($roleIds, $validated));
+        $this->authorizeOrganizationAssignment($validated);
 
         DB::transaction(function () use ($user, $validated, $roleIds, $rolePermissionService) {
             $user->update($validated);
@@ -207,7 +230,12 @@ class UserManagementController extends Controller
         abort_if($user->hasRole('super_administrator'), 403, 'Super Administrator permissions are always inherited and cannot be overridden.');
 
         $user->load(['roles.permissions', 'permissionOverrides']);
-        $permissions = Permission::orderBy('name')->get();
+        $permissions = Permission::orderBy('name')->get()->each(function (Permission $permission) {
+            $risk = PermissionRiskPolicy::metadata($permission->name);
+            $permission->setAttribute('risk_level', $risk['level']);
+            $permission->setAttribute('risk_label', $risk['label']);
+            $permission->setAttribute('risk_reason', $risk['reason']);
+        });
         $permissionGroups = $permissions->groupBy(fn (Permission $permission) => $this->permissionModuleLabel($permission->name));
         $rolePermissionIds = $user->roles
             ->flatMap(fn (Role $role) => $role->permissions)
@@ -233,13 +261,26 @@ class UserManagementController extends Controller
             ->pluck('id')
             ->values()
             ->all();
+        $accessByPermission = $permissions->mapWithKeys(function (Permission $permission) use ($user, $effectivePermissionIds, $overrideEffects) {
+            return [$permission->id => RoleAccessPolicy::userAccessFor(
+                $user,
+                $permission->name,
+                in_array($permission->id, $effectivePermissionIds, true),
+                $overrideEffects[$permission->id] ?? null
+            )];
+        });
+        $effectiveRouteAccessCount = $accessByPermission->where('status', 'effective')->count();
+        $permissionSignature = RoleAccessPolicy::userPermissionSignature($user);
 
         return view('users.permissions', compact(
             'user',
             'permissionGroups',
             'rolePermissionIds',
             'overrideEffects',
-            'effectivePermissionIds'
+            'effectivePermissionIds',
+            'accessByPermission',
+            'effectiveRouteAccessCount',
+            'permissionSignature'
         ));
     }
 
@@ -251,32 +292,45 @@ class UserManagementController extends Controller
         $validated = $request->validate([
             'permission_ids' => ['nullable', 'array'],
             'permission_ids.*' => ['integer', Rule::exists('permissions', 'id')],
+            'permission_signature' => ['required', 'string', 'size:64'],
+            'confirm_permission_change' => ['accepted'],
         ]);
 
         $selectedIds = collect($validated['permission_ids'] ?? [])->map(fn ($id) => (int) $id)->unique();
-        $user->load('roles.permissions');
-        $rolePermissionIds = $user->roles
-            ->flatMap(fn (Role $role) => $role->permissions)
-            ->pluck('id')
-            ->unique()
-            ->values();
-        $allPermissionIds = Permission::pluck('id');
-        $overrides = [];
+        DB::transaction(function () use ($user, $validated, $selectedIds, $rolePermissionService) {
+            $lockedUser = User::query()->lockForUpdate()->findOrFail($user->id);
+            $lockedUser->load(['roles.permissions', 'permissionOverrides']);
+            $currentSignature = RoleAccessPolicy::userPermissionSignature($lockedUser);
 
-        foreach ($allPermissionIds as $permissionId) {
-            $hasByRole = $rolePermissionIds->contains($permissionId);
-            $isSelected = $selectedIds->contains($permissionId);
-
-            if ($isSelected && ! $hasByRole) {
-                $overrides[$permissionId] = ['effect' => 'grant'];
+            if (! hash_equals($currentSignature, $validated['permission_signature'])) {
+                throw ValidationException::withMessages([
+                    'permissions' => 'This user access record changed after you opened the page. Review the latest permissions before saving again.',
+                ]);
             }
 
-            if (! $isSelected && $hasByRole) {
-                $overrides[$permissionId] = ['effect' => 'deny'];
-            }
-        }
+            $rolePermissionIds = $lockedUser->roles
+                ->flatMap(fn (Role $role) => $role->permissions)
+                ->pluck('id')
+                ->unique()
+                ->values();
+            $allPermissionIds = Permission::pluck('id');
+            $overrides = [];
 
-        DB::transaction(fn () => $rolePermissionService->syncUserPermissionOverrides($user, $overrides));
+            foreach ($allPermissionIds as $permissionId) {
+                $hasByRole = $rolePermissionIds->contains($permissionId);
+                $isSelected = $selectedIds->contains($permissionId);
+
+                if ($isSelected && ! $hasByRole) {
+                    $overrides[$permissionId] = ['effect' => 'grant'];
+                }
+
+                if (! $isSelected && $hasByRole) {
+                    $overrides[$permissionId] = ['effect' => 'deny'];
+                }
+            }
+
+            $rolePermissionService->syncUserPermissionOverrides($lockedUser, $overrides);
+        });
 
         return redirect()
             ->route('users.index')
@@ -360,6 +414,10 @@ class UserManagementController extends Controller
             return false;
         }
 
+        if (! $this->userWithinActorScope($user, $actor)) {
+            return false;
+        }
+
         if ($user->roles->pluck('name')->intersect(UserRolePolicy::HIGH_RISK_ROLES)->isNotEmpty()) {
             return false;
         }
@@ -412,11 +470,21 @@ class UserManagementController extends Controller
 
     private function organizationOptions(): array
     {
-        return [
-            University::orderBy('name')->get(),
-            College::with('university')->orderBy('name')->get(),
-            Department::with(['university', 'college'])->orderBy('name')->get(),
-        ];
+        $actor = auth()->user();
+        $universities = University::orderBy('name');
+        $colleges = College::with('university')->orderBy('name');
+        $departments = Department::with(['university', 'college'])->orderBy('name');
+
+        if ($actor?->hasRole('it_support') && ! $actor->hasRole('super_administrator')) {
+            $universities->whereKey($actor->university_id);
+            $colleges->where('university_id', $actor->university_id)
+                ->when($actor->college_id, fn ($query) => $query->whereKey($actor->college_id));
+            $departments->where('university_id', $actor->university_id)
+                ->when($actor->college_id, fn ($query) => $query->where('college_id', $actor->college_id))
+                ->when($actor->department_id, fn ($query) => $query->whereKey($actor->department_id));
+        }
+
+        return [$universities->get(), $colleges->get(), $departments->get()];
     }
 
     private function normalizedOrganization(array $roleIds, array $input): array
@@ -537,6 +605,63 @@ class UserManagementController extends Controller
         if ($roleNames->intersect(UserRolePolicy::EXCLUSIVE_ROLES)->isNotEmpty() && $roleNames->count() > 1) {
             throw ValidationException::withMessages(['roles' => 'Portal roles cannot be combined with another role.']);
         }
+
+        if ($roleNames->intersect(UserRolePolicy::HIGH_RISK_ROLES)->count() > 1) {
+            throw ValidationException::withMessages([
+                'roles' => 'Assign only one privileged operational role to each account. Use direct permissions for approved exceptions.',
+            ]);
+        }
+    }
+
+    private function applyManagedUserScope($query, User $actor): void
+    {
+        if ($actor->hasRole('super_administrator')) {
+            return;
+        }
+
+        if (! $actor->university_id) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where('university_id', $actor->university_id)
+            ->when($actor->college_id, fn ($builder) => $builder->where('college_id', $actor->college_id))
+            ->when($actor->department_id, fn ($builder) => $builder->where('department_id', $actor->department_id));
+    }
+
+    private function userWithinActorScope(User $target, User $actor): bool
+    {
+        if ($actor->hasRole('super_administrator')) {
+            return true;
+        }
+
+        if (! $actor->university_id || $target->university_id !== $actor->university_id) {
+            return false;
+        }
+
+        if ($actor->college_id && $target->college_id !== $actor->college_id) {
+            return false;
+        }
+
+        return ! $actor->department_id || $target->department_id === $actor->department_id;
+    }
+
+    private function authorizeOrganizationAssignment(array $organization): void
+    {
+        $actor = auth()->user();
+        if (! $actor?->hasRole('it_support') || $actor->hasRole('super_administrator')) {
+            return;
+        }
+
+        abort_unless(
+            $actor->university_id
+            && (int) $organization['university_id'] === (int) $actor->university_id
+            && (! $actor->college_id || (int) $organization['college_id'] === (int) $actor->college_id)
+            && (! $actor->department_id || (int) $organization['department_id'] === (int) $actor->department_id),
+            403,
+            'You cannot assign a user outside your organization scope.'
+        );
     }
 
     private function isProfileManagedUser(User $user): bool

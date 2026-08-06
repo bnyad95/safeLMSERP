@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Services\NotificationService;
 use App\Services\ProtectedFileService;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -49,13 +50,13 @@ class AssessmentController extends Controller
                 ->pluck('course_section_id')
             : collect();
 
-        $sections = CourseSection::with(['course.department.college', 'semester', 'teacher'])
+        $sectionsQuery = CourseSection::with(['course.department.college', 'semester', 'teacher'])
             ->withCount(['activeEnrollments', 'assessmentItems'])
             ->whereIn('status', ['planned', 'active'])
             ->when($student, fn ($query) => $query->whereIn('id', $studentSectionIds))
-            ->when($this->shouldScopeTeacher($request), fn ($query) => $query->where('teacher_id', $teacher?->id))
-            ->latest()
-            ->get();
+            ->when($this->shouldScopeTeacher($request), fn ($query) => $query->where('teacher_id', $teacher?->id));
+        OrganizationScope::apply($sectionsQuery, $user, 'section');
+        $sections = $sectionsQuery->latest()->get();
         $adminFilters = $isAdminOversight ? $this->adminFilterState($request) : [];
         $adminFilterOptions = $isAdminOversight ? $this->buildAdminFilterOptions($sections) : null;
         if ($isAdminOversight) {
@@ -95,6 +96,9 @@ class AssessmentController extends Controller
                 'submissions as graded_submissions_count' => fn ($query) => $query->whereNotNull('score'),
             ])
             ->withAvg('submissions as average_score', 'score')
+            ->whereHas('courseSection', function ($sectionQuery) use ($user) {
+                OrganizationScope::apply($sectionQuery, $user, 'section');
+            })
             ->when($student, fn ($query) => $query
                 ->where('status', 'published')
                 ->whereIn('course_section_id', $studentSectionIds))
@@ -153,11 +157,11 @@ class AssessmentController extends Controller
             403
         );
 
-        $sections = CourseSection::with(['course.department.college', 'semester', 'teacher'])
+        $sectionsQuery = CourseSection::with(['course.department.college', 'semester', 'teacher'])
             ->withCount(['activeEnrollments', 'assessmentItems'])
-            ->whereIn('status', ['planned', 'active'])
-            ->latest()
-            ->get();
+            ->whereIn('status', ['planned', 'active']);
+        OrganizationScope::apply($sectionsQuery, $user, 'section');
+        $sections = $sectionsQuery->latest()->get();
         $adminFilters = $this->adminFilterState($request);
         $sections = $this->applyAdminSectionFilters($sections, $adminFilters);
         $selectedSectionId = $request->integer('section_id') ?: null;
@@ -271,11 +275,11 @@ class AssessmentController extends Controller
         $this->requireAnyPermission('lms.create_assignment', 'marks.enter');
         abort_unless($this->canManageAssessment(request(), $assessmentItem), 403);
 
-        $sections = CourseSection::with(['course', 'semester'])
+        $sectionsQuery = CourseSection::with(['course', 'semester'])
             ->whereIn('status', ['planned', 'active'])
-            ->when($this->shouldScopeTeacher(request()), fn ($query) => $query->where('teacher_id', $this->teacherFor(request())?->id))
-            ->latest()
-            ->get();
+            ->when($this->shouldScopeTeacher(request()), fn ($query) => $query->where('teacher_id', $this->teacherFor(request())?->id));
+        OrganizationScope::apply($sectionsQuery, request()->user(), 'section');
+        $sections = $sectionsQuery->latest()->get();
 
         return view('assessments.edit', compact('assessmentItem', 'sections'));
     }
@@ -798,7 +802,7 @@ class AssessmentController extends Controller
 
         if ($user->hasAnyRole(['administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'lms_administrator', 'teaching_assistant'])
             && $user->hasAnyPermission(['lms.view', 'lms.create_assignment', 'lms.grade_assignment', 'marks.enter', 'marks.view'])) {
-            return true;
+            return $this->sectionWithinOrganizationScope($request, $assessmentItem->course_section_id);
         }
 
         if (! $user->hasRole('student') || $assessmentItem->status !== 'published') {
@@ -815,7 +819,9 @@ class AssessmentController extends Controller
     private function canManageAssessment(Request $request, AssessmentItem $assessmentItem): bool
     {
         if (! $this->shouldScopeTeacher($request)) {
-            return true;
+            return $request->user()->hasRole('super_administrator')
+                || ($this->canAdminAccessAssessments($request)
+                    && $this->sectionWithinOrganizationScope($request, $assessmentItem->course_section_id));
         }
 
         $section = $assessmentItem->courseSection;
@@ -829,13 +835,24 @@ class AssessmentController extends Controller
     private function canManageSection(Request $request, int $sectionId): bool
     {
         if (! $this->shouldScopeTeacher($request)) {
-            return true;
+            return $request->user()->hasRole('super_administrator')
+                || ($this->canAdminAccessAssessments($request)
+                    && $this->sectionWithinOrganizationScope($request, $sectionId));
         }
 
         return CourseSection::whereKey($sectionId)
             ->whereIn('status', ['planned', 'active'])
             ->where('teacher_id', $this->teacherFor($request)?->id)
             ->exists();
+    }
+
+    private function sectionWithinOrganizationScope(Request $request, int $sectionId): bool
+    {
+        $query = CourseSection::whereKey($sectionId)
+            ->whereIn('status', ['planned', 'active']);
+        OrganizationScope::apply($query, $request->user(), 'section');
+
+        return $query->exists();
     }
 
     private function validateAssessmentWeight(int $sectionId, float $weight, ?int $exceptAssessmentId = null): void

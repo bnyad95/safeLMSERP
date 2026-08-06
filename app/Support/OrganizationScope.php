@@ -19,6 +19,7 @@ class OrganizationScope
             $roleNames->intersect(UserRolePolicy::DEPARTMENT_SCOPED_ROLES)->isNotEmpty() => 'department',
             $roleNames->contains('college_administrator') => 'college',
             $roleNames->intersect(UserRolePolicy::UNIVERSITY_SCOPED_ROLES)->isNotEmpty() => 'university',
+            $roleNames->intersect(UserRolePolicy::FLEXIBLE_SCOPED_ROLES)->isNotEmpty() => self::assignedScope($user),
             $roleNames->intersect(['examination_administrator', 'examination_committee'])->isNotEmpty() => self::examinationScope($user),
             $roleNames->contains('administrator') => null,
             $roleNames->contains('hr_manager') => self::assignedScope($user),

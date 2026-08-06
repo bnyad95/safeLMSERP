@@ -92,7 +92,7 @@
                             @php
                                 $isSelfSuperAdminRole = $isSelf && $role->name === 'super_administrator' && in_array($role->id, $selectedRoleIds);
                                 $roleScope = $organizationRoleScopes[$role->name] ?? null;
-                                $isHighAccess = in_array($role->name, ['super_administrator', 'administrator', 'university_administrator', 'chief_accountant', 'examination_administrator', 'examination_committee'], true);
+                                $isHighAccess = in_array($role->name, $highRiskRoleNames, true);
                             @endphp
                             <label class="flex items-start gap-3 rounded-lg border {{ $isHighAccess ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20' : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950' }} p-3 hover:border-blue-300 dark:hover:border-blue-700">
                                 @if($isSelfSuperAdminRole)

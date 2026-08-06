@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
 use App\Models\User;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -68,6 +69,10 @@ class TeacherDashboardController extends Controller
             ->withCount(['activeEnrollments as enrolled_count', 'assessmentItems as assessment_count'])
             ->whereIn('status', ['planned', 'active'])
             ->when($canManageClassroom, fn ($query) => $query->where('teacher_id', $teacher->id));
+
+        if (! $canManageClassroom) {
+            OrganizationScope::apply($assignedSectionsQuery, $user, 'section');
+        }
 
         $assignedSections = (clone $assignedSectionsQuery)
             ->orderByDesc('created_at')

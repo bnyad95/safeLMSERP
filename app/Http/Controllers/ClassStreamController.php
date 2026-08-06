@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
 use App\Services\ProtectedFileService;
+use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 
 class ClassStreamController extends Controller
@@ -125,7 +126,7 @@ class ClassStreamController extends Controller
 
     public function attachment(Request $request, CourseSection $courseSection, ClassStreamPost $post)
     {
-        if (! $request->user()->hasAnyRole([
+        if ($request->user()->hasAnyRole([
             'administrator',
             'super_administrator',
             'university_administrator',
@@ -133,6 +134,11 @@ class ClassStreamController extends Controller
             'department_administrator',
             'lms_administrator',
         ])) {
+            $sectionQuery = CourseSection::whereKey($courseSection->id)
+                ->whereIn('status', ['planned', 'active']);
+            OrganizationScope::apply($sectionQuery, $request->user(), 'section');
+            abort_unless($sectionQuery->exists(), 403);
+        } else {
             $this->authorizeClassMember($request, $courseSection);
         }
         $this->ensurePostBelongsToSection($courseSection, $post);

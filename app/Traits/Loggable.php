@@ -24,6 +24,10 @@ trait Loggable
 
     protected static function logActivity($model, $description, $changes = [])
     {
+        $sensitive = ['password', 'remember_token'];
+        $attributes = collect($model->getAttributes())->except($sensitive)->all();
+        $changes = collect($changes)->except($sensitive)->all();
+
         ActivityLog::create([
             'log_name' => get_class($model),
             'description' => $description,
@@ -32,7 +36,7 @@ trait Loggable
             'causer_type' => Auth::check() ? Auth::user()::class : null,
             'causer_id' => Auth::id(),
             'properties' => [
-                'attributes' => $model->getAttributes(),
+                'attributes' => $attributes,
                 'changes' => $changes,
             ],
         ]);

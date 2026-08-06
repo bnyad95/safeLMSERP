@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Attendance;
 use App\Models\Course;
 use App\Models\CourseMaterial;
+use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Enrollment;
 use App\Models\FinanceTransaction;
@@ -24,9 +25,13 @@ class RoleWorkspaceTest extends TestCase
     public function test_librarian_can_open_library_workspace_and_filter_resources(): void
     {
         $role = Role::create(['name' => 'librarian', 'display_name' => 'Library Administrator']);
-        $user = User::factory()->create();
-        $user->roles()->attach($role);
         $department = Department::factory()->create();
+        $user = User::factory()->create([
+            'university_id' => $department->university_id,
+            'college_id' => $department->college_id,
+            'department_id' => $department->id,
+        ]);
+        $user->roles()->attach($role);
         $course = Course::factory()->create([
             'department_id' => $department->id,
             'code' => 'LIB101',
@@ -47,6 +52,19 @@ class RoleWorkspaceTest extends TestCase
             'visibility' => 'draft',
             'uploaded_by' => $user->id,
         ]);
+        $outsideDepartment = Department::factory()->create();
+        $outsideCourse = Course::factory()->create([
+            'department_id' => $outsideDepartment->id,
+            'code' => 'OUT101',
+            'name' => 'Outside Library Course',
+        ]);
+        CourseMaterial::create([
+            'course_id' => $outsideCourse->id,
+            'title' => 'Outside Organization Guide',
+            'file_type' => 'pdf',
+            'visibility' => 'published',
+            'uploaded_by' => $user->id,
+        ]);
 
         $this->actingAs($user)
             ->get(route('dashboard'))
@@ -57,7 +75,14 @@ class RoleWorkspaceTest extends TestCase
             ->assertOk()
             ->assertSee('Library Workspace')
             ->assertSee('Catalog Guide')
-            ->assertDontSee('Hidden Draft');
+            ->assertDontSee('Hidden Draft')
+            ->assertDontSee('Outside Organization Guide');
+
+        $this->actingAs($user)
+            ->get(route('library.workspace'))
+            ->assertOk()
+            ->assertSee('Catalog Guide')
+            ->assertDontSee('Outside Organization Guide');
     }
 
     public function test_parent_user_sees_only_students_linked_by_guardian_email(): void
@@ -96,7 +121,7 @@ class RoleWorkspaceTest extends TestCase
             'email' => 'other-parent@example.com',
             'is_primary' => true,
         ]);
-        $section = \App\Models\CourseSection::create([
+        $section = CourseSection::create([
             'course_id' => $course->id,
             'semester_id' => $semester->id,
             'section_code' => 'A',

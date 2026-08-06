@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Role;
+use App\Models\User;
 
 final class RoleAccessPolicy
 {
@@ -82,6 +83,62 @@ final class RoleAccessPolicy
         ];
     }
 
+    public static function userAccessFor(User $user, string $permission, bool $effective, ?string $override): array
+    {
+        if ($override === 'deny') {
+            return [
+                'status' => 'denied',
+                'label' => 'Directly denied',
+                'reason' => 'A direct user override removes this permission even when a role grants it.',
+            ];
+        }
+
+        if (! $effective) {
+            return [
+                'status' => 'missing',
+                'label' => 'No access',
+                'reason' => 'Neither the assigned roles nor a direct grant provide this permission.',
+            ];
+        }
+
+        if (in_array($permission, self::UNENFORCED_PERMISSIONS, true)) {
+            return [
+                'status' => 'unenforced',
+                'label' => 'Not enforced',
+                'reason' => 'This permission is stored for the user, but no route or controller currently checks it.',
+            ];
+        }
+
+        $allowedRoles = self::allowedRolesFor($permission);
+        $roleNames = $user->roles->pluck('name');
+        $hasCompatibleRole = $allowedRoles === null || $roleNames->intersect($allowedRoles)->isNotEmpty();
+        $directGrantBypassesRole = $override === 'grant' && self::directGrantBypassesRoleFor($permission);
+
+        if ($permission === 'finance.view_global' && $override !== 'grant') {
+            return [
+                'status' => 'conditional',
+                'label' => 'Direct grant required',
+                'reason' => 'Global finance visibility is recognized only as an explicit direct user grant.',
+            ];
+        }
+
+        if (! $hasCompatibleRole && ! $directGrantBypassesRole) {
+            return [
+                'status' => 'conditional',
+                'label' => 'Blocked by role gate',
+                'reason' => 'The permission is present, but the related routes also require a compatible role.',
+            ];
+        }
+
+        return [
+            'status' => 'effective',
+            'label' => 'Effective access',
+            'reason' => $override === 'grant'
+                ? 'A direct user grant unlocks this enforced capability.'
+                : 'The user role and permission gates are compatible.',
+        ];
+    }
+
     public static function scopeFor(Role $role): array
     {
         $special = [
@@ -112,6 +169,27 @@ final class RoleAccessPolicy
         return hash('sha256', implode(',', $ids));
     }
 
+    public static function userPermissionSignature(User $user): string
+    {
+        $user->loadMissing(['roles.permissions', 'permissionOverrides']);
+        $roleIds = $user->roles->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->implode(',');
+        $rolePermissionIds = $user->roles
+            ->flatMap(fn (Role $role) => $role->permissions)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->sort()
+            ->values()
+            ->implode(',');
+        $overrides = $user->permissionOverrides
+            ->map(fn ($permission) => ((int) $permission->id).':'.$permission->pivot->effect)
+            ->sort()
+            ->values()
+            ->implode(',');
+
+        return hash('sha256', $user->id.'|'.$roleIds.'|'.$rolePermissionIds.'|'.$overrides);
+    }
+
     private static function allowedRolesFor(string $permission): ?array
     {
         foreach (self::ROLE_GATES as $permissionPattern => $roles) {
@@ -125,5 +203,11 @@ final class RoleAccessPolicy
         }
 
         return null;
+    }
+
+    private static function directGrantBypassesRoleFor(string $permission): bool
+    {
+        return str_starts_with($permission, 'finance.')
+            || str_starts_with($permission, 'academic_setup.');
     }
 }
