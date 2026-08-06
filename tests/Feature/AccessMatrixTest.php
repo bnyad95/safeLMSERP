@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\RoleAccessPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -69,7 +70,7 @@ class AccessMatrixTest extends TestCase
             ->assertOk()
             ->assertSee('Users &amp; Access', false)
             ->assertSee('users.assign_roles')
-            ->assertSee('High risk')
+            ->assertSee('Critical')
             ->assertDontSee('students.view');
     }
 
@@ -124,13 +125,12 @@ class AccessMatrixTest extends TestCase
                 'q' => 'students',
             ]))
             ->assertOk()
-            ->assertSee('Selected role access')
-            ->assertSee('Selected role: <span class="font-medium text-gray-700">Registrar</span>', false)
+            ->assertSee('Role assignment')
+            ->assertSee('Selected role:')
             ->assertSee('students.view')
             ->assertSee('Registrar')
             ->assertDontSee('students.archive')
-            ->assertDontSee('marks.enter')
-            ->assertDontSee('<span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">Teacher</span>', false);
+            ->assertDontSee('marks.enter');
 
         $this->actingAs($user)
             ->get(route('access-matrix', [
@@ -140,7 +140,7 @@ class AccessMatrixTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('students.archive')
-            ->assertSee('Not granted to selected role')
+            ->assertSee('Not assigned')
             ->assertDontSee('students.view')
             ->assertDontSee('marks.enter');
 
@@ -186,6 +186,7 @@ class AccessMatrixTest extends TestCase
         $this->actingAs($user)
             ->patch(route('access-matrix.roles.permissions.update', $teacherRole), [
                 'permission_ids' => [$coursesPermission->id],
+                'permission_signature' => RoleAccessPolicy::permissionSignature([$marksPermission->id]),
                 'confirm_permission_change' => '1',
             ])
             ->assertRedirect(route('access-matrix', ['role_id' => $teacherRole->id, 'mode' => 'edit']));
@@ -260,5 +261,108 @@ class AccessMatrixTest extends TestCase
         $this->actingAs($user)
             ->get(route('access-matrix'))
             ->assertForbidden();
+    }
+
+    public function test_matrix_distinguishes_assignment_route_compatibility_scope_and_overrides(): void
+    {
+        $superAdmin = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $departmentAdmin = Role::create(['name' => 'department_administrator', 'display_name' => 'Department Administrator']);
+        $financeView = Permission::create(['name' => 'finance.view', 'display_name' => 'View finance']);
+        $departmentAdmin->permissions()->attach($financeView);
+
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdmin);
+        $scopedUser = User::factory()->create();
+        $scopedUser->roles()->attach($departmentAdmin);
+        $scopedUser->permissionOverrides()->attach($financeView, ['effect' => 'deny']);
+
+        $this->actingAs($admin)
+            ->get(route('access-matrix', ['role_id' => $departmentAdmin->id]))
+            ->assertOk()
+            ->assertSee('Department Administrator impact')
+            ->assertSee('Department')
+            ->assertSee('1')
+            ->assertSee('Conditional')
+            ->assertSee('eligible role or a direct user grant')
+            ->assertSee('-1 denies');
+    }
+
+    public function test_matrix_flags_permissions_that_are_stored_but_not_enforced(): void
+    {
+        $superAdmin = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $teacher = Role::create(['name' => 'teacher', 'display_name' => 'Teacher']);
+        $permission = Permission::create(['name' => 'marks.submit', 'display_name' => 'Submit marks']);
+        $teacher->permissions()->attach($permission);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdmin);
+
+        $this->actingAs($admin)
+            ->get(route('access-matrix', ['role_id' => $teacher->id]))
+            ->assertOk()
+            ->assertSee('Not enforced')
+            ->assertSee('no route or controller currently checks it');
+    }
+
+    public function test_super_administrator_access_is_displayed_as_implicit(): void
+    {
+        $superAdmin = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        Permission::create(['name' => 'academic_setup.manage', 'display_name' => 'Manage academic setup']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdmin);
+
+        $this->actingAs($admin)
+            ->get(route('access-matrix', ['role_id' => $superAdmin->id]))
+            ->assertOk()
+            ->assertSee('Implicit full access')
+            ->assertSee('Super Administrator bypasses permission assignments');
+    }
+
+    public function test_risk_filter_uses_complete_central_risk_metadata(): void
+    {
+        $superAdmin = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        Permission::create(['name' => 'academic_setup.manage', 'display_name' => 'Manage academic setup']);
+        Permission::create(['name' => 'finance.record_expense', 'display_name' => 'Record expenses']);
+        Permission::create(['name' => 'students.view', 'display_name' => 'View students']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdmin);
+
+        $this->actingAs($admin)
+            ->get(route('access-matrix', ['risk' => 'critical']))
+            ->assertOk()
+            ->assertSee('academic_setup.manage')
+            ->assertSee('Critical')
+            ->assertDontSee('finance.record_expense')
+            ->assertDontSee('students.view');
+
+        $this->actingAs($admin)
+            ->get(route('access-matrix', ['risk' => 'high']))
+            ->assertOk()
+            ->assertSee('finance.record_expense')
+            ->assertSee('High risk')
+            ->assertDontSee('academic_setup.manage');
+    }
+
+    public function test_stale_role_permission_edit_is_rejected_without_overwriting_changes(): void
+    {
+        $superAdmin = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $teacher = Role::create(['name' => 'teacher', 'display_name' => 'Teacher']);
+        $marksEnter = Permission::create(['name' => 'marks.enter', 'display_name' => 'Enter marks']);
+        $coursesView = Permission::create(['name' => 'courses.view', 'display_name' => 'View courses']);
+        $teacher->permissions()->attach($marksEnter);
+        $staleSignature = RoleAccessPolicy::permissionSignature([$marksEnter->id]);
+        $teacher->permissions()->attach($coursesView);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdmin);
+
+        $this->actingAs($admin)
+            ->patch(route('access-matrix.roles.permissions.update', $teacher), [
+                'permission_ids' => [$marksEnter->id],
+                'permission_signature' => $staleSignature,
+                'confirm_permission_change' => '1',
+            ])
+            ->assertSessionHasErrors('permissions');
+
+        $this->assertDatabaseHas('permission_role', ['role_id' => $teacher->id, 'permission_id' => $marksEnter->id]);
+        $this->assertDatabaseHas('permission_role', ['role_id' => $teacher->id, 'permission_id' => $coursesView->id]);
     }
 }

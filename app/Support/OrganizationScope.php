@@ -16,11 +16,10 @@ class OrganizationScope
         }
 
         $scope = match (true) {
-            $roleNames->contains('department_administrator') => 'department',
+            $roleNames->intersect(UserRolePolicy::DEPARTMENT_SCOPED_ROLES)->isNotEmpty() => 'department',
             $roleNames->contains('college_administrator') => 'college',
-            $roleNames->contains('university_administrator') => 'university',
+            $roleNames->intersect(UserRolePolicy::UNIVERSITY_SCOPED_ROLES)->isNotEmpty() => 'university',
             $roleNames->intersect(['examination_administrator', 'examination_committee'])->isNotEmpty() => self::examinationScope($user),
-            $roleNames->intersect(['admission_officer', 'receptionist'])->isNotEmpty() => 'department',
             $roleNames->contains('administrator') => null,
             $roleNames->contains('hr_manager') => self::assignedScope($user),
             self::hasDirectAcademicSetupGrant($user) => self::assignedScope($user),

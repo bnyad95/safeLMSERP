@@ -84,4 +84,22 @@ class RolePermissionObserver
             ],
         ]);
     }
+
+    public function logUserPermissionOverrideChanged(User $user, int $permissionId, ?string $from, ?string $to): void
+    {
+        ActivityLog::create([
+            'log_name' => 'user_permission_override',
+            'description' => 'user_permission_override_changed',
+            'subject_type' => User::class,
+            'subject_id' => $user->id,
+            'causer_type' => Auth::check() ? Auth::user()::class : null,
+            'causer_id' => Auth::id(),
+            'properties' => [
+                'user_id' => $user->id,
+                'permission_id' => $permissionId,
+                'from' => $from,
+                'to' => $to,
+            ],
+        ]);
+    }
 }

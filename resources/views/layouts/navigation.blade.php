@@ -85,8 +85,11 @@
                 @php
                     $sidebarUser = Auth::user();
                     $sidebarStudentId = null;
+                    $portalRoleNames = ['student', 'parent_user', 'librarian', 'receptionist'];
+                    $sidebarHasNonPortalRole = $sidebarUser?->roles->pluck('name')->diff($portalRoleNames)->isNotEmpty() ?? false;
+                    $sidebarUsesStudentPortal = $sidebarUser?->hasRole('student') && ! $sidebarHasNonPortalRole;
 
-                    if ($sidebarUser?->hasRole('student')) {
+                    if ($sidebarUsesStudentPortal) {
                         $sidebarStudentId = \App\Models\Student::query()
                             ->where('email', $sidebarUser->email)
                             ->value('id');
@@ -109,13 +112,13 @@
                         })
                         ->exists();
                 @endphp
-                <x-nav-link :href="Auth::user()?->hasRole('student') ? route('student-portal') : route('dashboard')" :active="request()->routeIs('dashboard') || (Auth::user()?->hasRole('student') && request()->routeIs('student-portal'))">
+                <x-nav-link :href="$sidebarUsesStudentPortal ? route('student-portal') : route('dashboard')" :active="request()->routeIs('dashboard') || ($sidebarUsesStudentPortal && request()->routeIs('student-portal'))">
                     {{ __('Dashboard') }}
                 </x-nav-link>
                 <x-nav-link :href="route('notifications.index')" :active="request()->routeIs('notifications.*')" :class="$hasNewNotifications && ! request()->routeIs('notifications.*') ? 'font-bold text-gray-900 dark:text-gray-100' : ''">
                     {{ __('Notifications') }}
                 </x-nav-link>
-                @if (Auth::user()?->hasRole('student'))
+                @if ($sidebarUsesStudentPortal)
                     <x-nav-link :href="route('student.finance')" :active="request()->routeIs('student.finance')">
                         {{ __('Finance') }}
                     </x-nav-link>
@@ -128,15 +131,15 @@
                     <x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">
                         {{ __('Archived Classes') }}
                     </x-nav-link>
-                @elseif (Auth::user()?->hasRole('parent_user'))
+                @elseif (Auth::user()?->hasRole('parent_user') && ! $sidebarHasNonPortalRole)
                     <x-nav-link :href="route('parent.workspace')" :active="request()->routeIs('parent.workspace')">
                         {{ __('Parent Portal') }}
                     </x-nav-link>
-                @elseif (Auth::user()?->hasRole('librarian'))
+                @elseif (Auth::user()?->hasRole('librarian') && ! $sidebarHasNonPortalRole)
                     <x-nav-link :href="route('library.workspace')" :active="request()->routeIs('library.workspace')">
                         {{ __('Library Workspace') }}
                     </x-nav-link>
-                @elseif (Auth::user()?->hasRole('receptionist'))
+                @elseif (Auth::user()?->hasRole('receptionist') && ! $sidebarHasNonPortalRole)
                     <x-nav-link :href="route('reception.workspace')" :active="request()->routeIs('reception.workspace')">
                         {{ __('Front Desk') }}
                     </x-nav-link>
@@ -162,7 +165,8 @@
                         $canAcademicArchive = $navUser->hasAnyRole(['super_administrator', 'administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'examination_administrator', 'examination_committee'])
                             || $navUser->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
                         $canClassrooms = $navUser->hasAnyRole(['teacher', 'teaching_assistant', 'administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'lms_administrator']);
-                        $usesTeachingWorkspace = $navUser->hasAnyRole(['teacher', 'teaching_assistant']);
+                        $teachingBlockingRoles = array_values(array_diff(\App\Support\UserRolePolicy::HIGH_RISK_ROLES, ['teaching_assistant']));
+                        $usesTeachingWorkspace = $navUser->hasAnyRole(['teacher', 'teaching_assistant']) && ! $navUser->hasAnyRole($teachingBlockingRoles);
                         $canFinance = $isSuper
                             || $navUser->hasAnyRole(['chief_accountant', 'accountant'])
                             || $navUser->hasDirectPermissionGrant('finance.view');

@@ -2,12 +2,12 @@
     <x-slot name="header">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900">User Permissions</h2>
-                <p class="mt-1 text-sm text-gray-600">{{ $user->name }} / {{ $user->email }}</p>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">User Permissions</h2>
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $user->name }} / {{ $user->email }}</p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('users.edit', $user) }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back to User</a>
-                <a href="{{ route('users.index') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">All Users</a>
+                <a href="{{ route('users.edit', $user) }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">Back to User</a>
+                <a href="{{ route('users.index') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">All Users</a>
             </div>
         </div>
     </x-slot>
@@ -18,10 +18,10 @@
                 <div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{{ session('success') }}</div>
             @endif
 
-            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="grid gap-4 md:grid-cols-3">
                     <div>
-                        <p class="text-xs font-semibold uppercase text-gray-500">Assigned Roles</p>
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Assigned Roles</p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             @forelse($user->roles as $role)
                                 <span class="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{{ $role->display_name }}</span>
@@ -31,12 +31,12 @@
                         </div>
                     </div>
                     <div>
-                        <p class="text-xs font-semibold uppercase text-gray-500">Effective Permissions</p>
-                        <p class="mt-2 text-2xl font-semibold text-gray-900">{{ count($effectivePermissionIds) }}</p>
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Effective Permissions</p>
+                        <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ count($effectivePermissionIds) }}</p>
                     </div>
                     <div>
-                        <p class="text-xs font-semibold uppercase text-gray-500">Overrides</p>
-                        <p class="mt-2 text-2xl font-semibold text-gray-900">{{ $overrideEffects->count() }}</p>
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Overrides</p>
+                        <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $overrideEffects->count() }}</p>
                     </div>
                 </div>
             </section>
@@ -46,18 +46,18 @@
                 @method('PATCH')
 
                 @foreach($permissionGroups as $module => $permissions)
-                    <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                        <div class="border-b border-gray-200 px-5 py-4">
-                            <h3 class="text-base font-semibold text-gray-900">{{ $module }}</h3>
+                    <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $module }}</h3>
                         </div>
-                        <div class="grid gap-0 divide-y divide-gray-100">
+                        <div class="grid gap-0 divide-y divide-gray-100 dark:divide-gray-800">
                             @foreach($permissions as $permission)
                                 @php
                                     $isEffective = in_array($permission->id, $effectivePermissionIds, true);
                                     $fromRole = $rolePermissionIds->contains($permission->id);
                                     $override = $overrideEffects[$permission->id] ?? null;
                                 @endphp
-                                <label class="flex flex-col gap-3 px-5 py-4 hover:bg-gray-50 sm:flex-row sm:items-start sm:justify-between">
+                                <label class="flex flex-col gap-3 px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/60 sm:flex-row sm:items-start sm:justify-between">
                                     <span class="flex min-w-0 items-start gap-3">
                                         <input
                                             type="checkbox"
@@ -67,8 +67,8 @@
                                             @checked($isEffective)
                                         >
                                         <span class="min-w-0">
-                                            <span class="block text-sm font-semibold text-gray-900">{{ $permission->display_name }}</span>
-                                            <span class="mt-1 block text-xs text-gray-500">{{ $permission->name }}</span>
+                                            <span class="block text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $permission->display_name }}</span>
+                                            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ $permission->name }}</span>
                                         </span>
                                     </span>
                                     <span class="flex shrink-0 flex-wrap gap-2 sm:justify-end">
@@ -87,8 +87,8 @@
                     </section>
                 @endforeach
 
-                <div class="sticky bottom-0 flex justify-end border-t border-gray-200 bg-gray-50/95 px-4 py-4 backdrop-blur">
-                    <button type="submit" class="rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700">Save Permissions</button>
+                <div class="sticky bottom-0 flex justify-end border-t border-gray-200 bg-gray-50/95 px-4 py-4 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
+                    <button type="submit" class="rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">Save Permissions</button>
                 </div>
             </form>
         </div>

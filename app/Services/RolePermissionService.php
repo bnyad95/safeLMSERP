@@ -6,6 +6,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Observers\RolePermissionObserver;
+use Illuminate\Support\Facades\DB;
 
 class RolePermissionService
 {
@@ -65,45 +66,64 @@ class RolePermissionService
     {
         $currentRoleIds = $user->roles()->pluck('roles.id')->toArray();
 
-        // Log detachments
         $toDetach = array_diff($currentRoleIds, $roleIds);
+        $toAttach = array_diff($roleIds, $currentRoleIds);
+
+        $user->roles()->sync($roleIds);
+
         foreach ($toDetach as $roleId) {
             $this->observer->logRoleDetached($user, $roleId);
         }
 
-        // Log attachments
-        $toAttach = array_diff($roleIds, $currentRoleIds);
         foreach ($toAttach as $roleId) {
             $this->observer->logRoleAttached($user, $roleId);
         }
+    }
 
-        $user->roles()->sync($roleIds);
+    public function syncUserPermissionOverrides(User $user, array $overrides): void
+    {
+        $current = $user->permissionOverrides()
+            ->get()
+            ->mapWithKeys(fn (Permission $permission) => [$permission->id => $permission->pivot->effect]);
+        $next = collect($overrides)->map(fn (array $pivot) => $pivot['effect']);
+
+        foreach ($current->keys()->merge($next->keys())->unique() as $permissionId) {
+            $from = $current->get($permissionId);
+            $to = $next->get($permissionId);
+
+            if ($from !== $to) {
+                $this->observer->logUserPermissionOverrideChanged($user, (int) $permissionId, $from, $to);
+            }
+        }
+
+        $user->permissionOverrides()->sync($overrides);
     }
 
     /**
      * Sync permissions for a role (assign multiple permissions at once)
      */
-    public function syncRolePermissions($roleId, array $permissionIds)
+    public function syncRolePermissions($roleId, array $permissionIds): void
     {
-        $role = Role::find($roleId);
-        if (! $role) {
-            return;
-        }
+        DB::transaction(function () use ($roleId, $permissionIds) {
+            $role = Role::query()->lockForUpdate()->find($roleId);
+            if (! $role) {
+                return;
+            }
 
-        $currentPermissionIds = $role->permissions()->pluck('permissions.id')->toArray();
+            $currentPermissionIds = $role->permissions()->pluck('permissions.id')->toArray();
+            $permissionIds = array_values(array_unique(array_map('intval', $permissionIds)));
+            $toDetach = array_diff($currentPermissionIds, $permissionIds);
+            $toAttach = array_diff($permissionIds, $currentPermissionIds);
 
-        // Log detachments
-        $toDetach = array_diff($currentPermissionIds, $permissionIds);
-        foreach ($toDetach as $permissionId) {
-            $this->observer->logPermissionDetachedFromRole($roleId, $permissionId);
-        }
+            $role->permissions()->sync($permissionIds);
 
-        // Log attachments
-        $toAttach = array_diff($permissionIds, $currentPermissionIds);
-        foreach ($toAttach as $permissionId) {
-            $this->observer->logPermissionAttachedToRole($roleId, $permissionId);
-        }
+            foreach ($toDetach as $permissionId) {
+                $this->observer->logPermissionDetachedFromRole($roleId, $permissionId);
+            }
 
-        $role->permissions()->sync($permissionIds);
+            foreach ($toAttach as $permissionId) {
+                $this->observer->logPermissionAttachedToRole($roleId, $permissionId);
+            }
+        });
     }
 }

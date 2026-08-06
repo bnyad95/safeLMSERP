@@ -27,30 +27,38 @@ use App\Models\University;
 use App\Models\User;
 use App\Services\RolePermissionService;
 use App\Support\OrganizationScope;
+use App\Support\PermissionRiskPolicy;
+use App\Support\RoleAccessPolicy;
+use App\Support\UserRolePolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ErpController extends Controller
 {
     public function dashboard()
     {
         $user = auth()->user();
+        $portalRoles = ['student', 'parent_user', 'librarian', 'receptionist'];
+        $hasNonPortalRole = $user?->roles()->whereNotIn('name', $portalRoles)->exists() ?? false;
+        $teacherBlockingRoles = array_values(array_diff(UserRolePolicy::HIGH_RISK_ROLES, ['teaching_assistant']));
+        $hasTeacherBlockingRole = $user?->hasAnyRole($teacherBlockingRoles) ?? false;
 
-        if ($user?->hasRole('student')) {
+        if ($user?->hasRole('student') && ! $hasNonPortalRole) {
             return redirect()->route('student-portal');
         }
 
-        if ($user?->hasRole('parent_user')) {
+        if ($user?->hasRole('parent_user') && ! $hasNonPortalRole) {
             return redirect()->route('parent.workspace');
         }
 
-        if ($user?->hasRole('librarian')) {
+        if ($user?->hasRole('librarian') && ! $hasNonPortalRole) {
             return redirect()->route('library.workspace');
         }
 
-        if ($user?->hasRole('receptionist')) {
+        if ($user?->hasRole('receptionist') && ! $hasNonPortalRole) {
             return redirect()->route('reception.workspace');
         }
 
@@ -58,7 +66,7 @@ class ErpController extends Controller
             return redirect()->route('analytics.index');
         }
 
-        if ($user?->hasRole('teacher') && ! $user->hasRole('super_administrator')) {
+        if ($user?->hasRole('teacher') && ! $hasTeacherBlockingRole) {
             return $this->teacherHomeDashboard($user);
         }
 
@@ -2437,9 +2445,9 @@ class ErpController extends Controller
     {
         $this->requireAnyRole('super_administrator');
 
-        $highRiskPermissionNames = $this->highRiskPermissionNames();
         $allPermissions = Permission::orderBy('name')->get(['id', 'name', 'display_name']);
         $roles = Role::with('permissions:id,name')
+            ->withCount('users')
             ->orderBy('display_name')
             ->get(['id', 'name', 'display_name', 'description']);
 
@@ -2453,6 +2461,7 @@ class ErpController extends Controller
             'role_id' => $request->integer('role_id') ?: null,
             'module' => $request->input('module', 'all'),
             'access' => in_array($request->input('access'), ['all', 'granted', 'missing'], true) ? $request->input('access') : 'all',
+            'risk' => in_array($request->input('risk'), ['all', 'critical', 'high', 'standard'], true) ? $request->input('risk') : 'all',
             'mode' => $request->input('mode') === 'edit' ? 'edit' : 'view',
             'q' => trim((string) $request->input('q', '')),
         ];
@@ -2461,15 +2470,22 @@ class ErpController extends Controller
             ? $roles->firstWhere('id', $filters['role_id'])
             : null;
 
+        if (! $selectedRole) {
+            $filters['access'] = 'all';
+        }
+
         $selectedPermissionNames = $selectedRole
             ? $selectedRole->permissions->pluck('name')->all()
             : [];
 
-        $permissions = $allPermissions->map(function (Permission $permission) use ($highRiskPermissionNames) {
+        $permissions = $allPermissions->map(function (Permission $permission) {
             $module = $this->accessMatrixModuleForPermission($permission->name);
+            $risk = PermissionRiskPolicy::metadata($permission->name);
             $permission->setAttribute('module_key', $module['key']);
             $permission->setAttribute('module_label', $module['label']);
-            $permission->setAttribute('is_high_risk', in_array($permission->name, $highRiskPermissionNames, true));
+            $permission->setAttribute('risk_level', $risk['level']);
+            $permission->setAttribute('risk_label', $risk['label']);
+            $permission->setAttribute('risk_reason', $risk['reason']);
 
             return $permission;
         })->filter(function (Permission $permission) use ($filters, $selectedRole, $selectedPermissionNames) {
@@ -2482,6 +2498,10 @@ class ErpController extends Controller
                 if (! str_contains($haystack, strtolower($filters['q']))) {
                     return false;
                 }
+            }
+
+            if ($filters['risk'] !== 'all' && $permission->getAttribute('risk_level') !== $filters['risk']) {
+                return false;
             }
 
             if ($selectedRole && $filters['access'] !== 'all') {
@@ -2501,11 +2521,48 @@ class ErpController extends Controller
 
         $permissionGroups = $permissions->groupBy(fn (Permission $permission) => $permission->getAttribute('module_label'));
         $editableRoles = $roles->where('name', '!=', 'super_administrator')->values();
+        $roleScopes = $roles->mapWithKeys(fn (Role $role) => [$role->id => RoleAccessPolicy::scopeFor($role)]);
+        $roleAccess = $permissions->mapWithKeys(function (Permission $permission) use ($roles) {
+            return [$permission->id => $roles->mapWithKeys(fn (Role $role) => [
+                $role->id => RoleAccessPolicy::accessFor(
+                    $role,
+                    $permission->name,
+                    $role->permissions->contains('name', $permission->name)
+                ),
+            ])];
+        });
+        $overrideCounts = collect();
+
+        if ($selectedRole) {
+            $overrideCounts = DB::table('permission_user')
+                ->join('role_user', 'role_user.user_id', '=', 'permission_user.user_id')
+                ->join('users', 'users.id', '=', 'permission_user.user_id')
+                ->where('role_user.role_id', $selectedRole->id)
+                ->whereNull('users.deleted_at')
+                ->select('permission_user.permission_id', 'permission_user.effect', DB::raw('COUNT(DISTINCT permission_user.user_id) as aggregate'))
+                ->groupBy('permission_user.permission_id', 'permission_user.effect')
+                ->get()
+                ->groupBy('permission_id')
+                ->map(fn ($rows) => [
+                    'grant' => (int) ($rows->firstWhere('effect', 'grant')->aggregate ?? 0),
+                    'deny' => (int) ($rows->firstWhere('effect', 'deny')->aggregate ?? 0),
+                ]);
+        }
+
+        $permissionSignature = $selectedRole
+            ? RoleAccessPolicy::permissionSignature($selectedRole->permissions->pluck('id'))
+            : null;
+        $selectedRoleImpact = $selectedRole ? [
+            'users' => $selectedRole->users_count,
+            'scope' => $roleScopes[$selectedRole->id],
+            'direct_grants' => $overrideCounts->sum('grant'),
+            'direct_denies' => $overrideCounts->sum('deny'),
+        ] : null;
 
         $stats = [
             ['label' => 'Roles', 'value' => $roles->count(), 'detail' => $editableRoles->count().' editable'],
             ['label' => 'Permissions', 'value' => $allPermissions->count(), 'detail' => $permissions->count().' in view'],
-            ['label' => 'High-risk grants', 'value' => $roles->sum(fn (Role $role) => $role->permissions->whereIn('name', $highRiskPermissionNames)->count()), 'detail' => 'Review regularly'],
+            ['label' => 'Sensitive grants', 'value' => $roles->sum(fn (Role $role) => $role->permissions->filter(fn (Permission $permission) => PermissionRiskPolicy::isSensitive($permission->name))->count()), 'detail' => 'High and critical assignments'],
             ['label' => 'Empty roles', 'value' => $roles->filter(fn (Role $role) => $role->permissions->isEmpty())->count(), 'detail' => 'No permissions assigned'],
         ];
 
@@ -2519,7 +2576,12 @@ class ErpController extends Controller
             'selectedRole',
             'selectedPermissionNames',
             'stats',
-            'editableRoles'
+            'editableRoles',
+            'roleScopes',
+            'roleAccess',
+            'overrideCounts',
+            'permissionSignature',
+            'selectedRoleImpact'
         ));
     }
 
@@ -2532,39 +2594,27 @@ class ErpController extends Controller
         $validated = $request->validate([
             'permission_ids' => ['array'],
             'permission_ids.*' => ['integer', Rule::exists('permissions', 'id')],
+            'permission_signature' => ['required', 'string', 'size:64'],
             'confirm_permission_change' => ['accepted'],
         ]);
 
-        $rolePermissionService->syncRolePermissions($role->id, $validated['permission_ids'] ?? []);
+        DB::transaction(function () use ($role, $validated, $rolePermissionService) {
+            $lockedRole = Role::query()->lockForUpdate()->findOrFail($role->id);
+            $currentPermissionIds = $lockedRole->permissions()->pluck('permissions.id');
+            $currentSignature = RoleAccessPolicy::permissionSignature($currentPermissionIds);
+
+            if (! hash_equals($currentSignature, $validated['permission_signature'])) {
+                throw ValidationException::withMessages([
+                    'permissions' => 'This role changed after you opened the page. Review the latest permissions before saving again.',
+                ]);
+            }
+
+            $rolePermissionService->syncRolePermissions($lockedRole->id, $validated['permission_ids'] ?? []);
+        });
 
         return redirect()
             ->route('access-matrix', ['role_id' => $role->id, 'mode' => 'edit'])
             ->with('status', 'Permissions updated for '.$role->display_name.'.');
-    }
-
-    private function highRiskPermissionNames(): array
-    {
-        return [
-            'users.create',
-            'users.update',
-            'users.assign_roles',
-            'users.reset_password',
-            'students.archive',
-            'teachers.archive',
-            'courses.archive',
-            'enrollments.manage',
-            'timetable.manage',
-            'finance.create_invoice',
-            'finance.record_payment',
-            'finance.approve_payment',
-            'finance.approve_expense',
-            'finance.refund',
-            'marks.enter',
-            'marks.review',
-            'marks.approve',
-            'marks.publish',
-            'reports.audit',
-        ];
     }
 
     private function accessMatrixModuleForPermission(string $permissionName): array
@@ -2584,6 +2634,7 @@ class ErpController extends Controller
             'marks', 'exams', 'results' => ['key' => 'results', 'label' => 'Results'],
             'finance' => ['key' => 'finance', 'label' => 'Finance'],
             'reports', 'analytics' => ['key' => 'reports', 'label' => 'Reports & Analytics'],
+            'academic_setup' => ['key' => 'academic_setup', 'label' => 'Academic Setup'],
             'users', 'roles', 'permissions' => ['key' => 'users', 'label' => 'Users & Access'],
             'data', 'import', 'export' => ['key' => 'data', 'label' => 'Data Exchange'],
             default => ['key' => 'system', 'label' => 'System'],

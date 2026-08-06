@@ -32,6 +32,8 @@ class PasswordController extends Controller
             'password' => Hash::make($validated['password']),
             'must_change_password' => false,
         ]);
+        $request->session()->put('auth.password_fingerprint', hash('sha256', $request->user()->getAuthPassword()));
+        $request->session()->put('auth.password_fingerprint_user_id', $request->user()->getAuthIdentifier());
 
         if ($wasForced) {
             return redirect()->route('dashboard')->with('status', 'password-updated');
