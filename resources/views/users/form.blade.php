@@ -64,7 +64,7 @@
                 <select id="user-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                     <option value="">Not assigned</option>
                     @foreach($colleges as $college)
-                        <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected((int) old('college_id', $user->college_id ?? 0) === $college->id)>{{ $college->name }} / {{ $college->university->name ?? 'University' }}</option>
+                        <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected((int) old('college_id', $user->college_id ?? 0) === $college->id)>{{ $college->name }} / {{ $college->university?->name ?? 'University' }}</option>
                     @endforeach
                 </select>
             </div>
@@ -73,7 +73,7 @@
                 <select id="user-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                     <option value="">Not assigned</option>
                     @foreach($departments as $department)
-                        <option value="{{ $department->id }}" data-college-id="{{ $department->college_id }}" data-university-id="{{ $department->university_id }}" @selected((int) old('department_id', $user->department_id ?? 0) === $department->id)>{{ $department->name }} / {{ $department->college->name ?? $department->university->name ?? 'Organization' }}</option>
+                        <option value="{{ $department->id }}" data-college-id="{{ $department->college_id }}" data-university-id="{{ $department->university_id }}" @selected((int) old('department_id', $user->department_id ?? 0) === $department->id)>{{ $department->name }} / {{ $department->college?->name ?? $department->university?->name ?? 'Organization' }}</option>
                     @endforeach
                 </select>
             </div>

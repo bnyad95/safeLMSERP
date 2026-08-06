@@ -136,7 +136,7 @@
                                     <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
                                         @php
                                             $requiresScope = $account->roles->pluck('name')->contains(fn ($roleName) => isset($organizationRoleScopes[$roleName]));
-                                            $organizationName = $account->department->name ?? $account->college->name ?? $account->university->name;
+                                            $organizationName = $account->department?->name ?? $account->college?->name ?? $account->university?->name;
                                         @endphp
                                         @if($organizationName)
                                             {{ $organizationName }}

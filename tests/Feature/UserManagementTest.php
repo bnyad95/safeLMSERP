@@ -29,7 +29,8 @@ class UserManagementTest extends TestCase
 
         $this->actingAs($user)
             ->get('/users')
-            ->assertOk();
+            ->assertOk()
+            ->assertSee('Global');
     }
 
     public function test_non_super_admin_cannot_access_user_management_index(): void
