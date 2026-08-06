@@ -189,6 +189,19 @@ const initializeFinanceDashboardCharts = async () => {
 
 initializeFinanceDashboardCharts();
 
+document.querySelectorAll('form[data-submit-once]').forEach((form) => {
+	form.addEventListener('submit', () => {
+		const button = form.querySelector('button[type="submit"]');
+		if (!button || button.disabled) {
+			return;
+		}
+
+		button.disabled = true;
+		button.classList.add('cursor-wait', 'opacity-70');
+		button.textContent = button.dataset.submittingText || 'Processing...';
+	});
+});
+
 const debounce = (callback, delay = 250) => {
 	let timeoutId;
 

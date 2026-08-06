@@ -544,16 +544,24 @@ class FinanceController extends Controller
     public function approve(Request $request, FinanceTransaction $financeTransaction)
     {
         $this->authorizeFinanceApproval($financeTransaction);
-        abort_unless($financeTransaction->status === 'pending' && $financeTransaction->posting_status === 'pending', 422);
-        abort_if(
-            ! $request->user()->hasRole('super_administrator') && $financeTransaction->recorded_by === $request->user()->id,
-            422,
-            'A finance record must be approved by a different authorized user.'
-        );
 
-        DB::transaction(function () use ($request, $financeTransaction) {
+        if ($financeTransaction->status !== 'pending' || $financeTransaction->posting_status !== 'pending') {
+            return redirect()
+                ->route('finance.students.show', $financeTransaction->student_id)
+                ->with('error', 'This finance record is no longer waiting for approval.');
+        }
+
+        if (! $request->user()->hasRole('super_administrator') && $financeTransaction->recorded_by === $request->user()->id) {
+            return redirect()
+                ->route('finance.students.show', $financeTransaction->student_id)
+                ->with('error', 'A finance record must be approved by a different authorized user.');
+        }
+
+        $approved = DB::transaction(function () use ($request, $financeTransaction) {
             $financeTransaction = FinanceTransaction::query()->whereKey($financeTransaction->id)->lockForUpdate()->firstOrFail();
-            abort_unless($financeTransaction->status === 'pending' && $financeTransaction->posting_status === 'pending', 422);
+            if ($financeTransaction->status !== 'pending' || $financeTransaction->posting_status !== 'pending') {
+                return false;
+            }
 
             if ($financeTransaction->invoice_transaction_id && in_array($financeTransaction->type, FinanceTransaction::creditTypes(), true)) {
                 $invoice = FinanceTransaction::query()->whereKey($financeTransaction->invoice_transaction_id)->lockForUpdate()->firstOrFail();
@@ -584,7 +592,15 @@ class FinanceController extends Controller
             $this->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
             $this->refreshAllocatedInvoice($financeTransaction);
             $this->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
+
+            return true;
         });
+
+        if (! $approved) {
+            return redirect()
+                ->route('finance.students.show', $financeTransaction->student_id)
+                ->with('error', 'This finance record was already processed by another user.');
+        }
 
         return redirect()
             ->route('finance.students.show', $financeTransaction->student_id)

@@ -706,7 +706,45 @@ class FinanceTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('finance.transactions.approve', $transaction))
-            ->assertStatus(422);
+            ->assertRedirect(route('finance.students.show', $student))
+            ->assertSessionHas('error', 'This finance record is no longer waiting for approval.');
+    }
+
+    public function test_finance_list_only_offers_approval_for_pending_unposted_records(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        $postedInvoice = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '1000',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'posting_status' => 'posted',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-TEST01',
+            'transaction_date' => '2026-07-10',
+        ]);
+        $pendingPayment = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'invoice_transaction_id' => $postedInvoice->id,
+            'recorded_by' => $admin->id,
+            'type' => 'payment',
+            'amount' => '100',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'posting_status' => 'pending',
+            'payment_status' => 'open',
+            'receipt_number' => 'RCT-2026-TEST01',
+            'transaction_date' => '2026-07-10',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('finance'))
+            ->assertOk()
+            ->assertDontSee(route('finance.transactions.approve', $postedInvoice), false)
+            ->assertSee(route('finance.transactions.approve', $pendingPayment), false);
     }
 
     public function test_finance_rejects_over_allocated_invoice_payment(): void
@@ -936,7 +974,8 @@ class FinanceTest extends TestCase
 
         $this->actingAs($recorder)
             ->post(route('finance.transactions.approve', $payment))
-            ->assertStatus(422);
+            ->assertRedirect(route('finance.students.show', $student))
+            ->assertSessionHas('error', 'A finance record must be approved by a different authorized user.');
 
         $this->actingAs($approver)
             ->post(route('finance.transactions.approve', $payment))

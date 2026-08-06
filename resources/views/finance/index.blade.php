@@ -218,10 +218,10 @@
                                         <p class="text-xs text-red-700">Voided {{ $transaction->voided_at->format('Y-m-d H:i') }}</p>
                                     @endif
 
-                                    @if(($canApproveFinance && $transaction->status === 'pending') || ($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id))
+                                    @if(($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending') || ($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id))
                                         <div class="flex flex-col gap-2">
-                                            @if($canApproveFinance && $transaction->status === 'pending')
-                                                <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}">
+                                            @if($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending')
+                                                <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}" data-submit-once>
                                                     @csrf
                                                     <button type="submit" class="w-full rounded-md bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
                                                 </form>
@@ -308,8 +308,8 @@
                                             </td>
                                             <td class="px-5 py-3 text-right">
                                                 <div class="flex flex-col items-end gap-2">
-                                                    @if($canApproveFinance && $transaction->status === 'pending')
-                                                        <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}">
+                                                    @if($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending')
+                                                        <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}" data-submit-once>
                                                             @csrf
                                                             <button type="submit" class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
                                                         </form>
