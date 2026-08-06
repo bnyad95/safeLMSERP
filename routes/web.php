@@ -310,6 +310,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/finance/students/{student}', [FinanceController::class, 'showStudent'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.students.show');
+    Route::get('/finance/students/{student}/records/create', [FinanceController::class, 'createStudentRecord'])
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.record_expense,permission:finance.refund')
+        ->name('finance.students.records.create');
     Route::get('/finance/students/{student}/statement', [FinanceController::class, 'statement'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.statement');

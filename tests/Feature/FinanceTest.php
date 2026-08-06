@@ -1582,4 +1582,78 @@ class FinanceTest extends TestCase
             ->get(route('finance.students.show', $hidden))
             ->assertNotFound();
     }
+
+    public function test_add_finance_record_opens_on_a_dedicated_student_subpage(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee(route('finance.students.records.create', $student))
+            ->assertDontSee(route('finance.transactions.store'));
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.records.create', $student))
+            ->assertOk()
+            ->assertSee('Add Finance Record')
+            ->assertSee($student->full_name)
+            ->assertSee('Save Finance Record')
+            ->assertSee(route('finance.transactions.store'));
+    }
+
+    public function test_finance_viewer_without_write_permission_cannot_open_record_subpage(): void
+    {
+        $student = $this->makeStudent();
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.records.create', $student))
+            ->assertForbidden();
+    }
+
+    public function test_finance_record_subpage_enforces_student_organization_scope(): void
+    {
+        $visible = $this->makeStudent();
+        $otherUniversity = University::create(['name' => 'Other Record University', 'code' => 'ORU']);
+        $otherDepartment = Department::create(['university_id' => $otherUniversity->id, 'name' => 'Other Record Department']);
+        $hidden = Student::create([
+            'university_id' => $otherUniversity->id,
+            'department_id' => $otherDepartment->id,
+            'student_id' => 'ORU-1',
+            'full_name' => 'Hidden Finance Record Student',
+            'email' => 'hidden.finance.record@example.com',
+            'status' => 'Active',
+        ]);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
+        $accountant->update(['university_id' => $visible->university_id]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.records.create', $visible))
+            ->assertOk();
+        $this->actingAs($accountant)
+            ->get(route('finance.students.records.create', $hidden))
+            ->assertNotFound();
+    }
+
+    public function test_finance_record_validation_returns_to_the_record_subpage(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.records.create', $student))
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'payment',
+                'amount' => 0,
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.records.create', $student))
+            ->assertSessionHasErrors('amount');
+    }
 }

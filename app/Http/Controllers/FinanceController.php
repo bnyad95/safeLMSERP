@@ -137,9 +137,6 @@ class FinanceController extends Controller
         $selectedPaymentStatus = $this->paymentStatusForBalances($selectedBalances);
         $nextDueInvoice = $this->nextDueInvoiceQuery($student);
         $paymentPlanSummary = $this->paymentPlanSummaryQuery($student);
-        $allowedEntryTypes = $this->allowedFinanceEntryTypes($user);
-        $canPostImmediately = $user->hasRole('super_administrator');
-        $canCollectPayment = $canPostImmediately || $user->hasPermission('finance.record_payment');
 
         return view('finance.show', [
             'filters' => $filters,
@@ -155,19 +152,7 @@ class FinanceController extends Controller
             'filteredBalanceText' => $this->formatCurrencyTotals($filteredBalances, 'balance'),
             'selectedPaymentStatus' => $selectedPaymentStatus,
             'paymentPlanSummary' => $paymentPlanSummary,
-            'invoiceOptions' => $this->invoiceOptions($student),
             'filterOptions' => $this->financeFilterOptions($user),
-            'semesterOptions' => Semester::where('university_id', $student->university_id)
-                ->with('academicYear')
-                ->whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
-                ->orderByDesc('academic_year')
-                ->orderBy('start_date')
-                ->orderBy('name')
-                ->get(),
-            'academicYearOptions' => AcademicYear::where('university_id', $student->university_id)
-                ->whereIn('status', ['upcoming', 'active'])
-                ->orderByDesc('name')
-                ->get(),
             'tuitionAgreements' => $student->tuitionAgreements()
                 ->with('academicYear')
                 ->withCount('transactions')
@@ -182,18 +167,55 @@ class FinanceController extends Controller
                 'refund' => 'Refund',
             ],
             'statuses' => ['pending' => 'Pending', 'paid' => 'Paid', 'partial' => 'Partial', 'approved' => 'Approved', 'cancelled' => 'Cancelled'],
-            'creationStatuses' => $canPostImmediately
-                ? ['pending' => 'Pending approval', 'paid' => 'Post immediately']
-                : ['pending' => 'Pending approval'],
             'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'paid' => 'Paid', 'overdue' => 'Overdue', 'cancelled' => 'Cancelled'],
             'canCreateInvoice' => $user->hasRole('super_administrator') || $user->hasPermission('finance.create_invoice'),
             'canRecordPayment' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.record_payment', 'finance.record_expense', 'finance.refund']),
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
             'canVoidFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.refund', 'finance.approve_payment', 'finance.approve_expense']),
             'canManageAccountBlock' => $this->canManageStudentAccountBlock($user),
+        ]);
+    }
+
+    public function createStudentRecord(Request $request, Student $student)
+    {
+        $this->authorizeStudentFinanceView($request->user());
+        $this->authorizeStudentScope($request->user(), $student);
+
+        $user = $request->user();
+        $allowedEntryTypes = $this->allowedFinanceEntryTypes($user);
+        abort_if($allowedEntryTypes === [], 403);
+
+        $student->load(['department.college', 'university']);
+        $canPostImmediately = $user->hasRole('super_administrator');
+
+        return view('finance.create', [
+            'selectedStudent' => $student,
+            'types' => [
+                'invoice' => 'Invoice / Tuition Charge',
+                'payment' => 'Payment',
+                'discount' => 'Discount',
+                'scholarship' => 'Scholarship',
+                'refund' => 'Refund',
+            ],
+            'creationStatuses' => $canPostImmediately
+                ? ['pending' => 'Pending approval', 'paid' => 'Post immediately']
+                : ['pending' => 'Pending approval'],
             'allowedEntryTypes' => $allowedEntryTypes,
-            'canCollectPayment' => $canCollectPayment,
+            'canCreateInvoice' => in_array('invoice', $allowedEntryTypes, true),
+            'canCollectPayment' => $canPostImmediately || $user->hasPermission('finance.record_payment'),
             'canPostImmediately' => $canPostImmediately,
+            'invoiceOptions' => $this->invoiceOptions($student),
+            'semesterOptions' => Semester::where('university_id', $student->university_id)
+                ->with('academicYear')
+                ->whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
+                ->orderByDesc('academic_year')
+                ->orderBy('start_date')
+                ->orderBy('name')
+                ->get(),
+            'academicYearOptions' => AcademicYear::where('university_id', $student->university_id)
+                ->whereIn('status', ['upcoming', 'active'])
+                ->orderByDesc('name')
+                ->get(),
         ]);
     }
 

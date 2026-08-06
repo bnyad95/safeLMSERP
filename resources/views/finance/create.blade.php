@@ -1,0 +1,245 @@
+<x-app-layout>
+    <x-slot name="header">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Student Finance</p>
+                <h2 class="truncate text-2xl font-semibold text-gray-900 dark:text-gray-100">Add Finance Record</h2>
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {{ $selectedStudent->full_name }} / {{ $selectedStudent->student_id }}
+                </p>
+            </div>
+            <a href="{{ route('finance.students.show', $selectedStudent) }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                Back to Student Ledger
+            </a>
+        </div>
+    </x-slot>
+
+    @php
+        $initialFinanceType = old('type', $allowedEntryTypes[0] ?? 'invoice');
+        $initialPaymentPlan = old('payment_plan', 'full');
+        $initialSemesterIds = collect(old('semester_ids', []))->map(fn ($id) => (string) $id)->values();
+    @endphp
+
+    <div class="finance-workspace py-5 sm:py-8">
+        <div
+            x-data="{
+                recordType: @js($initialFinanceType),
+                paymentPlan: @js($initialPaymentPlan),
+                amount: @js(old('amount', '')),
+                selectedSemesters: @js($initialSemesterIds),
+                formattedAmount() {
+                    const amount = Number.parseFloat(this.amount || 0);
+
+                    return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+                },
+                perSemesterAmount() {
+                    const amount = Number.parseFloat(this.amount || 0);
+                    const count = this.selectedSemesters.length;
+
+                    return count > 0 ? (amount / count).toFixed(2) : '0.00';
+                }
+            }"
+            class="mx-auto max-w-4xl space-y-6 px-4 sm:px-6 lg:px-8"
+        >
+            <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5 dark:border-gray-800 dark:bg-gray-900">
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="min-w-0">
+                        <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student</p>
+                        <p class="mt-1 truncate font-semibold text-gray-900 dark:text-gray-100">{{ $selectedStudent->full_name }}</p>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student ID</p>
+                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200">{{ $selectedStudent->student_id }}</p>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">College</p>
+                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200">{{ $selectedStudent->department?->college?->name ?? 'Not assigned' }}</p>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Department</p>
+                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200">{{ $selectedStudent->department?->name ?? 'Not assigned' }}</p>
+                    </div>
+                </div>
+            </section>
+
+                <section class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5 dark:border-gray-800 dark:bg-gray-900">
+                    <div class="min-w-0">
+                        <h3 class="text-base font-semibold text-gray-900">Finance Record Details</h3>
+                        <p class="mt-1 text-sm text-gray-500">Invoice and receipt numbers are generated automatically unless you enter one.</p>
+                    </div>
+
+                    @if ($errors->any())
+                        <div class="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                            {{ $errors->first() }}
+                        </div>
+                    @endif
+
+                    <form method="POST" action="{{ route('finance.transactions.store') }}" class="mt-5 grid grid-cols-1 gap-4">
+                        @csrf
+                        <input type="hidden" name="student_id" value="{{ $selectedStudent->id }}">
+
+                        <div class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700">Type</label>
+                            <select name="type" x-model="recordType" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                @foreach($types as $value => $label)
+                                    @if(in_array($value, $allowedEntryTypes, true))
+                                        <option value="{{ $value }}" @selected($initialFinanceType === $value)>{{ $label }}</option>
+                                    @endif
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">
+                                    <span x-show="recordType === 'invoice'">Agreed Tuition Charge</span>
+                                    <span x-show="recordType !== 'invoice'">Amount</span>
+                                </label>
+                                <input type="number" step="0.01" min="0.01" name="amount" x-model="amount" value="{{ old('amount') }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                            </div>
+
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Currency</label>
+                                <select name="currency" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                    <option value="IQD" @selected(old('currency', 'IQD') === 'IQD')>IQD</option>
+                                    <option value="USD" @selected(old('currency') === 'USD')>USD</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        @if($canCreateInvoice)
+                            <div x-show="recordType === 'invoice'" class="min-w-0 rounded-md border border-blue-100 bg-blue-50 p-4">
+                                <label class="block text-sm font-semibold text-gray-900">Student tuition agreement</label>
+                                <p class="mt-1 text-xs text-blue-900">Enter the agreed tuition charge, choose how the student wants to pay it, and the system will create the correct invoice schedule.</p>
+                                <select name="payment_plan" x-model="paymentPlan" class="mt-3 block w-full min-w-0 rounded-md border-blue-200 bg-white text-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="full" @selected(old('payment_plan', 'full') === 'full')>Full tuition paid once</option>
+                                    <option value="semester" @selected(old('payment_plan') === 'semester')>Divide tuition by semesters</option>
+                                </select>
+
+                                <div x-show="paymentPlan === 'full'" class="mt-4 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-900">
+                                    <p>One tuition invoice will be created for <span class="font-semibold" x-text="formattedAmount()"></span>.</p>
+                                    @if($canCollectPayment)
+                                    <label class="mt-3 flex items-start gap-2">
+                                        <input type="checkbox" name="collect_now" value="1" @checked(old('collect_now')) class="mt-0.5 rounded border-blue-300 text-blue-600 focus:ring-blue-500">
+                                        <span>
+                                            <span class="block font-semibold">Collect the full payment now</span>
+                                            <span class="block text-xs">{{ $canPostImmediately ? 'Posts immediately and generates a receipt.' : 'Records a payment for independent approval before posting.' }}</span>
+                                        </span>
+                                    </label>
+                                    @endif
+                                </div>
+
+                                <div x-show="paymentPlan === 'semester'" class="mt-4 space-y-3">
+                                    <div class="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-900">
+                                        The total tuition charge will be divided into
+                                        <span class="font-semibold" x-text="selectedSemesters.length"></span>
+                                        semester invoices:
+                                        <span class="font-semibold" x-text="perSemesterAmount()"></span>
+                                        each.
+                                    </div>
+
+                                    <div class="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+                                        @forelse($semesterOptions as $semester)
+                                            <label class="flex min-w-0 items-start gap-2 rounded-md border border-blue-100 bg-white p-3 text-sm {{ $semester->end_date ? '' : 'opacity-60' }}">
+                                                <input
+                                                    type="checkbox"
+                                                    name="semester_ids[]"
+                                                    value="{{ $semester->id }}"
+                                                    x-model="selectedSemesters"
+                                                    @disabled(! $semester->end_date)
+                                                    @checked(in_array((string) $semester->id, old('semester_ids', []), true))
+                                                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                >
+                                                <span class="min-w-0">
+                                                    <span class="block truncate font-medium text-gray-900">{{ $semester->name }} {{ $semester->academic_year }}</span>
+                                                    <span class="block text-xs text-gray-500">{{ $semester->end_date ? 'Due '.\Illuminate\Support\Carbon::parse($semester->end_date)->format('Y-m-d') : 'Missing semester end date' }}</span>
+                                                </span>
+                                            </label>
+                                        @empty
+                                            <span class="text-sm text-blue-900">No semesters are defined for this student's university yet.</span>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+
+                        <div class="min-w-0" x-show="recordType !== 'invoice'">
+                            <label class="block text-sm font-medium text-gray-700">Status</label>
+                            <select name="status" :disabled="recordType === 'invoice'" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                @foreach(($creationStatuses ?? $statuses) as $value => $label)
+                                    <option value="{{ $value }}" @selected(old('status', 'pending') === $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <input type="hidden" name="status" value="pending" :disabled="recordType !== 'invoice'">
+
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Transaction Date</label>
+                                <input type="date" name="transaction_date" value="{{ old('transaction_date', now()->toDateString()) }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                            </div>
+                            <div x-show="recordType !== 'invoice' || paymentPlan !== 'semester'" class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Due Date</label>
+                                <input type="date" name="due_date" value="{{ old('due_date') }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Reference</label>
+                                <input type="text" name="reference" value="{{ old('reference') }}" placeholder="Receipt, invoice, voucher..." class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Academic Year</label>
+                                <select name="academic_year_id" :required="recordType === 'invoice'" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">Select academic year</option>
+                                    @foreach($academicYearOptions as $academicYear)
+                                        <option value="{{ $academicYear->id }}" @selected(old('academic_year_id') == $academicYear->id)>{{ $academicYear->name }} / {{ ucfirst($academicYear->status) }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div x-show="recordType === 'invoice'" class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Invoice Number</label>
+                                <input type="text" name="invoice_number" value="{{ old('invoice_number') }}" placeholder="Auto for invoices" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                            <div x-show="recordType !== 'invoice'" class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Receipt Number</label>
+                                <input type="text" name="receipt_number" value="{{ old('receipt_number') }}" placeholder="Auto for payments/credits" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                        </div>
+
+                        <div x-show="['payment', 'discount', 'scholarship'].includes(recordType)" class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700">Apply Credit To Invoice</label>
+                            <select name="invoice_transaction_id" class="mt-1 block w-full min-w-0 truncate rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">No invoice allocation</option>
+                                @foreach($invoiceOptions as $invoice)
+                                    <option value="{{ $invoice->id }}" @selected(old('invoice_transaction_id') == $invoice->id)>
+                                        {{ $invoice->documentNumber() }} / {{ number_format((float) ($invoice->remaining_amount ?? $invoice->amount), 2) }} {{ $invoice->currency }} remaining / {{ ucfirst($invoice->payment_status) }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">Used for payments, discounts, and scholarships. Currency and student must match the invoice.</p>
+                        </div>
+
+                        <div class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700">Notes</label>
+                            <textarea name="notes" rows="3" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('notes') }}</textarea>
+                        </div>
+
+                        <div class="flex flex-col-reverse gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:justify-end dark:border-gray-800">
+                            <a href="{{ route('finance.students.show', $selectedStudent) }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                                Cancel
+                            </a>
+                            <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto dark:bg-blue-600 dark:hover:bg-blue-500">
+                                Save Finance Record
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+        </div>
+    </div>
+</x-app-layout>
