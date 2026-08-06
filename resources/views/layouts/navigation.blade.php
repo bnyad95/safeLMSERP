@@ -167,8 +167,9 @@
                         $canClassrooms = $navUser->hasAnyRole(['teacher', 'teaching_assistant', 'administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'lms_administrator']);
                         $teachingBlockingRoles = array_values(array_diff(\App\Support\UserRolePolicy::HIGH_RISK_ROLES, ['teaching_assistant']));
                         $usesTeachingWorkspace = $navUser->hasAnyRole(['teacher', 'teaching_assistant']) && ! $navUser->hasAnyRole($teachingBlockingRoles);
+                        $hasFinanceRole = $navUser->hasAnyRole(['chief_accountant', 'accountant']);
                         $canFinance = $isSuper
-                            || $navUser->hasAnyRole(['chief_accountant', 'accountant'])
+                            || ($hasFinanceRole && $navUser->hasPermission('finance.view'))
                             || $navUser->hasDirectPermissionGrant('finance.view');
                         $canTuitionReminders = $canFinance && ($isSuper
                             || ($navUser->hasPermission('finance.view') && $navUser->hasAnyPermission(['finance.create_invoice', 'finance.record_payment'])));

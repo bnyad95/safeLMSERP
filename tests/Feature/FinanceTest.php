@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AcademicYear;
 use App\Models\AppNotification;
+use App\Models\College;
 use App\Models\Department;
 use App\Models\FinanceTransaction;
 use App\Models\Permission;
@@ -376,7 +377,12 @@ class FinanceTest extends TestCase
                 'status' => 'pending',
                 'transaction_date' => '2026-07-09',
             ])
-            ->assertRedirect(route('finance.students.show', $student));
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+        ]);
     }
 
     public function test_finance_allocates_payments_to_invoices_and_approves_pending_records(): void
@@ -512,7 +518,7 @@ class FinanceTest extends TestCase
 
     public function test_finance_can_block_and_unblock_unpaid_student_login(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
         $student = $this->makeStudent();
         $accountant->update(['university_id' => $student->university_id]);
         $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
@@ -585,7 +591,7 @@ class FinanceTest extends TestCase
 
     public function test_finance_cannot_block_student_without_unpaid_balance(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
         $student = $this->makeStudent();
         $accountant->update(['university_id' => $student->university_id]);
         $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
@@ -898,8 +904,8 @@ class FinanceTest extends TestCase
     {
         $admin = $this->makeSuperAdmin();
         $student = $this->makeStudent();
-        $recorder = $this->makeFinanceUser('accountant', ['finance.record_payment', 'finance.approve_payment']);
-        $approver = $this->makeFinanceUser('chief_accountant', ['finance.approve_payment']);
+        $recorder = $this->makeFinanceUser('accountant', ['finance.view', 'finance.record_payment', 'finance.approve_payment']);
+        $approver = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.approve_payment']);
         $recorder->update(['university_id' => $student->university_id]);
         $approver->update(['university_id' => $student->university_id]);
 
@@ -1051,7 +1057,7 @@ class FinanceTest extends TestCase
 
     public function test_scoped_accountant_only_sees_students_in_assigned_university(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
         $visible = $this->makeStudent();
         $otherUniversity = University::create(['name' => 'Other University', 'code' => 'OTHER']);
         $otherDepartment = Department::create(['university_id' => $otherUniversity->id, 'name' => 'Law']);
@@ -1194,7 +1200,7 @@ class FinanceTest extends TestCase
 
     public function test_scoped_finance_user_cannot_block_student_in_another_university(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
         $visible = $this->makeStudent();
         $accountant->update(['university_id' => $visible->university_id]);
         $otherUniversity = University::create(['name' => 'Scoped Out University', 'code' => 'SOU']);
@@ -1221,7 +1227,7 @@ class FinanceTest extends TestCase
 
     public function test_finance_workspace_does_not_remove_a_non_finance_account_hold(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
         $student = $this->makeStudent();
         $accountant->update(['university_id' => $student->university_id]);
         $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student User']);
@@ -1247,7 +1253,7 @@ class FinanceTest extends TestCase
 
     public function test_non_super_finance_user_cannot_post_a_payment_without_approval(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.record_payment']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.record_payment']);
         $student = $this->makeStudent();
         $accountant->update(['university_id' => $student->university_id]);
 
@@ -1272,7 +1278,7 @@ class FinanceTest extends TestCase
 
     public function test_collecting_tuition_now_requires_payment_recording_permission(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.create_invoice']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice']);
         $student = $this->makeStudent();
         $accountant->update(['university_id' => $student->university_id]);
 
@@ -1296,7 +1302,7 @@ class FinanceTest extends TestCase
 
     public function test_non_super_collected_tuition_payment_waits_for_independent_approval(): void
     {
-        $accountant = $this->makeFinanceUser('accountant', ['finance.create_invoice', 'finance.record_payment']);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
         $student = $this->makeStudent();
         $accountant->update(['university_id' => $student->university_id]);
 
@@ -1411,5 +1417,169 @@ class FinanceTest extends TestCase
             ->assertSee('Accounting &amp; Finance', false)
             ->assertSee('Student Finance')
             ->assertSee('Tuition Reminders');
+    }
+
+    public function test_direct_finance_view_denial_overrides_finance_role_everywhere(): void
+    {
+        $university = University::create(['name' => 'Denied Finance University', 'code' => 'DFU']);
+        $department = Department::create(['university_id' => $university->id, 'name' => 'Denied Finance Department']);
+        $student = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'student_id' => 'DFU-1',
+            'full_name' => 'Denied Finance Student',
+            'email' => 'denied.finance.student@example.com',
+            'status' => 'Active',
+        ]);
+        $role = Role::create(['name' => 'accountant', 'display_name' => 'Finance Officer']);
+        $viewPermission = Permission::create(['name' => 'finance.view', 'display_name' => 'View finance']);
+        $invoicePermission = Permission::create(['name' => 'finance.create_invoice', 'display_name' => 'Create invoices']);
+        $role->permissions()->attach([$viewPermission->id, $invoicePermission->id]);
+        $accountant = User::factory()->create(['university_id' => $university->id]);
+        $accountant->roles()->attach($role);
+        $accountant->permissionOverrides()->attach($viewPermission, ['effect' => 'deny']);
+
+        $this->actingAs($accountant)->get(route('finance'))->assertForbidden();
+        $this->actingAs($accountant)->get(route('finance.students.show', $student))->assertForbidden();
+        $this->actingAs($accountant)->get(route('finance.statement', $student))->assertForbidden();
+        $this->actingAs($accountant)
+            ->post(route('finance.students.account-block.store', $student), ['reason' => 'Should not be allowed'])
+            ->assertForbidden();
+        $this->actingAs($accountant)
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertDontSee('Accounting &amp; Finance', false)
+            ->assertDontSee('Student Finance');
+    }
+
+    public function test_direct_global_finance_grant_can_view_students_across_universities(): void
+    {
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view', 'finance.view_global']);
+        $firstStudent = $this->makeStudent();
+        $otherUniversity = University::create(['name' => 'Global Finance University', 'code' => 'GFU']);
+        $otherDepartment = Department::create(['university_id' => $otherUniversity->id, 'name' => 'Global Finance Department']);
+        $otherStudent = Student::create([
+            'university_id' => $otherUniversity->id,
+            'department_id' => $otherDepartment->id,
+            'student_id' => 'GFU-1',
+            'full_name' => 'Global Finance Student',
+            'email' => 'global.finance.student@example.com',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance', ['q' => 'Finance']))
+            ->assertOk()
+            ->assertSee($firstStudent->full_name)
+            ->assertSee($otherStudent->full_name);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $otherStudent))
+            ->assertOk();
+    }
+
+    public function test_role_assigned_global_finance_permission_does_not_bypass_organization_scope(): void
+    {
+        $firstStudent = $this->makeStudent();
+        $otherUniversity = University::create(['name' => 'Outside Finance University', 'code' => 'OFU']);
+        $otherDepartment = Department::create(['university_id' => $otherUniversity->id, 'name' => 'Outside Finance Department']);
+        $otherStudent = Student::create([
+            'university_id' => $otherUniversity->id,
+            'department_id' => $otherDepartment->id,
+            'student_id' => 'OFU-1',
+            'full_name' => 'Outside Finance Student',
+            'email' => 'outside.finance.student@example.com',
+            'status' => 'Active',
+        ]);
+        $role = Role::create(['name' => 'accountant', 'display_name' => 'Finance Officer']);
+        $viewPermission = Permission::create(['name' => 'finance.view', 'display_name' => 'View finance']);
+        $globalPermission = Permission::create(['name' => 'finance.view_global', 'display_name' => 'View global finance']);
+        $role->permissions()->attach([$viewPermission->id, $globalPermission->id]);
+        $accountant = User::factory()->create(['university_id' => $firstStudent->university_id]);
+        $accountant->roles()->attach($role);
+
+        $this->actingAs($accountant)
+            ->get(route('finance', ['q' => 'Finance']))
+            ->assertOk()
+            ->assertSee($firstStudent->full_name)
+            ->assertDontSee($otherStudent->full_name);
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $otherStudent))
+            ->assertNotFound();
+    }
+
+    public function test_college_scoped_finance_user_only_sees_students_in_assigned_college(): void
+    {
+        $university = University::create(['name' => 'College Scope University', 'code' => 'CSU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Science', 'code' => 'SCI']);
+        $otherCollege = College::create(['university_id' => $university->id, 'name' => 'Law', 'code' => 'LAW']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Physics']);
+        $otherDepartment = Department::create(['university_id' => $university->id, 'college_id' => $otherCollege->id, 'name' => 'Public Law']);
+        $visible = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'student_id' => 'CSU-1',
+            'full_name' => 'Scoped College Visible',
+            'email' => 'college.visible@example.com',
+            'status' => 'Active',
+        ]);
+        $hidden = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $otherDepartment->id,
+            'student_id' => 'CSU-2',
+            'full_name' => 'Scoped College Hidden',
+            'email' => 'college.hidden@example.com',
+            'status' => 'Active',
+        ]);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant->update(['university_id' => $university->id, 'college_id' => $college->id]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance', ['q' => 'Scoped College']))
+            ->assertOk()
+            ->assertSee($visible->full_name)
+            ->assertDontSee($hidden->full_name);
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $hidden))
+            ->assertNotFound();
+    }
+
+    public function test_department_scoped_finance_user_only_sees_students_in_assigned_department(): void
+    {
+        $university = University::create(['name' => 'Department Scope University', 'code' => 'DSU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Engineering', 'code' => 'ENG']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Software']);
+        $otherDepartment = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Civil']);
+        $visible = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'student_id' => 'DSU-1',
+            'full_name' => 'Scoped Department Visible',
+            'email' => 'department.visible@example.com',
+            'status' => 'Active',
+        ]);
+        $hidden = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $otherDepartment->id,
+            'student_id' => 'DSU-2',
+            'full_name' => 'Scoped Department Hidden',
+            'email' => 'department.hidden@example.com',
+            'status' => 'Active',
+        ]);
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant->update([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+        ]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance', ['q' => 'Scoped Department']))
+            ->assertOk()
+            ->assertSee($visible->full_name)
+            ->assertDontSee($hidden->full_name);
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $hidden))
+            ->assertNotFound();
     }
 }

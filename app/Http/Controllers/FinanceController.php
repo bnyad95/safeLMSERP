@@ -719,7 +719,9 @@ class FinanceController extends Controller
                 ->oldest();
 
             if (! $studentId) {
-                OrganizationScope::apply($query, $user, 'student_record');
+                if (! $this->hasGlobalFinanceScope($user)) {
+                    OrganizationScope::apply($query, $user, 'student_record');
+                }
                 $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
             }
 
@@ -1377,6 +1379,8 @@ class FinanceController extends Controller
             return;
         }
 
+        abort_unless($user->hasPermission('finance.view'), 403);
+
         $permission = match ($type) {
             'invoice' => 'finance.create_invoice',
             'payment' => 'finance.record_payment',
@@ -1426,6 +1430,7 @@ class FinanceController extends Controller
     {
         $user = auth()->user();
         abort_unless($user, 403);
+        abort_unless($user->hasPermission('finance.view'), 403);
         $this->authorizeFinanceTransactionScope($user, $transaction);
 
         if ($user->hasRole('super_administrator')) {
@@ -1443,6 +1448,7 @@ class FinanceController extends Controller
     {
         $user = auth()->user();
         abort_unless($user, 403);
+        abort_unless($user->hasPermission('finance.view'), 403);
         $this->authorizeFinanceTransactionScope($user, $transaction);
 
         if ($user->hasRole('super_administrator')) {
@@ -1468,8 +1474,7 @@ class FinanceController extends Controller
             return false;
         }
 
-        return $user->hasAnyRole(['super_administrator', 'chief_accountant', 'accountant'])
-            || $user->hasDirectPermissionGrant('finance.view');
+        return $user->hasPermission('finance.view');
     }
 
     private function canManageStudentAccountBlock(?User $user): bool
@@ -1478,9 +1483,8 @@ class FinanceController extends Controller
             return false;
         }
 
-        return $user->hasRole('super_administrator')
-            || $user->hasAnyRole(['chief_accountant', 'accountant'])
-            || $user->hasAnyDirectPermissionGrant(['finance.create_invoice', 'finance.record_payment', 'finance.approve_payment']);
+        return $user->hasPermission('finance.view')
+            && $user->hasAnyPermission(['finance.create_invoice', 'finance.record_payment', 'finance.approve_payment']);
     }
 
     private function validatedInvoiceAllocation(array $transaction): ?int
@@ -1517,7 +1521,9 @@ class FinanceController extends Controller
     private function scopedStudentQuery(User $user)
     {
         $query = Student::query();
-        OrganizationScope::apply($query, $user, 'student');
+        if (! $this->hasGlobalFinanceScope($user)) {
+            OrganizationScope::apply($query, $user, 'student');
+        }
         $this->applyFinanceOrganizationConstraint($query, $user, 'student');
 
         return $query;
@@ -1526,7 +1532,9 @@ class FinanceController extends Controller
     private function scopedFinanceQuery(User $user)
     {
         $query = FinanceTransaction::query();
-        OrganizationScope::apply($query, $user, 'student_record');
+        if (! $this->hasGlobalFinanceScope($user)) {
+            OrganizationScope::apply($query, $user, 'student_record');
+        }
         $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
 
         return $query;
@@ -1534,10 +1542,7 @@ class FinanceController extends Controller
 
     private function applyFinanceOrganizationConstraint($query, User $user, string $modelType): void
     {
-        if (
-            $user->hasRole('super_administrator')
-            || $user->hasDirectPermissionGrant('finance.view_global')
-        ) {
+        if ($this->hasGlobalFinanceScope($user)) {
             return;
         }
 
@@ -1584,6 +1589,12 @@ class FinanceController extends Controller
         }
 
         $query->whereRaw('1 = 0');
+    }
+
+    private function hasGlobalFinanceScope(User $user): bool
+    {
+        return $user->hasRole('super_administrator')
+            || $user->hasDirectPermissionGrant('finance.view_global');
     }
 
     private function authorizeStudentScope(User $user, Student $student): void
