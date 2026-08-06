@@ -104,6 +104,104 @@ class ErpPagesTest extends TestCase
             ->assertOk();
     }
 
+    public function test_institution_type_enforces_its_fixed_academic_structure(): void
+    {
+        $admin = $this->makeSuperAdmin();
+
+        $this->actingAs($admin)
+            ->get(route('universities.create'))
+            ->assertOk()
+            ->assertSee('Automatic academic structure')
+            ->assertSee('Standard program semesters');
+
+        $this->actingAs($admin)
+            ->post(route('universities.store'), [
+                'name' => 'Technical Institute',
+                'code' => 'TI',
+                'institution_type' => 'institute',
+                'expected_stage_count' => 9,
+                'expected_semesters_per_year' => 4,
+            ])
+            ->assertRedirect(route('universities.index'));
+
+        $institute = University::where('code', 'TI')->firstOrFail();
+        $this->assertSame(2, $institute->expected_stage_count);
+        $this->assertSame(2, $institute->expected_semesters_per_year);
+        $this->assertSame(4, $institute->expectedProgramSemesterCount());
+
+        $this->actingAs($admin)
+            ->post(route('universities.store'), [
+                'name' => 'Structure University',
+                'code' => 'SU',
+                'institution_type' => 'university',
+                'expected_stage_count' => 1,
+                'expected_semesters_per_year' => 1,
+            ])
+            ->assertRedirect(route('universities.index'));
+
+        $university = University::where('code', 'SU')->firstOrFail();
+        $this->assertSame(4, $university->expected_stage_count);
+        $this->assertSame(2, $university->expected_semesters_per_year);
+        $this->assertSame(8, $university->expectedProgramSemesterCount());
+    }
+
+    public function test_university_with_advanced_stages_cannot_be_changed_to_an_institute(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Four Stage University', 'code' => 'FSU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Science', 'code' => 'SCI']);
+        $department = Department::create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'name' => 'Computing',
+            'code' => 'COMP',
+        ]);
+        Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('universities.update', $university), [
+                'name' => $university->name,
+                'code' => $university->code,
+                'institution_type' => 'institute',
+            ])
+            ->assertSessionHasErrors('institution_type');
+
+        $this->assertSame('university', $university->fresh()->institution_type);
+    }
+
+    public function test_institute_rejects_a_third_stage(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $institute = University::create(['name' => 'Two Stage Institute', 'code' => 'TSI', 'institution_type' => 'institute']);
+        $college = College::create(['university_id' => $institute->id, 'name' => 'Technical College', 'code' => 'TC']);
+        $department = Department::create([
+            'university_id' => $institute->id,
+            'college_id' => $college->id,
+            'name' => 'Information Technology',
+            'code' => 'IT',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('stages.store'), [
+                'college_id' => $college->id,
+                'department_id' => $department->id,
+                'name' => 'Stage 3',
+                'code' => 'S3',
+                'sequence' => 3,
+            ])
+            ->assertSessionHasErrors('sequence');
+
+        $this->assertDatabaseMissing('stages', [
+            'department_id' => $department->id,
+            'sequence' => 3,
+        ]);
+    }
+
     public function test_bologna_definition_and_setup_are_available_to_academic_administrator(): void
     {
         $university = University::create(['name' => 'BND University', 'code' => 'BND']);

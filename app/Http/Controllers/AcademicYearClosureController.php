@@ -18,12 +18,17 @@ use App\Models\EnrollmentEvent;
 use App\Models\FinanceTransaction;
 use App\Models\Mark;
 use App\Models\Semester;
+use App\Models\Stage;
+use App\Models\Student;
+use App\Models\StudentProgressionException;
 use App\Models\Timetable;
 use App\Models\User;
+use App\Services\StudentProgressionService;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AcademicYearClosureController extends Controller
 {
@@ -532,8 +537,14 @@ class AcademicYearClosureController extends Controller
                 ->with('error', 'Academic year cannot be closed until missing and unpublished results are completed.');
         }
 
-        DB::transaction(function () use ($request, $summary, $validated) {
+        $progressionReport = null;
+        DB::transaction(function () use ($request, $summary, $validated, &$progressionReport) {
             if ($summary['section_ids']->isNotEmpty()) {
+                $progressionReport = app(StudentProgressionService::class)->process(
+                    $summary['section_ids'],
+                    $validated['academic_year'],
+                    $request->user()
+                );
                 $this->archiveCurrentEnrollments($request, $summary);
 
                 CourseSection::whereIn('id', $summary['section_ids'])
@@ -546,6 +557,7 @@ class AcademicYearClosureController extends Controller
             }
 
             $closureSummary = $this->buildSummary($validated['academic_year'], true);
+            $closureSummary['snapshot']['progression'] = $progressionReport;
             $this->archiveYearRecords($closureSummary, $validated['academic_year']);
 
             foreach ($closureSummary['university_ids'] as $universityId) {
@@ -573,6 +585,64 @@ class AcademicYearClosureController extends Controller
             ->with('success', 'Academic year closed and archived. Current rosters were completed, waitlists were cleared, and year records were moved to archive history.');
     }
 
+    public function storeProgressionException(Request $request)
+    {
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $validated = $request->validate([
+            'academic_year' => ['required', 'string', 'max:20'],
+            'student_id' => ['required', 'integer', 'exists:students,id'],
+            'status' => ['required', Rule::in(StudentProgressionException::STATUSES)],
+            'reason' => ['required', 'string', 'min:10', 'max:2000'],
+        ]);
+        $this->ensureYearOpen($validated['academic_year']);
+        $student = $this->managedStudentForYear((int) $validated['student_id'], $validated['academic_year'], $request->user());
+
+        StudentProgressionException::updateOrCreate(
+            ['student_id' => $student->id, 'academic_year' => $validated['academic_year']],
+            [
+                'status' => $validated['status'],
+                'reason' => $validated['reason'],
+                'approved_by' => $request->user()->id,
+                'approved_at' => now(),
+            ]
+        );
+
+        return redirect()->route('academic-year-closures.index', ['academic_year' => $validated['academic_year']])
+            ->with('success', 'The student exception was approved and recorded for year closing.');
+    }
+
+    public function destroyProgressionException(Request $request, StudentProgressionException $exception)
+    {
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->ensureYearOpen($exception->academic_year);
+        $this->managedStudentForYear($exception->student_id, $exception->academic_year, $request->user());
+        $academicYear = $exception->academic_year;
+        $exception->delete();
+
+        return redirect()->route('academic-year-closures.index', ['academic_year' => $academicYear])
+            ->with('success', 'The progression exception was removed. The student must now receive a normal decision or another approved exception.');
+    }
+
+    public function assignStudentStage(Request $request, Student $student)
+    {
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $validated = $request->validate([
+            'academic_year' => ['required', 'string', 'max:20'],
+            'stage_id' => ['required', 'integer', 'exists:stages,id'],
+        ]);
+        $this->ensureYearOpen($validated['academic_year']);
+        $student = $this->managedStudentForYear($student->id, $validated['academic_year'], $request->user());
+        $stageQuery = Stage::whereKey($validated['stage_id'])
+            ->where('university_id', $student->university_id)
+            ->where('department_id', $student->department_id);
+        OrganizationScope::apply($stageQuery, $request->user(), 'stage');
+        $stage = $stageQuery->firstOrFail();
+        $student->update(['current_stage_id' => $stage->id]);
+
+        return redirect()->route('academic-year-closures.index', ['academic_year' => $validated['academic_year']])
+            ->with('success', 'The student current stage was assigned.');
+    }
+
     private function buildSummary(string $academicYear, bool $includeArchiveSnapshot = false): array
     {
         $semesters = Semester::withTrashed()->with('university')
@@ -592,6 +662,7 @@ class AcademicYearClosureController extends Controller
             ->get();
 
         $sectionIds = $sections->pluck('id');
+        $readiness = app(StudentProgressionService::class)->readiness($sectionIds, $academicYear);
         $resultEnrollmentQuery = Enrollment::withTrashed()->whereIn('course_section_id', $sectionIds)->whereIn('status', ['enrolled', 'completed']);
         $markQuery = Mark::withTrashed()->whereIn('course_section_id', $sectionIds);
         $financeQuery = FinanceTransaction::withTrashed()->where('academic_year', $academicYear)
@@ -601,8 +672,8 @@ class AcademicYearClosureController extends Controller
         $enrollmentsCount = (clone $resultEnrollmentQuery)->count();
         $studentCount = (clone $resultEnrollmentQuery)->distinct('student_id')->count('student_id');
         $enteredMarks = (clone $markQuery)->count();
-        $missingMarks = max(0, $enrollmentsCount - $enteredMarks);
-        $unpublishedMarks = (clone $markQuery)->where('visibility_status', 'draft')->count();
+        $missingMarks = $readiness['missing_result_count'];
+        $unpublishedMarks = $readiness['unusable_result_count'];
         $publishedMarks = (clone $markQuery)->where('visibility_status', 'published')->count();
         $openFinanceInvoices = (clone $financeQuery)->whereIn('payment_status', ['open', 'partial', 'overdue'])->count();
         $openFinanceByCurrency = (clone $financeQuery)
@@ -623,14 +694,34 @@ class AcademicYearClosureController extends Controller
 
         $blockers = collect([
             [
+                'label' => 'Modules without a stage',
+                'count' => $readiness['sections_without_stage_count'],
+                'detail' => 'Every module offering must be assigned to a stage before closure.',
+            ],
+            [
                 'label' => 'Missing result rows',
                 'count' => $missingMarks,
-                'detail' => 'Every enrolled student/module needs a result record before closure.',
+                'detail' => 'Every non-exempt enrolled student/module needs a result record before closure.',
             ],
             [
                 'label' => 'Unpublished marks',
                 'count' => $unpublishedMarks,
-                'detail' => 'Draft marks must be reviewed and published before the year is closed.',
+                'detail' => 'Draft or incomplete marks must be completed and published, or the student needs an approved exception.',
+            ],
+            [
+                'label' => 'Students without a current stage',
+                'count' => $readiness['missing_current_stage_count'],
+                'detail' => 'Assign the student current stage before calculating progression.',
+            ],
+            [
+                'label' => 'Student stage mismatches',
+                'count' => $readiness['current_stage_mismatch_count'],
+                'detail' => 'The student current stage must match ordinary module enrollments. Earlier-stage retakes remain allowed.',
+            ],
+            [
+                'label' => 'Conflicting student stages',
+                'count' => $readiness['conflicting_stage_count'],
+                'detail' => 'Ordinary module enrollments for the same year must use one stage. Retake modules are allowed at an earlier stage.',
             ],
         ])->filter(fn (array $blocker) => $blocker['count'] > 0)->values();
 
@@ -661,11 +752,12 @@ class AcademicYearClosureController extends Controller
             'entered_marks' => $enteredMarks,
             'missing_marks' => $missingMarks,
             'unpublished_marks' => $unpublishedMarks,
+            'progression_readiness' => $readiness,
             'open_finance_invoices' => $openFinanceInvoices,
             'open_finance_by_currency' => $openFinanceByCurrency,
             'blockers' => $blockers,
             'warnings' => $warnings,
-            'blockers_count' => $blockers->sum('count'),
+            'blockers_count' => $readiness['blockers_count'],
             'unarchived_section_count' => $sections->whereNull('deleted_at')->count(),
             'is_closed' => $closures->isNotEmpty(),
             'closures' => $closures,
@@ -1144,6 +1236,7 @@ class AcademicYearClosureController extends Controller
             'entered_marks' => 0,
             'missing_marks' => 0,
             'unpublished_marks' => 0,
+            'progression_readiness' => app(StudentProgressionService::class)->readiness(collect(), ''),
             'open_finance_invoices' => 0,
             'open_finance_by_currency' => collect(),
             'blockers' => collect(),
@@ -1155,6 +1248,28 @@ class AcademicYearClosureController extends Controller
             'recent_sections' => collect(),
             'snapshot' => [],
         ];
+    }
+
+    private function managedStudentForYear(int $studentId, string $academicYear, User $user): Student
+    {
+        $query = Student::whereKey($studentId)
+            ->whereHas('enrollments', function ($enrollments) use ($academicYear) {
+                $enrollments
+                    ->whereIn('status', ['enrolled', 'completed'])
+                    ->whereHas('courseSection.semester', fn ($semester) => $semester->where('academic_year', $academicYear));
+            });
+        OrganizationScope::apply($query, $user, 'student');
+
+        return $query->firstOrFail();
+    }
+
+    private function ensureYearOpen(string $academicYear): void
+    {
+        if (AcademicYearClosure::where('academic_year', $academicYear)->exists()) {
+            throw ValidationException::withMessages([
+                'academic_year' => 'Progression decisions cannot be changed after the academic year is closed.',
+            ]);
+        }
     }
 
     private function canManageClosure(Request $request): bool

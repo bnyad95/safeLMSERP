@@ -19,6 +19,7 @@
                 <div><p class="text-xs font-medium uppercase text-gray-500">Status</p><p class="mt-2 font-semibold text-gray-900">{{ $student->status }}</p></div>
                 <div><p class="text-xs font-medium uppercase text-gray-500">Admission</p><p class="mt-2 font-semibold text-gray-900">{{ $student->admission_status ?: 'Not recorded' }}</p></div>
                 <div><p class="text-xs font-medium uppercase text-gray-500">Current stage</p><p class="mt-2 font-semibold text-gray-900">{{ $student->grade_labels->isNotEmpty() ? $student->grade_labels->join(', ') : 'No stage' }}</p></div>
+                <div><p class="text-xs font-medium uppercase text-gray-500">Academic standing</p><p class="mt-2 font-semibold text-gray-900">{{ str($student->academic_standing ?: 'new')->replace('_', ' ')->title() }}</p></div>
                 <div><p class="text-xs font-medium uppercase text-gray-500">Login account</p><p class="mt-2 font-semibold text-gray-900">{{ $student->user ? 'Linked' : 'Not linked' }}</p></div>
             </div>
         </section>

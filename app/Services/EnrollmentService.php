@@ -23,7 +23,7 @@ class EnrollmentService
         ?int $transferredFromId = null
     ): array {
         return DB::transaction(function () use ($student, $section, $action, $enrolledAt, $notes, $actor, $ignoredEnrollmentId, $transferredFromId) {
-            $section = CourseSection::with(['course.department', 'timetables', 'semester.academicYear'])
+            $section = CourseSection::with(['course.department', 'stage', 'timetables', 'semester.academicYear'])
                 ->lockForUpdate()
                 ->findOrFail($section->id);
             $student = Student::lockForUpdate()->findOrFail($student->id);
@@ -99,6 +99,13 @@ class EnrollmentService
                 'notes' => $notes,
             ]);
             $enrollment->save();
+
+            if (! $student->current_stage_id && $section->stage_id) {
+                $student->update([
+                    'current_stage_id' => $section->stage_id,
+                    'academic_standing' => Student::STANDING_NEW,
+                ]);
+            }
 
             $this->recordEvent(
                 $enrollment,

@@ -6,6 +6,7 @@ use App\Models\College;
 use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Role;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\StudentDocument;
 use App\Models\StudentGuardian;
@@ -55,6 +56,14 @@ class StudentController extends Controller
             ->distinct()
             ->orderBy('grade_level')
             ->pluck('grade_level');
+        $currentStageQuery = Stage::orderBy('name');
+        OrganizationScope::apply($currentStageQuery, $request->user(), 'stage');
+        $gradeOptions = $gradeOptions
+            ->merge($currentStageQuery->pluck('name'))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
         $abilities = $this->studentAbilities($request);
         $archivedCount = $this->scopedStudentQuery($request->user(), true)->count();
 
@@ -115,6 +124,9 @@ class StudentController extends Controller
         $student->load([
             'university',
             'department.college',
+            'currentStage',
+            'stageProgressions.stage',
+            'stageProgressions.nextStage',
             'user',
             'guardians',
             'documents.uploader',
@@ -505,6 +517,7 @@ class StudentController extends Controller
             ->whereIn('students.id', $matchingStudentIds)
             ->leftJoin('departments as classification_departments', 'students.department_id', '=', 'classification_departments.id')
             ->leftJoin('colleges as classification_colleges', 'classification_departments.college_id', '=', 'classification_colleges.id')
+            ->leftJoin('stages as current_stages', 'students.current_stage_id', '=', 'current_stages.id')
             ->leftJoin('enrollments as classification_enrollments', function ($join) {
                 $join->on('students.id', '=', 'classification_enrollments.student_id')
                     ->where('classification_enrollments.status', 'enrolled')
@@ -518,7 +531,7 @@ class StudentController extends Controller
             ->selectRaw("
                 COALESCE(classification_colleges.name, 'No college') as college_name,
                 COALESCE(classification_departments.name, 'No department') as department_name,
-                COALESCE(classification_sections.grade_level, 'No stage') as stage_name,
+                COALESCE(classification_sections.grade_level, current_stages.name, 'No stage') as stage_name,
                 COUNT(DISTINCT students.id) as students_count
             ")
             ->groupBy('college_name', 'department_name', 'stage_name')
@@ -552,7 +565,7 @@ class StudentController extends Controller
     private function studentDirectoryQuery(array $filters)
     {
         return $this->scopedStudentQuery(request()->user())
-            ->with(['department.college', 'enrollments.courseSection'])
+            ->with(['department.college', 'currentStage', 'enrollments.courseSection'])
             ->when($filters['q'] !== '', fn ($query) => $query->where(function ($searchQuery) use ($filters) {
                 $searchQuery->where('students.full_name', 'like', "%{$filters['q']}%")
                     ->orWhere('students.student_id', 'like', "%{$filters['q']}%")
@@ -560,11 +573,14 @@ class StudentController extends Controller
             }))
             ->when($filters['college_id'], fn ($query) => $query->whereHas('department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($query) => $query->where('students.department_id', $filters['department_id']))
-            ->when($filters['grade_level'] !== '', fn ($query) => $query->whereHas('enrollments', fn ($enrollmentQuery) => $enrollmentQuery
-                ->where('status', 'enrolled')
-                ->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery
-                    ->where('grade_level', $filters['grade_level'])
-                    ->whereIn('status', ['planned', 'active']))))
+            ->when($filters['grade_level'] !== '', fn ($query) => $query->where(function ($stageQuery) use ($filters) {
+                $stageQuery->whereHas('enrollments', fn ($enrollmentQuery) => $enrollmentQuery
+                    ->where('status', 'enrolled')
+                    ->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery
+                        ->where('grade_level', $filters['grade_level'])
+                        ->whereIn('status', ['planned', 'active'])))
+                    ->orWhereHas('currentStage', fn ($currentStageQuery) => $currentStageQuery->where('name', $filters['grade_level']));
+            }))
             ->when($filters['status'] !== '', fn ($query) => $query->where('students.status', $filters['status']))
             ->orderBy('students.full_name');
     }
@@ -580,7 +596,7 @@ class StudentController extends Controller
 
     private function gradeLabelsFor(Student $student)
     {
-        return $student->enrollments
+        $activeStages = $student->enrollments
             ->where('status', 'enrolled')
             ->filter(fn ($enrollment) => in_array($enrollment->courseSection?->status, ['planned', 'active'], true))
             ->pluck('courseSection.grade_level')
@@ -588,6 +604,10 @@ class StudentController extends Controller
             ->unique()
             ->sort()
             ->values();
+
+        return $activeStages->isNotEmpty()
+            ? $activeStages
+            : collect([$student->currentStage?->name])->filter()->values();
     }
 
     private function studentAbilities(Request $request): array

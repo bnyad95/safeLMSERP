@@ -225,6 +225,60 @@ class CourseRegistrationTest extends TestCase
         ]);
     }
 
+    public function test_failed_student_can_register_a_same_year_summer_retake(): void
+    {
+        Mail::fake();
+        $setup = $this->makeAcademicSetup();
+        $user = $this->makeStudentUser($setup['student']);
+        $sourceEnrollment = Enrollment::create([
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $setup['section']->id,
+            'status' => 'enrolled',
+            'enrolled_at' => '2026-09-01',
+        ]);
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'final_mark' => 42,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+        $summer = Semester::create([
+            'university_id' => $setup['student']->university_id,
+            'name' => 'Summer Semester',
+            'academic_year' => '2026/2027',
+            'term_type' => 'summer',
+            'sequence' => 3,
+        ]);
+        $summerSection = CourseSection::create([
+            'course_id' => $setup['course']->id,
+            'semester_id' => $summer->id,
+            'section_code' => 'SUM',
+            'grade_level' => 'Stage 3',
+            'capacity' => 30,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('course-registration.index'))
+            ->assertOk()
+            ->assertSee('Summer Semester')
+            ->assertSee('Retake');
+
+        $this->actingAs($user)
+            ->post(route('course-registration.store'), ['course_section_id' => $summerSection->id])
+            ->assertRedirect(route('course-registration.index'));
+
+        $this->assertDatabaseHas('enrollments', [
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $summerSection->id,
+            'is_retake' => true,
+            'retake_from_enrollment_id' => $sourceEnrollment->id,
+        ]);
+    }
+
     public function test_passed_student_cannot_register_same_course_again_in_new_year(): void
     {
         $setup = $this->makeAcademicSetup();

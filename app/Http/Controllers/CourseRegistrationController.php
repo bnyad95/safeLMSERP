@@ -17,7 +17,7 @@ class CourseRegistrationController extends Controller
     {
         $this->requireAnyRole('student');
 
-        $student = Student::with(['department', 'enrollments.courseSection.course', 'enrollments.courseSection.semester'])
+        $student = Student::with(['department', 'currentStage', 'enrollments.courseSection.course', 'enrollments.courseSection.semester'])
             ->where('email', $request->user()->email)
             ->first();
 
@@ -53,24 +53,11 @@ class CourseRegistrationController extends Controller
                 ->get()
                 ->groupBy('course_id');
 
-            $eligibleSections = CourseSection::with(['course.department', 'semester', 'teacher'])
+            $eligibleSections = CourseSection::with(['course.department', 'semester', 'stage', 'teacher'])
                 ->withCount(['activeEnrollments as registered_count'])
                 ->where('status', 'active')
                 ->whereHas('course', fn ($query) => $query->where('department_id', $student->department_id))
-                ->whereNotIn('id', $registeredSectionIds)
-                ->whereNotIn('course_id', $registeredCourseIds);
-
-            $semesterOptions = (clone $eligibleSections)->get()
-                ->pluck('semester')
-                ->filter()
-                ->unique('id')
-                ->sortByDesc('academic_year')
-                ->values();
-            $gradeOptions = (clone $eligibleSections)->whereNotNull('grade_level')
-                ->orderBy('grade_level')
-                ->pluck('grade_level')
-                ->unique()
-                ->values();
+                ->whereNotIn('id', $registeredSectionIds);
 
             $availableSections = $eligibleSections
                 ->when($filters['q'] !== '', fn ($query) => $query->whereHas('course', fn ($courseQuery) => $courseQuery
@@ -83,15 +70,24 @@ class CourseRegistrationController extends Controller
                 ->orderBy('section_code')
                 ->get()
                 ->filter(fn (CourseSection $section) => $section->registered_count < $section->capacity)
-                ->map(function (CourseSection $section) use ($student, $priorMarksByCourse) {
+                ->map(function (CourseSection $section) use ($student, $priorMarksByCourse, $registeredCourseIds) {
                     $context = $this->registrationContext($student, $section, $priorMarksByCourse->get($section->course_id, collect()));
                     $section->setAttribute('is_retake_registration', $context['is_retake']);
-                    $section->setAttribute('retake_reason', $context['retake_reason']);
+                    $reason = $context['retake_reason'];
+                    if (! $reason && $registeredCourseIds->contains($section->course_id) && ! $context['is_retake']) {
+                        $reason = 'You are already registered in this course.';
+                    }
+                    if (! $reason && ! $this->sectionMatchesStudentStage($student, $section, $context['is_retake'])) {
+                        $reason = 'This course is not offered for your current stage.';
+                    }
+                    $section->setAttribute('retake_reason', $reason);
 
                     return $section;
                 })
                 ->filter(fn (CourseSection $section) => ! $section->retake_reason)
                 ->values();
+            $semesterOptions = $availableSections->pluck('semester')->filter()->unique('id')->sortByDesc('academic_year')->values();
+            $gradeOptions = $availableSections->pluck('grade_level')->filter()->unique()->sort()->values();
         }
 
         return view('course-registration.index', [
@@ -119,12 +115,20 @@ class CourseRegistrationController extends Controller
         ]);
 
         $result = DB::transaction(function () use ($student, $validated) {
-            $section = CourseSection::with('course')
+            $section = CourseSection::with(['course', 'semester', 'stage'])
                 ->where('status', 'active')
                 ->lockForUpdate()
                 ->findOrFail($validated['course_section_id']);
 
             abort_unless($section->course?->department_id === $student->department_id, 403);
+
+            $context = $this->registrationContext($student, $section);
+            if ($context['retake_reason']) {
+                return $context['retake_reason'];
+            }
+            if (! $this->sectionMatchesStudentStage($student, $section, $context['is_retake'])) {
+                return 'This course is not offered for your current stage.';
+            }
 
             $alreadyRegisteredCourse = $student->enrollments()
                 ->where('status', 'enrolled')
@@ -133,13 +137,8 @@ class CourseRegistrationController extends Controller
                     ->whereIn('status', ['planned', 'active']))
                 ->exists();
 
-            if ($alreadyRegisteredCourse) {
+            if ($alreadyRegisteredCourse && ! $context['is_retake']) {
                 return 'You are already registered in this course.';
-            }
-
-            $context = $this->registrationContext($student, $section);
-            if ($context['retake_reason']) {
-                return $context['retake_reason'];
             }
 
             $section->loadMissing('timetables');
@@ -176,6 +175,13 @@ class CourseRegistrationController extends Controller
                 ]
             );
 
+            if (! $student->current_stage_id && $section->stage_id) {
+                $student->update([
+                    'current_stage_id' => $section->stage_id,
+                    'academic_standing' => Student::STANDING_NEW,
+                ]);
+            }
+
             return $section;
         });
 
@@ -208,6 +214,17 @@ class CourseRegistrationController extends Controller
 
         $sameYearMark = $priorMarks->first(fn (Mark $mark) => $mark->courseSection?->semester?->academic_year === $section->semester?->academic_year);
         if ($sameYearMark) {
+            $summerRetake = ($section->semester?->term_type ?? 'regular') === 'summer'
+                && ($sameYearMark->courseSection?->semester?->term_type ?? 'regular') !== 'summer'
+                && (float) $sameYearMark->final_mark < (float) config('academics.pass_mark', 50);
+            if ($summerRetake) {
+                return [
+                    'is_retake' => true,
+                    'source_enrollment' => $this->enrollmentForMark($student, $sameYearMark),
+                    'retake_reason' => null,
+                ];
+            }
+
             return [
                 'is_retake' => false,
                 'source_enrollment' => null,
@@ -234,9 +251,35 @@ class CourseRegistrationController extends Controller
 
         return [
             'is_retake' => true,
-            'source_enrollment' => $this->latestCompletedEnrollmentForCourse($student, $section->course_id),
+            'source_enrollment' => $this->enrollmentForMark($student, $latestPriorMark)
+                ?? $this->latestCompletedEnrollmentForCourse($student, $section->course_id),
             'retake_reason' => null,
         ];
+    }
+
+    private function sectionMatchesStudentStage(Student $student, CourseSection $section, bool $isRetake): bool
+    {
+        if (! $student->current_stage_id || ! $section->stage_id) {
+            return true;
+        }
+
+        if (! $isRetake) {
+            return (int) $section->stage_id === (int) $student->current_stage_id;
+        }
+
+        return (int) $section->stage->sequence <= (int) $student->currentStage?->sequence;
+    }
+
+    private function enrollmentForMark(Student $student, Mark $mark): ?Enrollment
+    {
+        if (! $mark->course_section_id) {
+            return null;
+        }
+
+        return Enrollment::withTrashed()
+            ->where('student_id', $student->id)
+            ->where('course_section_id', $mark->course_section_id)
+            ->first();
     }
 
     private function latestCompletedEnrollmentForCourse(Student $student, int $courseId): ?Enrollment

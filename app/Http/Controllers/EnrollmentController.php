@@ -158,7 +158,7 @@ class EnrollmentController extends Controller
         OrganizationScope::apply($teacherQuery, $request->user(), 'teacher');
         OrganizationScope::apply($stageQuery, $request->user(), 'stage');
 
-        $universities = $universityQuery->get(['id', 'name', 'code', 'expected_semesters_per_year']);
+        $universities = $universityQuery->get(['id', 'name', 'code', 'institution_type', 'expected_semesters_per_year']);
         $academicYears = $academicYearQuery
             ->when($filters['university_id'], fn ($query, $universityId) => $query->where('university_id', $universityId))
             ->get();

@@ -409,6 +409,28 @@ class EnrollmentTest extends TestCase
         $this->assertSame('Summer Semester', $section->programSemesterLabel());
     }
 
+    public function test_institute_module_offering_calculates_program_semester_four(): void
+    {
+        $setup = $this->makeAcademicSetup();
+        $setup['university']->update(['institution_type' => 'institute']);
+        $secondSemester = Semester::create([
+            'university_id' => $setup['university']->id,
+            'name' => 'Semester 2',
+            'academic_year' => '2026/2027',
+            'term_type' => 'regular',
+            'sequence' => 2,
+            'start_date' => '2027-01-21',
+            'end_date' => '2027-06-30',
+        ]);
+        $section = $this->makeSection($setup, 'I', [
+            'semester_id' => $secondSemester->id,
+        ]);
+
+        $this->assertSame(2, $setup['university']->fresh()->expectedStageCount());
+        $this->assertSame(4, $section->programSemesterNumber());
+        $this->assertSame('Program Semester 4', $section->programSemesterLabel());
+    }
+
     public function test_inactive_student_or_closed_section_is_blocked(): void
     {
         $admin = $this->makeSuperAdmin();

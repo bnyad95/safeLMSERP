@@ -19,6 +19,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Student;
+use App\Models\Stage;
 use App\Models\Teacher;
 use App\Models\Timetable;
 use App\Models\University;
@@ -87,6 +88,137 @@ class AcademicYearClosureTest extends TestCase
 
         $this->assertDatabaseMissing('academic_year_closures', [
             'academic_year' => $setup['semester']->academic_year,
+        ]);
+    }
+
+    public function test_closing_is_blocked_when_a_module_has_no_stage(): void
+    {
+        $user = $this->adminUser();
+        $setup = $this->academicSetup();
+        $setup['section']->update(['stage_id' => null]);
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'final_mark' => 70,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]))
+            ->assertOk()
+            ->assertSee('Modules without a stage')
+            ->assertSee('Modules Requiring a Stage');
+
+        $this->actingAs($user)->post(route('academic-year-closures.store'), [
+            'academic_year' => $setup['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ]);
+
+        $this->assertDatabaseMissing('academic_year_closures', ['academic_year' => $setup['semester']->academic_year]);
+    }
+
+    public function test_approved_exception_allows_an_incomplete_student_to_receive_an_explicit_closing_decision(): void
+    {
+        $user = $this->adminUser();
+        $setup = $this->academicSetup();
+
+        $this->actingAs($user)->post(route('academic-year-closures.exceptions.store'), [
+            'academic_year' => $setup['semester']->academic_year,
+            'student_id' => $setup['student']->id,
+            'status' => 'incomplete',
+            'reason' => 'Approved medical leave requires the final result to remain incomplete.',
+        ])->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+
+        $this->assertDatabaseHas('student_progression_exceptions', [
+            'student_id' => $setup['student']->id,
+            'academic_year' => $setup['semester']->academic_year,
+            'status' => 'incomplete',
+            'approved_by' => $user->id,
+        ]);
+
+        $this->actingAs($user)->post(route('academic-year-closures.store'), [
+            'academic_year' => $setup['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ])->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+
+        $this->assertDatabaseHas('academic_year_closures', ['academic_year' => $setup['semester']->academic_year]);
+        $this->assertSame(Student::STANDING_INCOMPLETE, $setup['student']->fresh()->academic_standing);
+        $this->assertDatabaseMissing('student_stage_progressions', [
+            'student_id' => $setup['student']->id,
+            'academic_year' => $setup['semester']->academic_year,
+        ]);
+    }
+
+    public function test_missing_current_stage_can_be_resolved_from_the_closing_workspace(): void
+    {
+        $user = $this->adminUser();
+        $setup = $this->academicSetup();
+        $setup['student']->update(['current_stage_id' => null]);
+
+        $this->actingAs($user)
+            ->get(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]))
+            ->assertOk()
+            ->assertSee('Students without a current stage')
+            ->assertSee('Assign Stage');
+
+        $this->actingAs($user)->patch(route('academic-year-closures.students.stage', $setup['student']), [
+            'academic_year' => $setup['semester']->academic_year,
+            'stage_id' => $setup['stage']->id,
+        ])->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+
+        $this->assertSame($setup['stage']->id, $setup['student']->fresh()->current_stage_id);
+    }
+
+    public function test_failed_student_remains_in_the_same_stage_when_the_year_closes(): void
+    {
+        $user = $this->adminUser();
+        $setup = $this->academicSetup();
+        $stage = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'name' => 'Stage 2',
+            'sequence' => 2,
+        ]);
+        Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
+        $setup['section']->update(['stage_id' => $stage->id]);
+        $setup['student']->update(['current_stage_id' => $stage->id]);
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
+            'final_mark' => 45,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('academic-year-closures.store'), [
+                'academic_year' => $setup['semester']->academic_year,
+                'confirm_results' => '1',
+                'confirm_finance' => '1',
+            ])
+            ->assertRedirect();
+
+        $student = $setup['student']->fresh();
+        $this->assertSame($stage->id, $student->current_stage_id);
+        $this->assertSame(Student::STANDING_REPEAT_STAGE, $student->academic_standing);
+        $this->assertDatabaseHas('student_stage_progressions', [
+            'student_id' => $student->id,
+            'stage_id' => $stage->id,
+            'academic_year' => $setup['semester']->academic_year,
+            'outcome' => 'repeat_stage',
+            'failed_modules' => 1,
         ]);
     }
 
@@ -499,6 +631,7 @@ class AcademicYearClosureTest extends TestCase
         $passedStudent = Student::create([
             'university_id' => $setup['university']->id,
             'department_id' => $setup['department']->id,
+            'current_stage_id' => $setup['stage']->id,
             'student_id' => 'CS-4002',
             'full_name' => 'Passed Closing Student',
             'email' => 'passed.closing@example.com',
@@ -520,6 +653,7 @@ class AcademicYearClosureTest extends TestCase
         $secondSection = CourseSection::create([
             'course_id' => $secondCourse->id,
             'semester_id' => $setup['semester']->id,
+            'stage_id' => $setup['stage']->id,
             'section_code' => 'B',
             'grade_level' => 'Stage 4',
             'status' => 'active',
@@ -615,9 +749,17 @@ class AcademicYearClosureTest extends TestCase
         $admin = $this->adminUser();
         $setup = $this->academicSetup();
 
+        $stageThree = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
+
         $stageThreeStudent = Student::create([
             'university_id' => $setup['university']->id,
             'department_id' => $setup['department']->id,
+            'current_stage_id' => $stageThree->id,
             'student_id' => 'CS-3001',
             'full_name' => 'Stage Three Student',
             'email' => 'stage3.student@example.com',
@@ -633,6 +775,7 @@ class AcademicYearClosureTest extends TestCase
         $stageThreeSection = CourseSection::create([
             'course_id' => $stageThreeCourse->id,
             'semester_id' => $setup['semester']->id,
+            'stage_id' => $stageThree->id,
             'section_code' => 'C',
             'grade_level' => 'Stage 3',
             'status' => 'active',
@@ -691,10 +834,17 @@ class AcademicYearClosureTest extends TestCase
         $setup = $this->academicSetup();
         $medicine = College::create(['university_id' => $setup['university']->id, 'name' => 'Medicine', 'code' => 'MED']);
         $nursing = Department::create(['university_id' => $setup['university']->id, 'college_id' => $medicine->id, 'name' => 'Nursing', 'code' => 'NUR']);
+        $nursingStage = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $nursing->id,
+            'name' => 'Stage 4',
+            'sequence' => 4,
+        ]);
         $otherCourse = Course::create(['department_id' => $nursing->id, 'code' => 'NUR401', 'name' => 'Clinical Archive', 'credits' => 4, 'status' => 'active']);
         $otherSection = CourseSection::create([
             'course_id' => $otherCourse->id,
             'semester_id' => $setup['semester']->id,
+            'stage_id' => $nursingStage->id,
             'section_code' => 'M',
             'grade_level' => 'Stage 4',
             'status' => 'active',
@@ -702,6 +852,7 @@ class AcademicYearClosureTest extends TestCase
         $otherStudent = Student::create([
             'university_id' => $setup['university']->id,
             'department_id' => $nursing->id,
+            'current_stage_id' => $nursingStage->id,
             'student_id' => 'NUR-4001',
             'full_name' => 'Nursing Archive Student',
             'email' => 'nursing.archive@example.com',
@@ -964,11 +1115,18 @@ class AcademicYearClosureTest extends TestCase
         $university = University::create(['name' => 'BND University', 'code' => 'BND']);
         $college = College::create(['university_id' => $university->id, 'name' => 'Engineering', 'code' => 'ENG']);
         $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Computer Science', 'code' => 'CS']);
+        $stage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 4',
+            'sequence' => 4,
+        ]);
         $semester = Semester::create(['university_id' => $university->id, 'name' => 'Spring', 'academic_year' => '2026/2027']);
         $course = Course::create(['department_id' => $department->id, 'code' => 'CS401', 'name' => 'Capstone', 'credits' => 4, 'status' => 'active']);
         $section = CourseSection::create([
             'course_id' => $course->id,
             'semester_id' => $semester->id,
+            'stage_id' => $stage->id,
             'section_code' => 'A',
             'grade_level' => 'Stage 4',
             'status' => 'active',
@@ -976,6 +1134,7 @@ class AcademicYearClosureTest extends TestCase
         $student = Student::create([
             'university_id' => $university->id,
             'department_id' => $department->id,
+            'current_stage_id' => $stage->id,
             'student_id' => 'CS-4001',
             'full_name' => 'Closing Student',
             'email' => 'closing.student@example.com',
@@ -988,6 +1147,6 @@ class AcademicYearClosureTest extends TestCase
             'enrolled_at' => now(),
         ]);
 
-        return compact('university', 'college', 'department', 'semester', 'course', 'section', 'student');
+        return compact('university', 'college', 'department', 'stage', 'semester', 'course', 'section', 'student');
     }
 }

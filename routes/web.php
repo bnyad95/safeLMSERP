@@ -379,6 +379,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/academic-year-closing', [AcademicYearClosureController::class, 'store'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
         ->name('academic-year-closures.store');
+    Route::post('/academic-year-closing/exceptions', [AcademicYearClosureController::class, 'storeProgressionException'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->name('academic-year-closures.exceptions.store');
+    Route::delete('/academic-year-closing/exceptions/{exception}', [AcademicYearClosureController::class, 'destroyProgressionException'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->name('academic-year-closures.exceptions.destroy');
+    Route::patch('/academic-year-closing/students/{student}/stage', [AcademicYearClosureController::class, 'assignStudentStage'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->name('academic-year-closures.students.stage');
     Route::get('/access-matrix', [ErpController::class, 'accessMatrix'])
         ->middleware('role.any:super_administrator')
         ->name('access-matrix');

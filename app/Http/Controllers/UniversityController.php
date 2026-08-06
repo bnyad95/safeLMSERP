@@ -6,6 +6,7 @@ use App\Models\University;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UniversityController extends Controller
 {
@@ -38,11 +39,11 @@ class UniversityController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', 'unique:universities,code'],
             'institution_type' => ['required', Rule::in(['university', 'institute'])],
-            'expected_stage_count' => ['required', 'integer', 'min:1', 'max:12'],
-            'expected_semesters_per_year' => ['required', 'integer', 'min:1', 'max:4'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
         ]);
+
+        $validated = array_merge($validated, University::structureForType($validated['institution_type']));
 
         University::create($validated);
 
@@ -66,11 +67,19 @@ class UniversityController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'code' => ['required', 'string', 'max:50', Rule::unique('universities', 'code')->ignore($university->id)],
             'institution_type' => ['required', Rule::in(['university', 'institute'])],
-            'expected_stage_count' => ['required', 'integer', 'min:1', 'max:12'],
-            'expected_semesters_per_year' => ['required', 'integer', 'min:1', 'max:4'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
         ]);
+
+        $structure = University::structureForType($validated['institution_type']);
+        if ($university->institution_type !== $validated['institution_type']
+            && $university->stages()->where('sequence', '>', $structure['expected_stage_count'])->exists()) {
+            throw ValidationException::withMessages([
+                'institution_type' => "This organization has stages beyond Stage {$structure['expected_stage_count']}. Remove or reassign their module offerings before changing the institution type.",
+            ]);
+        }
+
+        $validated = array_merge($validated, $structure);
 
         $university->update($validated);
 

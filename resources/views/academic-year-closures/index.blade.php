@@ -150,6 +150,132 @@
                 </section>
             </div>
 
+            @php($readiness = $summary['progression_readiness'])
+            @if($readiness['sections_without_stage_count'] > 0)
+                <section class="overflow-hidden rounded-lg border border-red-200 bg-white shadow-sm">
+                    <div class="border-b border-red-100 bg-red-50 px-5 py-4">
+                        <h3 class="text-base font-semibold text-red-900">Modules Requiring a Stage</h3>
+                        <p class="mt-1 text-sm text-red-700">These are structural blockers and cannot be bypassed with a student exception.</p>
+                    </div>
+                    <div class="divide-y divide-gray-100">
+                        @foreach($readiness['sections_without_stage'] as $section)
+                            <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold text-gray-900">{{ $section->course->code ?? 'Module' }} / Group {{ $section->section_code }}</p>
+                                    <p class="mt-1 text-xs text-gray-500">{{ $section->semester->name ?? 'Semester' }} {{ $section->semester->academic_year ?? '' }}</p>
+                                </div>
+                                <a href="{{ route('course-sections.show', $section) }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Assign Stage</a>
+                            </div>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
+
+            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div class="border-b border-gray-200 px-5 py-4">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-900">Student Progression Review</h3>
+                            <p class="mt-1 text-sm text-gray-500">Every enrolled student must receive a normal progression decision or an approved exception.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 text-xs font-semibold">
+                            <span class="rounded-md bg-red-50 px-3 py-1 text-red-700">{{ number_format($readiness['unresolved_student_count']) }} unresolved</span>
+                            <span class="rounded-md bg-emerald-50 px-3 py-1 text-emerald-700">{{ number_format($readiness['approved_exception_count']) }} exceptions</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divide-y divide-gray-100">
+                    @forelse($readiness['unresolved_students'] as $item)
+                        <div class="space-y-4 px-5 py-5">
+                            <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <p class="font-semibold text-gray-900">{{ $item['student']->full_name }}</p>
+                                    <p class="mt-1 text-sm text-gray-500">{{ $item['student']->student_id }} / {{ $item['student']->department->name ?? 'No department' }}</p>
+                                </div>
+                                <div class="text-sm text-red-700">
+                                    @foreach($item['issues'] as $issue)
+                                        <p>{{ $issue }}</p>
+                                    @endforeach
+                                </div>
+                            </div>
+
+                            @if($canManageClosure)
+                                <div class="grid gap-4 xl:grid-cols-2">
+                                    <form method="POST" action="{{ route('academic-year-closures.students.stage', $item['student']) }}" class="grid gap-3 rounded-md bg-gray-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                        @csrf
+                                        @method('PATCH')
+                                        <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
+                                        <div>
+                                            <label class="block text-xs font-semibold uppercase text-gray-500">Current Stage</label>
+                                            <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" required>
+                                                <option value="">Select stage</option>
+                                                @foreach($item['stage_options'] as $stage)
+                                                    <option value="{{ $stage->id }}" @selected(($item['inferred_stage']?->id ?? null) === $stage->id)>{{ $stage->name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100">Assign Stage</button>
+                                    </form>
+
+                                    <form method="POST" action="{{ route('academic-year-closures.exceptions.store') }}" class="grid gap-3 rounded-md bg-amber-50 p-4 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-end">
+                                        @csrf
+                                        <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
+                                        <input type="hidden" name="student_id" value="{{ $item['student']->id }}">
+                                        <div>
+                                            <label class="block text-xs font-semibold uppercase text-amber-800">Exception</label>
+                                            <select name="status" class="mt-1 block w-full rounded-md border-amber-300 text-sm shadow-sm" required>
+                                                <option value="incomplete">Incomplete</option>
+                                                <option value="deferred">Deferred</option>
+                                                <option value="withdrawn">Withdrawn</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold uppercase text-amber-800">Required Reason</label>
+                                            <input name="reason" minlength="10" maxlength="2000" class="mt-1 block w-full rounded-md border-amber-300 text-sm shadow-sm" placeholder="Document the approved reason" required>
+                                        </div>
+                                        <button class="rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Approve</button>
+                                    </form>
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <div class="px-5 py-8 text-center text-sm font-semibold text-emerald-700">Every enrolled student has a valid progression path or approved exception.</div>
+                    @endforelse
+                </div>
+
+                @if($readiness['unresolved_students_truncated'])
+                    <div class="border-t border-gray-100 bg-gray-50 px-5 py-3 text-sm text-gray-600">Showing the first 100 unresolved students. Resolve these records and review the year again for the remaining students.</div>
+                @endif
+            </section>
+
+            @if($readiness['approved_exceptions']->isNotEmpty())
+                <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                    <div class="border-b border-gray-200 px-5 py-4">
+                        <h3 class="text-base font-semibold text-gray-900">Approved Progression Exceptions</h3>
+                        <p class="mt-1 text-sm text-gray-500">These decisions are audited and applied when the academic year closes.</p>
+                    </div>
+                    <div class="divide-y divide-gray-100">
+                        @foreach($readiness['approved_exceptions'] as $exception)
+                            <div class="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold text-gray-900">{{ $exception->student->full_name ?? 'Student' }} / {{ str($exception->status)->title() }}</p>
+                                    <p class="mt-1 text-sm text-gray-600">{{ $exception->reason }}</p>
+                                    <p class="mt-1 text-xs text-gray-500">Approved by {{ $exception->approvedBy->name ?? 'Unknown user' }} on {{ $exception->approved_at?->format('Y-m-d H:i') }}</p>
+                                </div>
+                                @if($canManageClosure)
+                                    <form method="POST" action="{{ route('academic-year-closures.exceptions.destroy', $exception) }}">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button class="rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Remove Exception</button>
+                                    </form>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
+
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div class="border-b border-gray-200 px-5 py-4">
                     <h3 class="text-base font-semibold text-gray-900">Modules In Scope</h3>

@@ -11,6 +11,26 @@ class Student extends Model
 {
     use HasFactory, Loggable, SoftDeletes;
 
+    public const STANDING_NEW = 'new';
+
+    public const STANDING_GOOD = 'good';
+
+    public const STANDING_CARRYING_RETAKES = 'carrying_retakes';
+
+    public const STANDING_REPEAT_STAGE = 'repeat_stage';
+
+    public const STANDING_EXTENDED = 'extended';
+
+    public const STANDING_COMPLETED_PROGRAM = 'completed_program';
+
+    public const STANDING_AWAITING_STAGE_SETUP = 'awaiting_stage_setup';
+
+    public const STANDING_DEFERRED = 'deferred';
+
+    public const STANDING_WITHDRAWN = 'withdrawn';
+
+    public const STANDING_INCOMPLETE = 'incomplete';
+
     protected static function booted(): void
     {
         static::creating(function (Student $student): void {
@@ -23,6 +43,7 @@ class Student extends Model
     protected $fillable = [
         'university_id',
         'department_id',
+        'current_stage_id',
         'user_id',
         'student_id',
         'full_name',
@@ -30,6 +51,7 @@ class Student extends Model
         'email',
         'phone',
         'status',
+        'academic_standing',
         'admission_status',
         'admission_date',
         'admission_type',
@@ -52,6 +74,21 @@ class Student extends Model
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function currentStage()
+    {
+        return $this->belongsTo(Stage::class, 'current_stage_id');
+    }
+
+    public function stageProgressions()
+    {
+        return $this->hasMany(StudentStageProgression::class)->latest('decided_at');
+    }
+
+    public function progressionExceptions()
+    {
+        return $this->hasMany(StudentProgressionException::class)->latest('approved_at');
     }
 
     public function user()
