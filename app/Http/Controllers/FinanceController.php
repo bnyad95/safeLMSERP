@@ -50,7 +50,8 @@ class FinanceController extends Controller
             ->where('payment_status', 'overdue');
         $pendingQuery = (clone $financeQuery)
             ->where('posting_status', 'pending')
-            ->where('status', 'pending');
+            ->where('status', 'pending')
+            ->whereIn('type', $this->approvableFinanceTypes($user));
         $dueSoonQuery = (clone $financeQuery)
             ->where('type', 'invoice')
             ->where('posting_status', 'posted')
@@ -122,6 +123,77 @@ class FinanceController extends Controller
             'canCreateRecord' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.create_invoice', 'finance.record_payment', 'finance.record_expense', 'finance.refund']),
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
             'canSendTuitionReminder' => $this->canSendTuitionReminder($user),
+        ]);
+    }
+
+    public function approvals(Request $request)
+    {
+        $this->requireAnyPermission('finance.approve_payment', 'finance.approve_expense');
+
+        $user = $request->user();
+        $types = $this->approvableFinanceTypes($user);
+        $filters = [
+            'q' => trim((string) $request->input('q', '')),
+            'type' => in_array($request->input('type'), $types, true) ? $request->input('type') : '',
+            'currency' => in_array($request->input('currency'), ['IQD', 'USD'], true) ? $request->input('currency') : '',
+            'eligibility' => in_array($request->input('eligibility'), ['actionable', 'mine'], true) ? $request->input('eligibility') : '',
+            'sort' => $request->input('sort') === 'newest' ? 'newest' : 'oldest',
+        ];
+
+        $pendingQuery = $this->scopedFinanceQuery($user)
+            ->where('status', 'pending')
+            ->where('posting_status', 'pending')
+            ->whereIn('type', $types);
+        $filteredQuery = (clone $pendingQuery)
+            ->when($filters['q'], function ($query, string $search) {
+                $query->where(function ($inner) use ($search) {
+                    $inner->where('receipt_number', 'like', "%{$search}%")
+                        ->orWhere('reference', 'like', "%{$search}%")
+                        ->orWhereHas('student', fn ($student) => $student
+                            ->where('full_name', 'like', "%{$search}%")
+                            ->orWhere('student_id', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%"));
+                });
+            })
+            ->when($filters['type'], fn ($query, string $type) => $query->where('type', $type))
+            ->when($filters['currency'], fn ($query, string $currency) => $query->where('currency', $currency))
+            ->when($filters['eligibility'] === 'actionable' && ! $user->hasRole('super_administrator'), fn ($query) => $query->where('recorded_by', '!=', $user->id))
+            ->when($filters['eligibility'] === 'mine', fn ($query) => $query->where('recorded_by', $user->id));
+
+        $amountsByCurrency = (clone $filteredQuery)
+            ->withoutEagerLoads()
+            ->reorder()
+            ->select('currency')
+            ->selectRaw('SUM(amount) as amount')
+            ->groupBy('currency')
+            ->orderBy('currency')
+            ->get()
+            ->map(fn ($row) => ['currency' => $row->currency ?: 'IQD', 'amount' => (float) $row->amount]);
+        $transactions = (clone $filteredQuery)
+            ->with(['student.department.college', 'recorder', 'invoice'])
+            ->when(
+                $filters['sort'] === 'newest',
+                fn ($query) => $query->latest('created_at')->latest('id'),
+                fn ($query) => $query->oldest('created_at')->oldest('id')
+            )
+            ->paginate(30)
+            ->withQueryString();
+
+        return view('finance.approvals', [
+            'transactions' => $transactions,
+            'filters' => $filters,
+            'types' => collect([
+                'payment' => 'Payment',
+                'discount' => 'Discount',
+                'scholarship' => 'Scholarship',
+                'refund' => 'Refund',
+            ])->only($types),
+            'stats' => [
+                ['label' => 'Waiting for Approval', 'value' => number_format((clone $pendingQuery)->count()), 'detail' => 'Pending records in your organization scope'],
+                ['label' => 'Ready for You', 'value' => number_format($user->hasRole('super_administrator') ? (clone $pendingQuery)->count() : (clone $pendingQuery)->where('recorded_by', '!=', $user->id)->count()), 'detail' => 'Records you are allowed to approve'],
+                ['label' => 'Recorded by You', 'value' => number_format((clone $pendingQuery)->where('recorded_by', $user->id)->count()), 'detail' => 'Must be approved by another user'],
+                ['label' => 'Filtered Amount', 'value' => $this->formatCurrencyTotals($amountsByCurrency, 'amount'), 'detail' => 'Pending value by currency'],
+            ],
         ]);
     }
 
@@ -546,14 +618,12 @@ class FinanceController extends Controller
         $this->authorizeFinanceApproval($financeTransaction);
 
         if ($financeTransaction->status !== 'pending' || $financeTransaction->posting_status !== 'pending') {
-            return redirect()
-                ->route('finance.students.show', $financeTransaction->student_id)
+            return $this->financeApprovalRedirect($request, $financeTransaction)
                 ->with('error', 'This finance record is no longer waiting for approval.');
         }
 
         if (! $request->user()->hasRole('super_administrator') && $financeTransaction->recorded_by === $request->user()->id) {
-            return redirect()
-                ->route('finance.students.show', $financeTransaction->student_id)
+            return $this->financeApprovalRedirect($request, $financeTransaction)
                 ->with('error', 'A finance record must be approved by a different authorized user.');
         }
 
@@ -597,13 +667,11 @@ class FinanceController extends Controller
         });
 
         if (! $approved) {
-            return redirect()
-                ->route('finance.students.show', $financeTransaction->student_id)
+            return $this->financeApprovalRedirect($request, $financeTransaction)
                 ->with('error', 'This finance record was already processed by another user.');
         }
 
-        return redirect()
-            ->route('finance.students.show', $financeTransaction->student_id)
+        return $this->financeApprovalRedirect($request, $financeTransaction)
             ->with('success', 'Finance record approved.');
     }
 
@@ -1146,6 +1214,19 @@ class FinanceController extends Controller
         return redirect()->route('finance', $params);
     }
 
+    private function financeApprovalRedirect(Request $request, FinanceTransaction $transaction)
+    {
+        if ($request->input('return_to') === 'approvals') {
+            $params = collect($request->only(['q', 'type', 'currency', 'eligibility', 'sort']))
+                ->filter(fn ($value) => filled($value))
+                ->all();
+
+            return redirect()->route('finance.approvals.index', $params);
+        }
+
+        return redirect()->route('finance.students.show', $transaction->student_id);
+    }
+
     private function applyFinanceFilters($builder, array $filters): void
     {
         $builder
@@ -1674,6 +1755,20 @@ class FinanceController extends Controller
             'discount' => 'finance.record_expense',
             'scholarship' => 'finance.record_expense',
             'refund' => 'finance.refund',
+        ])->filter(fn (string $permission) => $user->hasPermission($permission))->keys()->all();
+    }
+
+    private function approvableFinanceTypes(User $user): array
+    {
+        if ($user->hasRole('super_administrator')) {
+            return ['payment', 'discount', 'scholarship', 'refund'];
+        }
+
+        return collect([
+            'payment' => 'finance.approve_payment',
+            'discount' => 'finance.approve_expense',
+            'scholarship' => 'finance.approve_expense',
+            'refund' => 'finance.approve_expense',
         ])->filter(fn (string $permission) => $user->hasPermission($permission))->keys()->all();
     }
 

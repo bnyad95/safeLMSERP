@@ -301,6 +301,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/finance/dashboard', [FinanceController::class, 'dashboard'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.dashboard');
+    Route::get('/finance/approvals', [FinanceController::class, 'approvals'])
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.approve_payment,permission:finance.approve_expense')
+        ->name('finance.approvals.index');
     Route::get('/finance', [FinanceController::class, 'index'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance');

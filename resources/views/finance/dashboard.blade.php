@@ -186,7 +186,7 @@
                                 <a href="{{ route('finance') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Add finance record</a>
                             @endif
                             @if($canApproveFinance)
-                                <a href="{{ route('finance', ['status' => 'pending']) }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Review approvals</a>
+                                <a href="{{ route('finance.approvals.index') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Review approvals</a>
                             @endif
                             @if($canSendTuitionReminder)
                                 <a href="{{ route('finance.tuition-reminders.index') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Send tuition reminder</a>

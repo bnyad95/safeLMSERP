@@ -989,6 +989,104 @@ class FinanceTest extends TestCase
         $this->assertSame('partial', $invoice->fresh()->payment_status);
     }
 
+    public function test_finance_approvals_page_is_scoped_and_enforces_separation_of_duties(): void
+    {
+        $student = $this->makeStudent();
+        $approver = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.approve_payment']);
+        $approver->update(['university_id' => $student->university_id]);
+        $recorder = User::factory()->create(['university_id' => $student->university_id]);
+
+        $visiblePayment = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $recorder->id,
+            'type' => 'payment',
+            'amount' => '250',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'posting_status' => 'pending',
+            'payment_status' => 'open',
+            'receipt_number' => 'RCT-APPROVAL-VISIBLE',
+            'transaction_date' => now()->toDateString(),
+        ]);
+        $ownPayment = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $approver->id,
+            'type' => 'payment',
+            'amount' => '100',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'posting_status' => 'pending',
+            'payment_status' => 'open',
+            'receipt_number' => 'RCT-APPROVAL-OWN',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $hiddenUniversity = University::create(['name' => 'Hidden Finance University', 'code' => 'HFU']);
+        $hiddenDepartment = Department::create(['university_id' => $hiddenUniversity->id, 'name' => 'Hidden Finance Department']);
+        $hiddenStudent = Student::create([
+            'university_id' => $hiddenUniversity->id,
+            'department_id' => $hiddenDepartment->id,
+            'student_id' => 'HIDDEN-APPROVAL',
+            'full_name' => 'Hidden Approval Student',
+            'email' => 'hidden.approval@example.com',
+            'status' => 'Active',
+        ]);
+        $hiddenPayment = FinanceTransaction::create([
+            'student_id' => $hiddenStudent->id,
+            'recorded_by' => $recorder->id,
+            'type' => 'payment',
+            'amount' => '900',
+            'currency' => 'USD',
+            'status' => 'pending',
+            'posting_status' => 'pending',
+            'payment_status' => 'open',
+            'receipt_number' => 'RCT-APPROVAL-HIDDEN',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('finance.approvals.index'))
+            ->assertOk()
+            ->assertSee('Finance Approvals')
+            ->assertSee($student->full_name)
+            ->assertSee(route('finance.transactions.approve', $visiblePayment), false)
+            ->assertDontSee(route('finance.transactions.approve', $ownPayment), false)
+            ->assertSee('Different approver required')
+            ->assertDontSee($hiddenStudent->full_name)
+            ->assertDontSee(route('finance.transactions.approve', $hiddenPayment), false);
+
+        $this->actingAs($approver)
+            ->get(route('finance.dashboard'))
+            ->assertOk()
+            ->assertSee(route('finance.approvals.index'), false);
+
+        $this->actingAs($approver)
+            ->post(route('finance.transactions.approve', $visiblePayment), [
+                'return_to' => 'approvals',
+                'currency' => 'USD',
+                'sort' => 'oldest',
+            ])
+            ->assertRedirect(route('finance.approvals.index', ['currency' => 'USD', 'sort' => 'oldest']))
+            ->assertSessionHas('success', 'Finance record approved.');
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'id' => $visiblePayment->id,
+            'status' => 'approved',
+            'posting_status' => 'posted',
+        ]);
+    }
+
+    public function test_finance_approvals_page_requires_approval_permission(): void
+    {
+        $student = $this->makeStudent();
+        $accountant = $this->makeFinanceUser('accountant', ['finance.view']);
+        $accountant->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.approvals.index'))
+            ->assertForbidden();
+    }
+
     public function test_full_tuition_payment_creates_agreement_invoice_and_receipt(): void
     {
         $admin = $this->makeSuperAdmin();

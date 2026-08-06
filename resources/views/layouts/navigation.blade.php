@@ -173,6 +173,7 @@
                             || $navUser->hasDirectPermissionGrant('finance.view');
                         $canTuitionReminders = $canFinance && ($isSuper
                             || ($navUser->hasPermission('finance.view') && $navUser->hasAnyPermission(['finance.create_invoice', 'finance.record_payment'])));
+                        $canFinanceApprovals = $canFinance && ($isSuper || $navUser->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']));
                         $canAnalytics = $navUser->hasAnyRole(['super_administrator', 'administrator', 'university_president']);
                         $canDataExchange = $navUser->hasAnyRole(['administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'examination_administrator', 'lms_administrator'])
                             && ($isSuper || $navUser->hasAnyPermission(['students.view', 'students.create', 'students.update', 'courses.view', 'courses.create', 'courses.update', 'marks.view', 'marks.enter', 'marks.review', 'marks.approve', 'marks.publish']));
@@ -210,6 +211,7 @@
                     @if($canFinance)
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Accounting &amp; Finance</p>
                         <x-nav-link :href="route('finance')" :active="request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export')">{{ __('Student Finance') }}</x-nav-link>
+                        @if($canFinanceApprovals)<x-nav-link :href="route('finance.approvals.index')" :active="request()->routeIs('finance.approvals.*')">{{ __('Finance Approvals') }}</x-nav-link>@endif
                         @if($canTuitionReminders)<x-nav-link :href="route('finance.tuition-reminders.index')" :active="request()->routeIs('finance.tuition-reminders.*')">{{ __('Tuition Reminders') }}</x-nav-link>@endif
                     @endif
 
