@@ -3,9 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\College;
+use App\Models\Course;
+use App\Models\CourseSection;
 use App\Models\Department;
+use App\Models\Enrollment;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\StudentDocument;
 use App\Models\University;
@@ -161,6 +166,67 @@ class StudentDirectoryTest extends TestCase
         $this->assertSame($university->id, $account->university_id);
         $this->assertSame($department->college_id, $account->college_id);
         $this->assertSame($department->id, $account->department_id);
+    }
+
+    public function test_student_stage_is_scoped_and_department_change_is_blocked_after_enrollment(): void
+    {
+        [$university, $college, $department] = $this->organization('PLACEMENT');
+        $otherDepartment = Department::create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'name' => 'Transferred Department',
+            'code' => 'TRANSFER',
+        ]);
+        $stage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 1',
+            'sequence' => 1,
+        ]);
+        $otherStage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $otherDepartment->id,
+            'name' => 'Stage 1',
+            'sequence' => 1,
+        ]);
+        $admin = $this->superAdmin();
+
+        $this->actingAs($admin)
+            ->post(route('students.store'), $this->studentPayload($department, [
+                'email' => 'placed.student@example.com',
+                'current_stage_id' => $stage->id,
+            ]))
+            ->assertRedirect(route('students.index'));
+
+        $student = Student::where('email', 'placed.student@example.com')->firstOrFail();
+        $this->assertSame($stage->id, $student->current_stage_id);
+
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026/2027']);
+        $course = Course::create(['department_id' => $department->id, 'code' => 'PLC101', 'name' => 'Placement', 'credits' => 3]);
+        $section = CourseSection::create([
+            'course_id' => $course->id,
+            'semester_id' => $semester->id,
+            'stage_id' => $stage->id,
+            'section_code' => 'A',
+            'status' => 'active',
+        ]);
+        Enrollment::create([
+            'student_id' => $student->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('students.update', $student), $this->studentPayload($otherDepartment, [
+                'full_name' => $student->full_name,
+                'email' => $student->email,
+                'current_stage_id' => $otherStage->id,
+            ]))
+            ->assertSessionHasErrors('department_id');
+
+        $this->assertSame($department->id, $student->fresh()->department_id);
+        $this->assertSame($stage->id, $student->fresh()->current_stage_id);
     }
 
     public function test_scoped_administrator_only_sees_and_assigns_students_inside_their_organization(): void

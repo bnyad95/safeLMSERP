@@ -14,7 +14,9 @@
                 </div>
             @else
                 @unless($canRegister)
-                    <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Course registration is unavailable while your student record is inactive.</div>
+                    <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                        {{ strtolower((string) $student->status) !== 'active' ? 'Course registration is unavailable while your student record is inactive.' : 'Course registration is unavailable until your current stage is assigned.' }}
+                    </div>
                 @endunless
 
                 <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">

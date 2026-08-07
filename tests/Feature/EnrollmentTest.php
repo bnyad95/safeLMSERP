@@ -86,6 +86,7 @@ class EnrollmentTest extends TestCase
         $student = Student::create([
             'university_id' => $university->id,
             'department_id' => $department->id,
+            'current_stage_id' => $stage->id,
             'student_id' => 'S-100',
             'full_name' => 'Noor Student',
             'email' => 'noor@example.com',
@@ -245,14 +246,7 @@ class EnrollmentTest extends TestCase
     {
         $admin = $this->makeSuperAdmin();
         $setup = $this->makeAcademicSetup();
-        $section = CourseSection::create([
-            'course_id' => $setup['course']->id,
-            'semester_id' => $setup['semester']->id,
-            'teacher_id' => $setup['teacher']->id,
-            'section_code' => 'A',
-            'capacity' => 2,
-            'status' => 'active',
-        ]);
+        $section = $this->makeSection($setup);
 
         $this->actingAs($admin)
             ->post(route('enrollments.store'), [
@@ -269,18 +263,89 @@ class EnrollmentTest extends TestCase
         ]);
     }
 
+    public function test_unplaced_student_cannot_be_enrolled_or_waitlisted(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $section = $this->makeSection($setup);
+        $setup['student']->update(['current_stage_id' => null]);
+
+        foreach (['enroll', 'waitlist'] as $action) {
+            $this->actingAs($admin)
+                ->post(route('enrollments.store'), [
+                    'student_id' => $setup['student']->id,
+                    'course_section_id' => $section->id,
+                    'enrolled_at' => '2026-09-01',
+                    'action' => $action,
+                ])
+                ->assertSessionHas('error', 'Assign the student current stage before enrollment or waitlisting.');
+        }
+
+        $this->assertDatabaseMissing('enrollments', ['student_id' => $setup['student']->id]);
+        $this->assertNull($setup['student']->fresh()->current_stage_id);
+    }
+
+    public function test_admin_enrollment_enforces_student_department_and_current_stage(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $wrongStage = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
+        $wrongStageSection = $this->makeSection($setup, 'STAGE', ['stage_id' => $wrongStage->id]);
+
+        $this->actingAs($admin)
+            ->post(route('enrollments.store'), [
+                'student_id' => $setup['student']->id,
+                'course_section_id' => $wrongStageSection->id,
+                'enrolled_at' => '2026-09-01',
+            ])
+            ->assertSessionHas('error', 'This course is not offered for the student current stage.');
+
+        $otherDepartment = Department::create([
+            'university_id' => $setup['university']->id,
+            'college_id' => $setup['college']->id,
+            'name' => 'Accounting',
+        ]);
+        $otherStage = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $otherDepartment->id,
+            'name' => 'Stage 2',
+            'sequence' => 2,
+        ]);
+        $otherCourse = Course::create([
+            'department_id' => $otherDepartment->id,
+            'code' => 'ACC201',
+            'name' => 'Accounting Systems',
+            'credits' => 3,
+        ]);
+        $otherSection = CourseSection::create([
+            'course_id' => $otherCourse->id,
+            'semester_id' => $setup['semester']->id,
+            'stage_id' => $otherStage->id,
+            'section_code' => 'ACC',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('enrollments.store'), [
+                'student_id' => $setup['student']->id,
+                'course_section_id' => $otherSection->id,
+                'enrolled_at' => '2026-09-01',
+            ])
+            ->assertSessionHas('error', 'The student and course module must belong to the same department.');
+
+        $this->assertDatabaseCount('enrollments', 0);
+    }
+
     public function test_duplicate_active_enrollment_is_blocked(): void
     {
         $admin = $this->makeSuperAdmin();
         $setup = $this->makeAcademicSetup();
-        $section = CourseSection::create([
-            'course_id' => $setup['course']->id,
-            'semester_id' => $setup['semester']->id,
-            'teacher_id' => $setup['teacher']->id,
-            'section_code' => 'A',
-            'capacity' => 2,
-            'status' => 'active',
-        ]);
+        $section = $this->makeSection($setup);
 
         Enrollment::create([
             'student_id' => $setup['student']->id,
@@ -306,17 +371,11 @@ class EnrollmentTest extends TestCase
     {
         $admin = $this->makeSuperAdmin();
         $setup = $this->makeAcademicSetup();
-        $section = CourseSection::create([
-            'course_id' => $setup['course']->id,
-            'semester_id' => $setup['semester']->id,
-            'teacher_id' => $setup['teacher']->id,
-            'section_code' => 'A',
-            'capacity' => 1,
-            'status' => 'active',
-        ]);
+        $section = $this->makeSection($setup, 'A', ['capacity' => 1]);
         $secondStudent = Student::create([
             'university_id' => $setup['student']->university_id,
             'department_id' => $setup['student']->department_id,
+            'current_stage_id' => $setup['stage']->id,
             'student_id' => 'S-101',
             'full_name' => 'Second Student',
             'email' => 'second@example.com',
@@ -556,6 +615,7 @@ class EnrollmentTest extends TestCase
         $secondStudent = Student::create([
             'university_id' => $setup['student']->university_id,
             'department_id' => $setup['student']->department_id,
+            'current_stage_id' => $setup['stage']->id,
             'student_id' => 'S-102',
             'full_name' => 'Waitlist Student',
             'email' => 'waitlist@example.com',
@@ -656,6 +716,36 @@ class EnrollmentTest extends TestCase
             'id' => $section->id,
             'deleted_at' => null,
         ]);
+    }
+
+    public function test_module_stage_cannot_change_after_enrollment_exists(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $section = $this->makeSection($setup);
+        $otherStage = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
+        Enrollment::create([
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('course-sections.update', $section), [
+                'teacher_id' => $setup['teacher']->id,
+                'stage_id' => $otherStage->id,
+                'capacity' => 30,
+                'status' => 'active',
+            ])
+            ->assertSessionHas('error', 'The module stage cannot be changed after enrollment or mark records exist.');
+
+        $this->assertSame($setup['stage']->id, $section->fresh()->stage_id);
     }
 
     public function test_department_administrator_only_sees_modules_in_their_department(): void

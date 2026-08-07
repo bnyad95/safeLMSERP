@@ -3,6 +3,7 @@
     $selectedUniversityId = old('university_id', $student->university_id ?? '');
     $selectedCollegeId = old('college_id', $student->department?->college_id ?? '');
     $selectedDepartmentId = old('department_id', $student->department_id ?? '');
+    $selectedStageId = old('current_stage_id', $student->current_stage_id ?? '');
 @endphp
 
 <div class="space-y-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-6">
@@ -63,6 +64,16 @@
                     @endforeach
                 </select>
                 <x-input-error :messages="$errors->get('department_id')" class="mt-2" />
+            </div>
+            <div>
+                <label for="student-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Current stage</label>
+                <select id="student-stage" name="current_stage_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
+                    <option value="">Not assigned</option>
+                    @foreach($stages as $stage)
+                        <option value="{{ $stage->id }}" data-university-id="{{ $stage->university_id }}" data-department-id="{{ $stage->department_id }}" @selected((string) $selectedStageId === (string) $stage->id)>{{ $stage->name }}{{ $stage->code ? ' / '.$stage->code : '' }}</option>
+                    @endforeach
+                </select>
+                <x-input-error :messages="$errors->get('current_stage_id')" class="mt-2" />
             </div>
             <div>
                 <label for="student-status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Student status</label>
@@ -154,8 +165,9 @@
         const university = document.getElementById('student-university');
         const college = document.getElementById('student-college');
         const department = document.getElementById('student-department');
+        const stage = document.getElementById('student-stage');
 
-        if (!university || !college || !department) return;
+        if (!university || !college || !department || !stage) return;
 
         const filterOptions = (field, predicate) => {
             Array.from(field.options).forEach((option, index) => {
@@ -183,10 +195,16 @@
                 && option.dataset.universityId === universityId
                 && option.dataset.collegeId === collegeId);
             selectOnlyOption(department);
+
+            const departmentId = department.value;
+            filterOptions(stage, (option) => universityId !== '' && departmentId !== ''
+                && option.dataset.universityId === universityId
+                && option.dataset.departmentId === departmentId);
         };
 
         university.addEventListener('change', cascade);
         college.addEventListener('change', cascade);
+        department.addEventListener('change', cascade);
         selectOnlyOption(university);
         cascade();
     });

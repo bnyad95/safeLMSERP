@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CourseSection;
 use App\Models\Enrollment;
 use App\Models\EnrollmentEvent;
+use App\Models\Mark;
 use App\Models\Student;
 use App\Models\Timetable;
 use App\Models\User;
@@ -26,7 +27,7 @@ class EnrollmentService
             $section = CourseSection::with(['course.department', 'stage', 'timetables', 'semester.academicYear'])
                 ->lockForUpdate()
                 ->findOrFail($section->id);
-            $student = Student::lockForUpdate()->findOrFail($student->id);
+            $student = Student::with('currentStage')->lockForUpdate()->findOrFail($student->id);
 
             if ($student->status !== 'Active') {
                 return $this->failure('Only active students can be enrolled or waitlisted.');
@@ -42,6 +43,28 @@ class EnrollmentService
             }
             if ($student->university_id !== $section->course->university_id) {
                 return $this->failure('The student and course module must belong to the same university.');
+            }
+            if ((int) $student->department_id !== (int) $section->course->department_id) {
+                return $this->failure('The student and course module must belong to the same department.');
+            }
+            if (! $student->current_stage_id) {
+                return $this->failure('Assign the student current stage before enrollment or waitlisting.');
+            }
+            if (! $section->stage_id) {
+                return $this->failure('Assign a stage to the module before enrolling students.');
+            }
+            if (! $student->currentStage
+                || (int) $student->currentStage->department_id !== (int) $student->department_id
+                || (int) $student->currentStage->university_id !== (int) $student->university_id) {
+                return $this->failure('The student current stage is outside the student academic organization.');
+            }
+
+            $context = $this->registrationContext($student, $section);
+            if ($context['retake_reason']) {
+                return $this->failure($context['retake_reason']);
+            }
+            if ($message = $this->stageEligibilityMessage($student, $section, $context['is_retake'])) {
+                return $this->failure($message);
             }
 
             $existing = Enrollment::withTrashed()
@@ -76,7 +99,7 @@ class EnrollmentService
                 }
 
                 if ($this->hasTimetableConflict($student, $section)) {
-                    return $this->failure('The module timetable conflicts with the student\'s current timetable.');
+                    return $this->failure('This module conflicts with another class in your timetable.');
                 }
             }
 
@@ -91,21 +114,19 @@ class EnrollmentService
             ]);
             $enrollment->fill([
                 'status' => $action === 'waitlist' ? 'waitlisted' : 'enrolled',
+                'is_retake' => $context['is_retake'],
+                'retake_from_enrollment_id' => $context['source_enrollment']?->id,
+                'retake_reason' => $context['is_retake'] ? 'Failed course retake' : null,
                 'enrolled_at' => $enrolledAt,
                 'dropped_at' => null,
                 'drop_reason' => null,
                 'waitlisted_at' => $action === 'waitlist' ? now() : null,
                 'transferred_from_id' => $transferredFromId,
-                'notes' => $notes,
+                'notes' => $context['is_retake'] && $notes === 'Student course registration'
+                    ? 'Student course registration - retake'
+                    : $notes,
             ]);
             $enrollment->save();
-
-            if (! $student->current_stage_id && $section->stage_id) {
-                $student->update([
-                    'current_stage_id' => $section->stage_id,
-                    'academic_standing' => Student::STANDING_NEW,
-                ]);
-            }
 
             $this->recordEvent(
                 $enrollment,
@@ -207,6 +228,93 @@ class EnrollmentService
         }
 
         return false;
+    }
+
+    public function registrationContext(Student $student, CourseSection $section, $priorMarks = null): array
+    {
+        $priorMarks ??= Mark::withTrashed()->with(['courseSection.semester'])
+            ->where('student_id', $student->id)
+            ->where('course_id', $section->course_id)
+            ->where('visibility_status', 'published')
+            ->whereNotNull('final_mark')
+            ->whereHas('courseSection.semester')
+            ->orderByDesc('published_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $sameYearMark = $priorMarks->first(fn (Mark $mark) => $mark->courseSection?->semester?->academic_year === $section->semester?->academic_year);
+        if ($sameYearMark) {
+            $summerRetake = ($section->semester?->term_type ?? 'regular') === 'summer'
+                && ($sameYearMark->courseSection?->semester?->term_type ?? 'regular') !== 'summer'
+                && (float) $sameYearMark->final_mark < (float) config('academics.pass_mark', 50);
+
+            return $summerRetake
+                ? ['is_retake' => true, 'source_enrollment' => $this->enrollmentForMark($student, $sameYearMark), 'retake_reason' => null]
+                : ['is_retake' => false, 'source_enrollment' => null, 'retake_reason' => 'You already have a published result for this course in this academic year.'];
+        }
+
+        $latestPriorMark = $priorMarks->first();
+        if (! $latestPriorMark) {
+            return ['is_retake' => false, 'source_enrollment' => null, 'retake_reason' => null];
+        }
+
+        if ((float) $latestPriorMark->final_mark >= (float) config('academics.pass_mark', 50)) {
+            return ['is_retake' => false, 'source_enrollment' => null, 'retake_reason' => 'You already passed this course and cannot register for it again.'];
+        }
+
+        return [
+            'is_retake' => true,
+            'source_enrollment' => $this->enrollmentForMark($student, $latestPriorMark)
+                ?? $this->latestCompletedEnrollmentForCourse($student, $section->course_id),
+            'retake_reason' => null,
+        ];
+    }
+
+    public function stageEligibilityMessage(Student $student, CourseSection $section, bool $isRetake): ?string
+    {
+        if (! $student->current_stage_id) {
+            return 'Assign the student current stage before enrollment or waitlisting.';
+        }
+        if (! $section->stage_id) {
+            return 'Assign a stage to the module before enrolling students.';
+        }
+
+        $student->loadMissing('currentStage');
+        $section->loadMissing('stage');
+        if (! $student->currentStage || ! $section->stage) {
+            return 'The student or module stage is unavailable.';
+        }
+
+        if (! $isRetake && (int) $section->stage_id !== (int) $student->current_stage_id) {
+            return 'This course is not offered for the student current stage.';
+        }
+        if ($isRetake && (int) $section->stage->sequence > (int) $student->currentStage->sequence) {
+            return 'A retake module cannot be above the student current stage.';
+        }
+
+        return null;
+    }
+
+    private function enrollmentForMark(Student $student, Mark $mark): ?Enrollment
+    {
+        if (! $mark->course_section_id) {
+            return null;
+        }
+
+        return Enrollment::withTrashed()
+            ->where('student_id', $student->id)
+            ->where('course_section_id', $mark->course_section_id)
+            ->first();
+    }
+
+    private function latestCompletedEnrollmentForCourse(Student $student, int $courseId): ?Enrollment
+    {
+        return Enrollment::withTrashed()->with('courseSection')
+            ->where('student_id', $student->id)
+            ->whereIn('status', ['completed', 'dropped'])
+            ->whereHas('courseSection', fn ($query) => $query->where('course_id', $courseId))
+            ->latest('updated_at')
+            ->first();
     }
 
     private function recordEvent(Enrollment $enrollment, string $action, User $actor, ?string $notes = null, array $metadata = []): void

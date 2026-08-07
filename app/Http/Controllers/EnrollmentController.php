@@ -9,6 +9,7 @@ use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Enrollment;
 use App\Models\EnrollmentEvent;
+use App\Models\Mark;
 use App\Models\Semester;
 use App\Models\Stage;
 use App\Models\Student;
@@ -384,6 +385,12 @@ class EnrollmentController extends Controller
             'status' => ['required', Rule::in(['planned', 'active', 'closed'])],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
+        if ($courseSection->stage_id
+            && (int) $validated['stage_id'] !== (int) $courseSection->stage_id
+            && (Enrollment::withTrashed()->where('course_section_id', $courseSection->id)->exists()
+                || Mark::withTrashed()->where('course_section_id', $courseSection->id)->exists())) {
+            return back()->with('error', 'The module stage cannot be changed after enrollment or mark records exist.');
+        }
         $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
         $course = $courseSection->course()->with('department')->firstOrFail();
         $courseSection->load('semester.academicYear');

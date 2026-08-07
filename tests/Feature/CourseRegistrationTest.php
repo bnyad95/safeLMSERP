@@ -12,6 +12,7 @@ use App\Models\Mark;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
@@ -65,6 +66,12 @@ class CourseRegistrationTest extends TestCase
             'email' => 'register@example.com',
             'status' => 'Active',
         ]);
+        $stage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
         $course = Course::create([
             'department_id' => $department->id,
             'semester_id' => $semester->id,
@@ -76,6 +83,7 @@ class CourseRegistrationTest extends TestCase
         $section = CourseSection::create([
             'course_id' => $course->id,
             'semester_id' => $semester->id,
+            'stage_id' => $stage->id,
             'teacher_id' => $teacher->id,
             'section_code' => 'G1',
             'grade_level' => 'Stage 3',
@@ -85,13 +93,14 @@ class CourseRegistrationTest extends TestCase
         $student = Student::create([
             'university_id' => $university->id,
             'department_id' => $department->id,
+            'current_stage_id' => $stage->id,
             'student_id' => 'BND-REG-1',
             'full_name' => 'Course Register Student',
             'email' => 'register-student@example.com',
             'status' => 'Active',
         ]);
 
-        return compact('department', 'semester', 'course', 'section', 'student');
+        return compact('department', 'semester', 'stage', 'course', 'section', 'student');
     }
 
     public function test_student_cannot_access_admin_enrollments_page(): void
@@ -140,6 +149,26 @@ class CourseRegistrationTest extends TestCase
             ->assertOk()
             ->assertSee('Open classroom')
             ->assertSee(route('class-stream.show', $setup['section']), false);
+    }
+
+    public function test_student_cannot_register_until_current_stage_is_assigned(): void
+    {
+        $setup = $this->makeAcademicSetup();
+        $setup['student']->update(['current_stage_id' => null]);
+        $user = $this->makeStudentUser($setup['student']);
+
+        $this->actingAs($user)
+            ->get(route('course-registration.index'))
+            ->assertOk()
+            ->assertSee('Course registration is unavailable until your current stage is assigned.')
+            ->assertDontSee('Distributed Systems');
+
+        $this->actingAs($user)
+            ->post(route('course-registration.store'), ['course_section_id' => $setup['section']->id])
+            ->assertSessionHas('error', 'Assign the student current stage before enrollment or waitlisting.');
+
+        $this->assertDatabaseMissing('enrollments', ['student_id' => $setup['student']->id]);
+        $this->assertNull($setup['student']->fresh()->current_stage_id);
     }
 
     public function test_student_cannot_register_for_same_course_twice(): void
@@ -196,6 +225,7 @@ class CourseRegistrationTest extends TestCase
         $retakeSection = CourseSection::create([
             'course_id' => $setup['course']->id,
             'semester_id' => $nextSemester->id,
+            'stage_id' => $setup['stage']->id,
             'section_code' => 'R1',
             'grade_level' => 'Stage 3',
             'capacity' => 30,
@@ -255,6 +285,7 @@ class CourseRegistrationTest extends TestCase
         $summerSection = CourseSection::create([
             'course_id' => $setup['course']->id,
             'semester_id' => $summer->id,
+            'stage_id' => $setup['stage']->id,
             'section_code' => 'SUM',
             'grade_level' => 'Stage 3',
             'capacity' => 30,
@@ -309,6 +340,7 @@ class CourseRegistrationTest extends TestCase
         $retakeSection = CourseSection::create([
             'course_id' => $setup['course']->id,
             'semester_id' => $nextSemester->id,
+            'stage_id' => $setup['stage']->id,
             'section_code' => 'P1',
             'grade_level' => 'Stage 3',
             'capacity' => 30,

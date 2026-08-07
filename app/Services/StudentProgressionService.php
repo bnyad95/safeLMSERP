@@ -44,10 +44,19 @@ class StudentProgressionService
         $currentStageMismatchQuery = $this->resultEnrollmentQuery($sectionIds, $academicYear)
             ->join('students', 'students.id', '=', 'enrollments.student_id')
             ->join('course_sections', 'course_sections.id', '=', 'enrollments.course_section_id')
-            ->where('enrollments.is_retake', false)
+            ->join('stages as student_stages', 'student_stages.id', '=', 'students.current_stage_id')
+            ->join('stages as module_stages', 'module_stages.id', '=', 'course_sections.stage_id')
             ->whereNotNull('students.current_stage_id')
             ->whereNotNull('course_sections.stage_id')
-            ->whereColumn('students.current_stage_id', '!=', 'course_sections.stage_id');
+            ->where(function (Builder $query) {
+                $query->where(function (Builder $ordinary) {
+                    $ordinary->where('enrollments.is_retake', false)
+                        ->whereColumn('students.current_stage_id', '!=', 'course_sections.stage_id');
+                })->orWhere(function (Builder $retake) {
+                    $retake->where('enrollments.is_retake', true)
+                        ->whereColumn('module_stages.sequence', '>', 'student_stages.sequence');
+                });
+            });
         $conflictingStageQuery = $this->resultEnrollmentQuery($sectionIds, $academicYear)
             ->join('course_sections', 'course_sections.id', '=', 'enrollments.course_section_id')
             ->where('enrollments.is_retake', false)
@@ -104,6 +113,12 @@ class StudentProgressionService
                 $issues->push('Ordinary module enrollments use conflicting stages.');
             } elseif ($student->current_stage_id && $ordinaryStageIds->isNotEmpty() && ! $ordinaryStageIds->contains($student->current_stage_id)) {
                 $issues->push('Current stage does not match the ordinary module stage.');
+            }
+
+            if ($student->currentStage && $enrollments
+                ->where('is_retake', true)
+                ->contains(fn (Enrollment $enrollment) => (int) ($enrollment->courseSection?->stage?->sequence ?? 0) > (int) $student->currentStage->sequence)) {
+                $issues->push('A retake module is above the student current stage.');
             }
 
             foreach ($enrollments as $enrollment) {
@@ -179,6 +194,7 @@ class StudentProgressionService
             'decided_students' => 0,
             'promoted' => 0,
             'promoted_with_retakes' => 0,
+            'retake_only' => 0,
             'repeat_stage' => 0,
             'extended' => 0,
             'completed_program' => 0,
@@ -187,7 +203,7 @@ class StudentProgressionService
         ];
 
         foreach ($studentIds->chunk(500) as $chunk) {
-            $students = Student::with('university')->whereIn('id', $chunk)->get()->keyBy('id');
+            $students = Student::with(['university', 'currentStage'])->whereIn('id', $chunk)->get()->keyBy('id');
             $marksByStudent = Mark::with(['course', 'courseSection.stage', 'courseSection.semester'])
                 ->whereIn('course_section_id', $sectionIds)
                 ->whereIn('student_id', $chunk)
@@ -232,36 +248,47 @@ class StudentProgressionService
     private function processStudent(Student $student, Collection $studentMarks, ?SemesterCreditPolicy $policy, string $academicYear, User $actor): string
     {
         $stageMarks = $studentMarks->filter(fn (Mark $mark) => $mark->courseSection?->stage);
-        if (! $student->current_stage_id || $stageMarks->isEmpty()) {
+        $currentStage = $student->currentStage;
+        if (! $student->current_stage_id || ! $currentStage || $stageMarks->isEmpty()) {
             throw new RuntimeException('Student '.$student->student_id.' is missing a current stage or usable staged results.');
         }
 
-        $currentStage = $stageMarks
-            ->map(fn (Mark $mark) => $mark->courseSection->stage)
-            ->sortByDesc('sequence')
-            ->first();
-        $currentStageMarks = $stageMarks
-            ->filter(fn (Mark $mark) => (int) $mark->courseSection->stage_id === (int) $currentStage->id)
+        if ($stageMarks->contains(fn (Mark $mark) => (int) $mark->courseSection->stage->sequence > (int) $currentStage->sequence)) {
+            throw new RuntimeException('Student '.$student->student_id.' has results from a stage above the recorded current stage.');
+        }
+
+        $latestMarks = $stageMarks
             ->groupBy('course_id')
             ->map(fn ($attempts) => $attempts->sortByDesc(fn (Mark $mark) => $mark->published_at?->getTimestamp() ?? $mark->created_at?->getTimestamp() ?? 0)->first());
+        $currentStageMarks = $latestMarks
+            ->filter(fn (Mark $mark) => (int) $mark->courseSection->stage_id === (int) $currentStage->id);
 
         $passMark = (float) config('academics.pass_mark', 50);
-        $failedModules = $currentStageMarks->filter(fn (Mark $mark) => (float) $mark->final_mark < $passMark)->count();
-        $attemptedCredits = (float) $currentStageMarks->sum(fn (Mark $mark) => (float) ($mark->course?->credits ?? 0));
-        $earnedCredits = (float) $currentStageMarks
+        $failedModules = $latestMarks->filter(fn (Mark $mark) => (float) $mark->final_mark < $passMark)->count();
+        $attemptedCredits = (float) $latestMarks->sum(fn (Mark $mark) => (float) ($mark->course?->credits ?? 0));
+        $earnedCredits = (float) $latestMarks
             ->filter(fn (Mark $mark) => (float) $mark->final_mark >= $passMark)
             ->sum(fn (Mark $mark) => (float) ($mark->course?->credits ?? 0));
-        $regularSemesterCount = max(1, $currentStageMarks
-            ->filter(fn (Mark $mark) => ($mark->courseSection?->semester?->term_type ?? 'regular') === 'regular')
-            ->pluck('courseSection.semester_id')
-            ->filter()
-            ->unique()
-            ->count());
-        $progressionEligible = $policy
-            ? $earnedCredits >= ((int) $policy->passing_credits * $regularSemesterCount)
-            : $failedModules === 0;
+        if ($currentStageMarks->isEmpty()) {
+            $standing = $failedModules > 0 ? Student::STANDING_CARRYING_RETAKES : Student::STANDING_GOOD;
+            $outcome = 'retake_only';
+            $nextStage = null;
+        } else {
+            $currentStageEarnedCredits = (float) $currentStageMarks
+                ->filter(fn (Mark $mark) => (float) $mark->final_mark >= $passMark)
+                ->sum(fn (Mark $mark) => (float) ($mark->course?->credits ?? 0));
+            $regularSemesterCount = max(1, $currentStageMarks
+                ->filter(fn (Mark $mark) => ($mark->courseSection?->semester?->term_type ?? 'regular') === 'regular')
+                ->pluck('courseSection.semester_id')
+                ->filter()
+                ->unique()
+                ->count());
+            $progressionEligible = $policy
+                ? $currentStageEarnedCredits >= ((int) $policy->passing_credits * $regularSemesterCount)
+                : $currentStageMarks->every(fn (Mark $mark) => (float) $mark->final_mark >= $passMark);
 
-        [$standing, $outcome, $nextStage] = $this->outcome($student, $currentStage, $progressionEligible, $failedModules);
+            [$standing, $outcome, $nextStage] = $this->outcome($student, $currentStage, $progressionEligible, $failedModules);
+        }
         $existing = StudentStageProgression::where([
             'student_id' => $student->id,
             'academic_year' => $academicYear,

@@ -12,6 +12,7 @@ use App\Models\Mark;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
+use App\Models\Stage;
 use App\Models\Student;
 use App\Models\University;
 use App\Models\User;
@@ -199,6 +200,7 @@ class AdminAuthorizationTest extends TestCase
             'password' => 'ScopedTemp@123',
             'password_confirmation' => 'ScopedTemp@123',
             'university_id' => $secondUniversity->id,
+            'college_id' => $secondCollege->id,
             'department_id' => $secondDepartment->id,
             'status' => 'Active',
         ])->assertNotFound();
@@ -229,13 +231,21 @@ class AdminAuthorizationTest extends TestCase
             'academic_year' => '2026/2027',
         ]);
         $course = Course::factory()->create(['department_id' => $department->id]);
+        $stage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 1',
+            'sequence' => 1,
+        ]);
         $student = Student::factory()->create([
             'university_id' => $university->id,
             'department_id' => $department->id,
+            'current_stage_id' => $stage->id,
         ]);
         $section = CourseSection::create([
             'course_id' => $course->id,
             'semester_id' => $semester->id,
+            'stage_id' => $stage->id,
             'section_code' => 'R1',
             'capacity' => 30,
             'status' => 'active',
@@ -560,13 +570,13 @@ class AdminAuthorizationTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('dashboard'))
+            ->assertRedirect(route('finance.dashboard'));
+
+        $this->actingAs($user)
+            ->get(route('finance.dashboard'))
             ->assertOk()
             ->assertSee(route('finance'), false)
             ->assertSee('Finance');
-
-        $this->actingAs($user)
-            ->get(route('finance'))
-            ->assertOk();
     }
 
     public function test_university_president_starts_from_institution_analytics(): void

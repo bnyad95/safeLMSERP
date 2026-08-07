@@ -3,13 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\CourseSection;
-use App\Models\Enrollment;
 use App\Models\Mark;
 use App\Models\Student;
 use App\Services\EnrollmentService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class CourseRegistrationController extends Controller
 {
@@ -34,7 +32,7 @@ class CourseRegistrationController extends Controller
         ];
 
         if ($student) {
-            $canRegister = strtolower((string) $student->status) === 'active';
+            $canRegister = strtolower((string) $student->status) === 'active' && (bool) $student->current_stage_id;
             $registrations = $student->enrollments()
                 ->with(['courseSection.course.department', 'courseSection.semester', 'courseSection.teacher'])
                 ->where('status', 'enrolled')
@@ -71,14 +69,15 @@ class CourseRegistrationController extends Controller
                 ->get()
                 ->filter(fn (CourseSection $section) => $section->registered_count < $section->capacity)
                 ->map(function (CourseSection $section) use ($student, $priorMarksByCourse, $registeredCourseIds) {
-                    $context = $this->registrationContext($student, $section, $priorMarksByCourse->get($section->course_id, collect()));
+                    $enrollmentService = app(EnrollmentService::class);
+                    $context = $enrollmentService->registrationContext($student, $section, $priorMarksByCourse->get($section->course_id, collect()));
                     $section->setAttribute('is_retake_registration', $context['is_retake']);
                     $reason = $context['retake_reason'];
                     if (! $reason && $registeredCourseIds->contains($section->course_id) && ! $context['is_retake']) {
                         $reason = 'You are already registered in this course.';
                     }
-                    if (! $reason && ! $this->sectionMatchesStudentStage($student, $section, $context['is_retake'])) {
-                        $reason = 'This course is not offered for your current stage.';
+                    if (! $reason) {
+                        $reason = $enrollmentService->stageEligibilityMessage($student, $section, $context['is_retake']);
                     }
                     $section->setAttribute('retake_reason', $reason);
 
@@ -114,80 +113,22 @@ class CourseRegistrationController extends Controller
             'course_section_id' => ['required', 'exists:course_sections,id'],
         ]);
 
-        $result = DB::transaction(function () use ($student, $validated) {
-            $section = CourseSection::with(['course', 'semester', 'stage'])
-                ->where('status', 'active')
-                ->lockForUpdate()
-                ->findOrFail($validated['course_section_id']);
+        $section = CourseSection::with(['course', 'semester', 'stage'])->findOrFail($validated['course_section_id']);
+        abort_unless((int) $section->course?->department_id === (int) $student->department_id, 403);
+        $placement = app(EnrollmentService::class)->place(
+            $student,
+            $section,
+            'enroll',
+            now()->toDateString(),
+            'Student course registration',
+            $request->user()
+        );
 
-            abort_unless($section->course?->department_id === $student->department_id, 403);
-
-            $context = $this->registrationContext($student, $section);
-            if ($context['retake_reason']) {
-                return $context['retake_reason'];
-            }
-            if (! $this->sectionMatchesStudentStage($student, $section, $context['is_retake'])) {
-                return 'This course is not offered for your current stage.';
-            }
-
-            $alreadyRegisteredCourse = $student->enrollments()
-                ->where('status', 'enrolled')
-                ->whereHas('courseSection', fn ($query) => $query
-                    ->where('course_id', $section->course_id)
-                    ->whereIn('status', ['planned', 'active']))
-                ->exists();
-
-            if ($alreadyRegisteredCourse && ! $context['is_retake']) {
-                return 'You are already registered in this course.';
-            }
-
-            $section->loadMissing('timetables');
-            if (app(EnrollmentService::class)->hasTimetableConflict($student, $section)) {
-                return 'This module conflicts with another class in your timetable.';
-            }
-
-            $registration = Enrollment::withTrashed()
-                ->where('student_id', $student->id)
-                ->where('course_section_id', $section->id)
-                ->first();
-
-            if ($section->activeEnrollments()->count() >= $section->capacity) {
-                return 'This course group is already full.';
-            }
-
-            if ($registration?->trashed()) {
-                $registration->restore();
-            }
-
-            Enrollment::updateOrCreate(
-                [
-                    'student_id' => $student->id,
-                    'course_section_id' => $section->id,
-                ],
-                [
-                    'status' => 'enrolled',
-                    'is_retake' => $context['is_retake'],
-                    'retake_from_enrollment_id' => $context['source_enrollment']?->id,
-                    'retake_reason' => $context['is_retake'] ? 'Failed course retake' : null,
-                    'enrolled_at' => now()->toDateString(),
-                    'dropped_at' => null,
-                    'notes' => $context['is_retake'] ? 'Student course registration - retake' : 'Student course registration',
-                ]
-            );
-
-            if (! $student->current_stage_id && $section->stage_id) {
-                $student->update([
-                    'current_stage_id' => $section->stage_id,
-                    'academic_standing' => Student::STANDING_NEW,
-                ]);
-            }
-
-            return $section;
-        });
-
-        if (is_string($result)) {
-            return back()->with('error', $result);
+        if (! $placement['ok']) {
+            return back()->with('error', $placement['message']);
         }
+
+        $result = $placement['enrollment']->courseSection()->with('course')->firstOrFail();
 
         app(NotificationService::class)->notifyStudent($student, 'Course registration confirmed', ($result->course->code ?? 'Course').' / Group '.$result->section_code, [
             'type' => 'course_registration',
@@ -200,95 +141,4 @@ class CourseRegistrationController extends Controller
         return redirect()->route('course-registration.index')->with('success', 'Course registration completed.');
     }
 
-    private function registrationContext(Student $student, CourseSection $section, $priorMarks = null): array
-    {
-        $priorMarks ??= Mark::withTrashed()->with(['courseSection.semester'])
-            ->where('student_id', $student->id)
-            ->where('course_id', $section->course_id)
-            ->where('visibility_status', 'published')
-            ->whereNotNull('final_mark')
-            ->whereHas('courseSection.semester')
-            ->orderByDesc('published_at')
-            ->orderByDesc('created_at')
-            ->get();
-
-        $sameYearMark = $priorMarks->first(fn (Mark $mark) => $mark->courseSection?->semester?->academic_year === $section->semester?->academic_year);
-        if ($sameYearMark) {
-            $summerRetake = ($section->semester?->term_type ?? 'regular') === 'summer'
-                && ($sameYearMark->courseSection?->semester?->term_type ?? 'regular') !== 'summer'
-                && (float) $sameYearMark->final_mark < (float) config('academics.pass_mark', 50);
-            if ($summerRetake) {
-                return [
-                    'is_retake' => true,
-                    'source_enrollment' => $this->enrollmentForMark($student, $sameYearMark),
-                    'retake_reason' => null,
-                ];
-            }
-
-            return [
-                'is_retake' => false,
-                'source_enrollment' => null,
-                'retake_reason' => 'You already have a published result for this course in this academic year.',
-            ];
-        }
-
-        $latestPriorMark = $priorMarks->first();
-        if (! $latestPriorMark) {
-            return [
-                'is_retake' => false,
-                'source_enrollment' => null,
-                'retake_reason' => null,
-            ];
-        }
-
-        if ((float) $latestPriorMark->final_mark >= 50) {
-            return [
-                'is_retake' => false,
-                'source_enrollment' => null,
-                'retake_reason' => 'You already passed this course and cannot register for it again.',
-            ];
-        }
-
-        return [
-            'is_retake' => true,
-            'source_enrollment' => $this->enrollmentForMark($student, $latestPriorMark)
-                ?? $this->latestCompletedEnrollmentForCourse($student, $section->course_id),
-            'retake_reason' => null,
-        ];
-    }
-
-    private function sectionMatchesStudentStage(Student $student, CourseSection $section, bool $isRetake): bool
-    {
-        if (! $student->current_stage_id || ! $section->stage_id) {
-            return true;
-        }
-
-        if (! $isRetake) {
-            return (int) $section->stage_id === (int) $student->current_stage_id;
-        }
-
-        return (int) $section->stage->sequence <= (int) $student->currentStage?->sequence;
-    }
-
-    private function enrollmentForMark(Student $student, Mark $mark): ?Enrollment
-    {
-        if (! $mark->course_section_id) {
-            return null;
-        }
-
-        return Enrollment::withTrashed()
-            ->where('student_id', $student->id)
-            ->where('course_section_id', $mark->course_section_id)
-            ->first();
-    }
-
-    private function latestCompletedEnrollmentForCourse(Student $student, int $courseId): ?Enrollment
-    {
-        return Enrollment::withTrashed()->with(['courseSection'])
-            ->where('student_id', $student->id)
-            ->whereIn('status', ['completed', 'dropped'])
-            ->whereHas('courseSection', fn ($query) => $query->where('course_id', $courseId))
-            ->latest('updated_at')
-            ->first();
-    }
 }

@@ -80,9 +80,10 @@ class StudentController extends Controller
         $universities = $this->scopedUniversities(request()->user());
         $colleges = $this->scopedColleges(request()->user());
         $departments = $this->scopedDepartments(request()->user());
+        $stages = $this->scopedStages(request()->user());
         $suggestedStudentId = Student::suggestedStudentIdentifier();
 
-        return view('students.create', compact('universities', 'colleges', 'departments', 'suggestedStudentId'));
+        return view('students.create', compact('universities', 'colleges', 'departments', 'stages', 'suggestedStudentId'));
     }
 
     /**
@@ -94,6 +95,7 @@ class StudentController extends Controller
 
         $validated = $this->validateStudent($request, null);
         $department = $this->validateOrganizationSelection($validated, $request->user());
+        $this->validateStageSelection($validated, $department, $request->user());
         $validated['university_id'] = $department->university_id;
         unset($validated['college_id']);
         $temporaryPassword = $validated['password'];
@@ -151,8 +153,9 @@ class StudentController extends Controller
         $universities = $this->scopedUniversities(request()->user());
         $colleges = $this->scopedColleges(request()->user());
         $departments = $this->scopedDepartments(request()->user());
+        $stages = $this->scopedStages(request()->user());
 
-        return view('students.edit', compact('student', 'universities', 'colleges', 'departments'));
+        return view('students.edit', compact('student', 'universities', 'colleges', 'departments', 'stages'));
     }
 
     /**
@@ -165,6 +168,8 @@ class StudentController extends Controller
 
         $validated = $this->validateStudent($request, $student);
         $department = $this->validateOrganizationSelection($validated, $request->user());
+        $this->protectDepartmentChange($student, $department);
+        $this->validateStageSelection($validated, $department, $request->user(), $student);
         $validated['university_id'] = $department->university_id;
         unset($validated['college_id']);
 
@@ -391,6 +396,7 @@ class StudentController extends Controller
             'university_id' => ['nullable', 'exists:universities,id'],
             'college_id' => ['nullable', 'exists:colleges,id'],
             'department_id' => ['required', 'exists:departments,id'],
+            'current_stage_id' => ['nullable', 'exists:stages,id'],
             'status' => ['required', 'in:Active,Inactive,Graduated'],
             'admission_status' => ['nullable', Rule::in(['Applicant', 'Admitted', 'Enrolled', 'Deferred', 'Withdrawn', 'Graduated'])],
             'admission_date' => ['nullable', 'date'],
@@ -656,6 +662,14 @@ class StudentController extends Controller
         return $query->get(['id', 'name', 'code', 'college_id', 'university_id']);
     }
 
+    private function scopedStages(User $user)
+    {
+        $query = Stage::orderBy('sequence')->orderBy('name');
+        OrganizationScope::apply($query, $user, 'stage');
+
+        return $query->get(['id', 'university_id', 'department_id', 'name', 'code', 'sequence']);
+    }
+
     private function validateOrganizationSelection(array $validated, User $user): Department
     {
         $department = $this->scopedDepartments($user)->firstWhere('id', (int) $validated['department_id']);
@@ -679,6 +693,61 @@ class StudentController extends Controller
         }
 
         return $department;
+    }
+
+    private function validateStageSelection(array $validated, Department $department, User $user, ?Student $student = null): void
+    {
+        $stageId = $validated['current_stage_id'] ?? null;
+        if (! $stageId) {
+            if ($student?->enrollments()->where('status', 'enrolled')->where('is_retake', false)->exists()) {
+                throw ValidationException::withMessages([
+                    'current_stage_id' => 'A student with active regular modules must have a current stage.',
+                ]);
+            }
+
+            return;
+        }
+
+        $stageQuery = Stage::whereKey($stageId)
+            ->where('university_id', $department->university_id)
+            ->where('department_id', $department->id);
+        OrganizationScope::apply($stageQuery, $user, 'stage');
+        $stage = $stageQuery->first();
+
+        if (! $stage) {
+            throw ValidationException::withMessages([
+                'current_stage_id' => 'The selected stage does not belong to the selected department or your organization scope.',
+            ]);
+        }
+
+        if ($student?->enrollments()
+            ->where('status', 'enrolled')
+            ->where('is_retake', false)
+            ->whereHas('courseSection', fn ($query) => $query
+                ->whereNotNull('stage_id')
+                ->where('stage_id', '!=', $stage->id))
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'current_stage_id' => 'The selected stage conflicts with the student active regular modules.',
+            ]);
+        }
+    }
+
+    private function protectDepartmentChange(Student $student, Department $department): void
+    {
+        if ((int) $student->department_id === (int) $department->id) {
+            return;
+        }
+
+        $hasAcademicHistory = $student->enrollments()->withTrashed()->exists()
+            || $student->marks()->withTrashed()->exists()
+            || $student->stageProgressions()->exists();
+
+        if ($hasAcademicHistory) {
+            throw ValidationException::withMessages([
+                'department_id' => 'The department cannot be changed after enrollment, marks, or stage progression records exist.',
+            ]);
+        }
     }
 
     private function authorizeStudentScope(Request $request, Student $student): void

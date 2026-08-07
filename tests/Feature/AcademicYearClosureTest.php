@@ -24,6 +24,7 @@ use App\Models\Teacher;
 use App\Models\Timetable;
 use App\Models\University;
 use App\Models\User;
+use App\Services\StudentProgressionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -219,6 +220,55 @@ class AcademicYearClosureTest extends TestCase
             'academic_year' => $setup['semester']->academic_year,
             'outcome' => 'repeat_stage',
             'failed_modules' => 1,
+        ]);
+    }
+
+    public function test_retake_only_year_preserves_the_students_current_stage(): void
+    {
+        $admin = $this->adminUser();
+        $setup = $this->academicSetup();
+        $lowerStage = Stage::create([
+            'university_id' => $setup['university']->id,
+            'department_id' => $setup['department']->id,
+            'name' => 'Stage 3',
+            'sequence' => 3,
+        ]);
+        $retakeSection = CourseSection::create([
+            'course_id' => $setup['course']->id,
+            'semester_id' => $setup['semester']->id,
+            'stage_id' => $lowerStage->id,
+            'section_code' => 'RETAKE',
+            'status' => 'active',
+        ]);
+        Enrollment::create([
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $retakeSection->id,
+            'status' => 'enrolled',
+            'is_retake' => true,
+            'enrolled_at' => now(),
+        ]);
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $retakeSection->id,
+            'final_mark' => 65,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $report = app(StudentProgressionService::class)->process(
+            collect([$retakeSection->id]),
+            $setup['semester']->academic_year,
+            $admin
+        );
+
+        $this->assertSame(1, $report['retake_only']);
+        $this->assertSame($setup['stage']->id, $setup['student']->fresh()->current_stage_id);
+        $this->assertDatabaseHas('student_stage_progressions', [
+            'student_id' => $setup['student']->id,
+            'stage_id' => $setup['stage']->id,
+            'outcome' => 'retake_only',
         ]);
     }
 
@@ -960,6 +1010,7 @@ class AcademicYearClosureTest extends TestCase
         $nextSection = CourseSection::create([
             'course_id' => $setup['course']->id,
             'semester_id' => $nextSemester->id,
+            'stage_id' => $setup['stage']->id,
             'section_code' => 'B',
             'grade_level' => 'Stage 4',
             'status' => 'active',
