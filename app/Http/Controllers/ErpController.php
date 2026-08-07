@@ -113,7 +113,10 @@ class ErpController extends Controller
 
     private function examinationDashboard(User $user)
     {
-        $canPublish = $user->hasPermission('marks.publish');
+        $canPublish = $user->hasRole('super_administrator')
+            || ($user->hasRole('examination_administrator') && $user->hasPermission('marks.publish'));
+        $canEnterFinalExam = $user->hasRole('super_administrator')
+            || ($user->hasRole('examination_committee') && $user->hasPermission('marks.enter_final_exam'));
         $submitted = Mark::where('submission_status', 'submitted')->count();
         $underReview = Mark::where('submission_status', 'under_review')->count();
         $approvedDraft = Mark::where('submission_status', 'approved')->where('visibility_status', 'draft')->count();
@@ -131,12 +134,12 @@ class ErpController extends Controller
             ['label' => 'Published', 'value' => number_format($published), 'detail' => 'Visible to students', 'tone' => 'indigo'],
         ];
 
-        $reviewItems = [
-            ['label' => 'Final exam entry', 'value' => number_format($finalExamEntry), 'hint' => 'Enter first-trial and eligible second-trial scores', 'href' => route('marks.final-exam.index')],
+        $reviewItems = collect([
+            $canEnterFinalExam ? ['label' => 'Final exam entry', 'value' => number_format($finalExamEntry), 'hint' => 'Enter first-trial and eligible second-trial scores', 'href' => route('marks.final-exam.index')] : null,
             ['label' => 'Approve or request changes', 'value' => number_format($submitted + $underReview), 'hint' => 'Open the Mark Queue to review submitted marks', 'href' => route('marks.submission-queue')],
             ['label' => $canPublish ? 'Ready to publish' : 'Awaiting publication', 'value' => number_format($approvedDraft), 'hint' => $canPublish ? 'Approved marks can be published to students' : 'Publication is handled by the examination administrator', 'href' => $canPublish ? route('marks.submission-queue', ['submission_status' => 'approved']) : route('exams', ['submission_status' => 'approved', 'visibility_status' => 'draft'])],
             ['label' => 'Rejected marks', 'value' => number_format($rejected), 'hint' => 'Returned to teachers for correction', 'href' => route('exams', ['submission_status' => 'rejected'])],
-        ];
+        ])->filter()->values()->all();
 
         $recentMarks = Mark::with(['student', 'course', 'courseSection.teacher'])
             ->whereIn('submission_status', ['submitted', 'under_review', 'approved', 'rejected'])

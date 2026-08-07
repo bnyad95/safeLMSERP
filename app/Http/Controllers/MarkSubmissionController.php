@@ -7,11 +7,14 @@ use App\Models\Course;
 use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Mark;
+use App\Models\MarkScoreHistory;
 use App\Models\Semester;
 use App\Models\Teacher;
 use App\Services\MarkSubmissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class MarkSubmissionController extends Controller
 {
@@ -27,8 +30,8 @@ class MarkSubmissionController extends Controller
 
         $canApprove = $this->can($user, ['marks.approve']);
         $canReject = $this->can($user, ['marks.approve', 'marks.request_change']);
-        $canPublish = $this->can($user, ['marks.publish']);
-        $canEnterFinalExam = $this->can($user, ['marks.approve']);
+        $canPublish = $this->canPublish($user);
+        $canEnterFinalExam = $this->canEnterFinalExam($user);
         $filters = $this->queueFilterState($request);
         $filterOptions = $this->queueFilterOptions();
 
@@ -73,7 +76,7 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->can($user, ['marks.approve'])) {
+        if (! $this->canEnterFinalExam($user)) {
             abort(403);
         }
 
@@ -98,7 +101,7 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->can($user, ['marks.approve'])) {
+        if (! $this->canEnterFinalExam($user)) {
             abort(403);
         }
 
@@ -164,7 +167,7 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->can($user, ['marks.approve'])) {
+        if (! $this->canEnterFinalExam($user)) {
             abort(403);
         }
 
@@ -172,44 +175,75 @@ class MarkSubmissionController extends Controller
             'mark_id' => 'required|integer|exists:marks,id',
             'trial' => 'required|in:first,second',
             'score' => 'required|numeric|min:0|max:'.config('academics.final_exam_mark_max', 100),
+            'change_reason' => 'nullable|string|max:1000',
         ]);
 
-        $mark = Mark::whereKey($validated['mark_id'])->firstOrFail();
+        $firstTrialFailed = DB::transaction(function () use ($validated, $user) {
+            $mark = Mark::with(['student', 'course.department', 'courseSection.course.department', 'courseSection.semester.academicYear'])
+                ->whereKey($validated['mark_id'])
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->service->assertMarkIntegrity($mark);
 
-        if (is_null($mark->prefinal_mark)) {
-            return back()->withErrors(['score' => 'Pre-final mark must be entered by the teacher before final exam scores.']);
-        }
-
-        if ($mark->visibility_status === 'published') {
-            return back()->withErrors(['score' => 'Published marks cannot be changed.']);
-        }
-
-        if ($validated['trial'] === 'second') {
-            if (is_null($mark->first_trial_final_exam)) {
-                return back()->withErrors(['score' => 'Enter first trial final exam before second trial.']);
+            if (is_null($mark->prefinal_mark)) {
+                throw ValidationException::withMessages(['score' => 'Pre-final mark must be entered by the teacher before final exam scores.']);
+            }
+            if ($mark->visibility_status === 'published') {
+                throw ValidationException::withMessages(['score' => 'Published marks cannot be changed.']);
+            }
+            if (! in_array($mark->submission_status, ['draft', 'rejected'], true)) {
+                throw ValidationException::withMessages(['score' => 'Submitted, under-review, or approved marks must be rejected before their final exam score can be changed.']);
             }
 
-            if (((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) >= (float) config('academics.pass_mark', 50)) {
-                return back()->withErrors(['score' => 'Second trial is only available for students who failed the first trial.']);
+            $scoreField = $validated['trial'] === 'first' ? 'first_trial_final_exam' : 'second_trial_final_exam';
+            $previousScore = $mark->{$scoreField};
+            $previousStatus = $mark->submission_status;
+            if (! is_null($previousScore) && $previousStatus !== 'rejected') {
+                throw ValidationException::withMessages(['score' => ucfirst($validated['trial']).' trial has already been entered. Use the review workflow before correcting it.']);
             }
-        }
+            if (! is_null($previousScore) && blank($validated['change_reason'] ?? null)) {
+                throw ValidationException::withMessages(['change_reason' => 'A reason is required when correcting an existing final exam score.']);
+            }
+            if ($validated['trial'] === 'second') {
+                if (is_null($mark->first_trial_final_exam)) {
+                    throw ValidationException::withMessages(['score' => 'Enter first trial final exam before second trial.']);
+                }
+                if (((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) >= (float) config('academics.pass_mark', 50)) {
+                    throw ValidationException::withMessages(['score' => 'Second trial is only available for students who failed the first trial.']);
+                }
+            }
 
-        if ($validated['trial'] === 'first') {
-            $mark->first_trial_final_exam = $validated['score'];
-            $mark->second_trial_final_exam = null;
-        } else {
-            $mark->second_trial_final_exam = $validated['score'];
-        }
+            if ($validated['trial'] === 'first') {
+                $mark->first_trial_final_exam = $validated['score'];
+                $mark->second_trial_final_exam = null;
+            } else {
+                $mark->second_trial_final_exam = $validated['score'];
+            }
 
-        $mark->recalculateFinalMark();
-        $firstTrialFailed = $validated['trial'] === 'first' && (float) $mark->final_mark < (float) config('academics.pass_mark', 50);
-        $mark->submission_status = $firstTrialFailed ? 'draft' : 'submitted';
-        $mark->visibility_status = 'draft';
-        $mark->submitted_at = $firstTrialFailed ? null : now();
-        $mark->reviewer_notes = null;
-        $mark->reviewed_by = null;
-        $mark->reviewed_at = null;
-        $mark->save();
+            $mark->recalculateFinalMark();
+            $firstTrialFailed = $validated['trial'] === 'first' && (float) $mark->final_mark < (float) config('academics.pass_mark', 50);
+            $mark->submission_status = $firstTrialFailed ? 'draft' : 'submitted';
+            $mark->visibility_status = 'draft';
+            $mark->submitted_at = $firstTrialFailed ? null : now();
+            $mark->reviewer_notes = null;
+            $mark->reviewed_by = null;
+            $mark->reviewed_at = null;
+            $mark->final_exam_entered_by = $user->id;
+            $mark->final_exam_entered_at = now();
+            $mark->save();
+
+            MarkScoreHistory::create([
+                'mark_id' => $mark->id,
+                'actor_id' => $user->id,
+                'trial' => $validated['trial'],
+                'previous_score' => $previousScore,
+                'new_score' => $validated['score'],
+                'previous_submission_status' => $previousStatus,
+                'reason' => $validated['change_reason'] ?? null,
+            ]);
+
+            return $firstTrialFailed;
+        });
 
         $redirectTo = (string) $request->input('redirect_to', '');
         $redirectTo = str_starts_with($redirectTo, route('marks.final-exam.index'))
@@ -258,7 +292,7 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->can($user, ['marks.publish'])) {
+        if (! $this->canPublish($user)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -303,6 +337,18 @@ class MarkSubmissionController extends Controller
     {
         return $user->hasRole('super_administrator')
             || $user->hasAnyPermission($permissions);
+    }
+
+    private function canPublish($user): bool
+    {
+        return $user->hasRole('super_administrator')
+            || ($user->hasRole('examination_administrator') && $user->hasPermission('marks.publish'));
+    }
+
+    private function canEnterFinalExam($user): bool
+    {
+        return $user->hasRole('super_administrator')
+            || ($user->hasRole('examination_committee') && $user->hasPermission('marks.enter_final_exam'));
     }
 
     private function queueMarkQuery(array $filters)

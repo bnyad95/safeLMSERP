@@ -10,7 +10,7 @@ class Mark extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['student_id', 'course_id', 'course_section_id', 'assignments', 'quizzes', 'midterm', 'practical', 'prefinal_mark', 'first_trial_final_exam', 'second_trial_final_exam', 'final_exam', 'final_mark', 'status', 'submission_status', 'visibility_status', 'reviewer_notes', 'submitted_at', 'reviewed_at', 'published_at', 'reviewed_by'];
+    protected $fillable = ['student_id', 'course_id', 'course_section_id', 'assignments', 'quizzes', 'midterm', 'practical', 'prefinal_mark', 'first_trial_final_exam', 'second_trial_final_exam', 'final_exam', 'final_mark', 'status', 'submission_status', 'visibility_status', 'reviewer_notes', 'submitted_at', 'reviewed_at', 'published_at', 'reviewed_by', 'final_exam_entered_by', 'final_exam_entered_at'];
 
     protected $casts = [
         'prefinal_mark' => 'decimal:2',
@@ -19,6 +19,7 @@ class Mark extends Model
         'submitted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'published_at' => 'datetime',
+        'final_exam_entered_at' => 'datetime',
     ];
 
     public function activeFinalExamScore(): ?float
@@ -74,5 +75,15 @@ class Mark extends Model
     public function reviewer()
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function finalExamEnteredBy()
+    {
+        return $this->belongsTo(User::class, 'final_exam_entered_by');
+    }
+
+    public function scoreHistory()
+    {
+        return $this->hasMany(MarkScoreHistory::class)->latest();
     }
 }

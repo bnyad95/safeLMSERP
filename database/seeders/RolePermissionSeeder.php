@@ -34,6 +34,7 @@ class RolePermissionSeeder extends Seeder
             'attendance.update' => 'Update attendance',
             'marks.view' => 'View marks',
             'marks.enter' => 'Enter marks',
+            'marks.enter_final_exam' => 'Enter final exam marks',
             'marks.submit' => 'Submit marks',
             'marks.review' => 'Review marks',
             'marks.approve' => 'Approve marks',
@@ -162,7 +163,7 @@ class RolePermissionSeeder extends Seeder
                 'display_name' => 'Examination Committee',
                 'description' => 'Reviews marks, approves valid submissions, and requests changes before publication.',
                 'permissions' => [
-                    'marks.view', 'marks.review', 'marks.approve', 'marks.request_change',
+                    'marks.view', 'marks.enter_final_exam', 'marks.review', 'marks.approve', 'marks.request_change',
                 ],
             ],
             'teacher' => [

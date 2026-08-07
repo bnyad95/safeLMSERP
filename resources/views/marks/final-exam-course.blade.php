@@ -73,7 +73,9 @@
                                 @php
                                     $firstTrialTotal = is_null($mark->first_trial_final_exam) ? null : (float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam;
                                     $secondTrialAllowed = ! is_null($firstTrialTotal) && $firstTrialTotal < config('academics.pass_mark', 50);
-                                    $activeTrial = is_null($mark->first_trial_final_exam) ? 'first' : ($secondTrialAllowed ? 'second' : null);
+                                    $activeTrial = $mark->submission_status === 'rejected'
+                                        ? (! is_null($mark->second_trial_final_exam) ? 'second' : 'first')
+                                        : (is_null($mark->first_trial_final_exam) ? 'first' : ($secondTrialAllowed ? 'second' : null));
                                     $activeScore = $activeTrial === 'first' ? $mark->first_trial_final_exam : ($activeTrial === 'second' ? $mark->second_trial_final_exam : null);
                                     $section = $mark->courseSection;
                                     $department = $section?->course?->department ?? $course->department ?? $mark->student?->department;
@@ -112,6 +114,9 @@
                                                 <input type="hidden" name="trial" value="{{ $activeTrial }}">
                                                 <label class="text-xs font-semibold {{ $activeTrial === 'second' ? 'text-red-700' : 'text-blue-700' }}">{{ $activeTrial === 'second' ? 'Second trial active' : 'First trial' }}</label>
                                                 <input type="number" name="score" min="0" max="{{ config('academics.final_exam_mark_max', 100) }}" step="0.01" required value="{{ is_null($activeScore) ? '' : number_format((float) $activeScore, 2, '.', '') }}" placeholder="{{ $activeTrial === 'second' ? 'Second score' : 'First score' }}" class="w-28 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500" data-final-score-input>
+                                                @if($mark->submission_status === 'rejected' && ! is_null($activeScore))
+                                                    <input type="text" name="change_reason" required maxlength="1000" placeholder="Correction reason" class="w-44 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                                @endif
                                             </form>
                                         @else
                                             <span class="text-xs font-semibold text-emerald-700">First trial passed</span>

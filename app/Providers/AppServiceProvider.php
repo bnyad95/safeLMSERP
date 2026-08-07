@@ -76,7 +76,7 @@ class AppServiceProvider extends ServiceProvider
             ClassStreamPost::class => 'section_record',
             ClassMessage::class => 'section_record',
             CourseMaterial::class => 'course_record',
-            Mark::class => 'course_record',
+            Mark::class => 'mark_record',
             Attendance::class => 'course_record',
             FinanceTransaction::class => 'finance_record',
             TuitionAgreement::class => 'finance_record',

@@ -160,8 +160,8 @@
                             && ($isSuper || $navUser->hasAnyPermission(['marks.view', 'marks.review', 'marks.approve', 'marks.publish']));
                         $canMarkQueue = ($isSuper || $navUser->hasAnyRole(['examination_administrator', 'examination_committee']))
                             && ($isSuper || $navUser->hasAnyPermission(['marks.review', 'marks.approve', 'marks.publish']));
-                        $canFinalExamEntry = ($isSuper || $navUser->hasAnyRole(['examination_administrator', 'examination_committee']))
-                            && ($isSuper || $navUser->hasPermission('marks.approve'));
+                        $canFinalExamEntry = ($isSuper || $navUser->hasRole('examination_committee'))
+                            && ($isSuper || $navUser->hasPermission('marks.enter_final_exam'));
                         $canAcademicArchive = $navUser->hasAnyRole(['super_administrator', 'administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'examination_administrator', 'examination_committee'])
                             || $navUser->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
                         $canClassrooms = $navUser->hasAnyRole(['teacher', 'teaching_assistant', 'administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'lms_administrator']);

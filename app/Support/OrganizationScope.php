@@ -55,6 +55,7 @@ class OrganizationScope
             'section' => self::scopeThroughCourse($query, $user, $scope),
             'stage' => self::scopeThroughDepartment($query, $user, $scope),
             'course_record' => self::scopeRecordThroughCourse($query, $user, $scope),
+            'mark_record' => self::scopeMarkRecord($query, $user, $scope),
             'student_record' => self::scopeThroughStudent($query, $user, $scope),
             'finance_record' => self::scopeThroughStudent($query, $user, $scope),
             'section_record' => self::scopeThroughSection($query, $user, $scope),
@@ -145,6 +146,21 @@ class OrganizationScope
             $department->where('university_id', $user->university_id)
                 ->when(in_array($scope, ['college', 'department'], true), fn (Builder $builder) => $builder->where('college_id', $user->college_id))
                 ->when($scope === 'department', fn (Builder $builder) => $builder->whereKey($user->department_id));
+        });
+    }
+
+    private static function scopeMarkRecord(Builder $query, User $user, string $scope): void
+    {
+        self::scopeRecordThroughCourse($query, $user, $scope);
+        self::scopeThroughStudent($query, $user, $scope);
+
+        $query->where(function (Builder $mark) use ($user, $scope) {
+            $mark->whereNull('course_section_id')
+                ->orWhereHas('courseSection.course.department', function (Builder $department) use ($user, $scope) {
+                    $department->where('university_id', $user->university_id)
+                        ->when(in_array($scope, ['college', 'department'], true), fn (Builder $builder) => $builder->where('college_id', $user->college_id))
+                        ->when($scope === 'department', fn (Builder $builder) => $builder->whereKey($user->department_id));
+                });
         });
     }
 

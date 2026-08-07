@@ -417,7 +417,7 @@ class AdminAuthorizationTest extends TestCase
             'visibility_status' => 'draft',
         ]);
 
-        $role = $this->roleWithPermissions('examination_committee', ['marks.view', 'marks.review', 'marks.approve', 'marks.request_change']);
+        $role = $this->roleWithPermissions('examination_committee', ['marks.view', 'marks.review', 'marks.approve', 'marks.publish', 'marks.request_change']);
         $user = User::factory()->create(['university_id' => $university->id]);
         $user->roles()->attach($role);
 
@@ -454,6 +454,7 @@ class AdminAuthorizationTest extends TestCase
 
         $this->assertSame('Examination Committee', $role->display_name);
         $this->assertTrue($role->permissions()->where('name', 'marks.approve')->exists());
+        $this->assertTrue($role->permissions()->where('name', 'marks.enter_final_exam')->exists());
         $this->assertTrue($role->permissions()->where('name', 'marks.request_change')->exists());
         $this->assertFalse($role->permissions()->where('name', 'marks.publish')->exists());
     }

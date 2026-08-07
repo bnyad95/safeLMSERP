@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Models\ActivityLog;
+use App\Models\Enrollment;
 use App\Models\Mark;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class MarkSubmissionService
 {
@@ -36,65 +39,113 @@ class MarkSubmissionService
 
     public function approveMarks(array $markIds, ?string $notes = null): array
     {
-        $marks = Mark::whereIn('id', $markIds)
-            ->whereIn('submission_status', ['submitted', 'under_review'])
-            ->get();
+        return DB::transaction(function () use ($markIds, $notes) {
+            $marks = $this->marksForTransition($markIds, ['submitted', 'under_review']);
 
-        $updated = 0;
-        foreach ($marks as $mark) {
-            $mark->update([
-                'submission_status' => 'approved',
-                'reviewer_notes' => $notes,
-                'reviewed_by' => Auth::id(),
-                'reviewed_at' => now(),
-            ]);
-            $this->logMarkApproval($mark, 'approved', $notes);
-            $updated++;
-        }
+            foreach ($marks as $mark) {
+                if ($mark->final_exam_entered_by && (int) $mark->final_exam_entered_by === (int) Auth::id()) {
+                    throw ValidationException::withMessages([
+                        'mark_ids' => 'A final-exam score must be approved by a different examination user than the person who entered it.',
+                    ]);
+                }
 
-        return ['updated' => $updated];
+                $mark->update([
+                    'submission_status' => 'approved',
+                    'reviewer_notes' => $notes,
+                    'reviewed_by' => Auth::id(),
+                    'reviewed_at' => now(),
+                ]);
+                $this->logMarkApproval($mark, 'approved', $notes);
+            }
+
+            return ['updated' => $marks->count()];
+        });
     }
 
     public function rejectMarks(array $markIds, string $notes): array
     {
-        $marks = Mark::whereIn('id', $markIds)
-            ->whereIn('submission_status', ['submitted', 'under_review'])
-            ->get();
+        return DB::transaction(function () use ($markIds, $notes) {
+            $marks = $this->marksForTransition($markIds, ['submitted', 'under_review']);
 
-        $updated = 0;
-        foreach ($marks as $mark) {
-            $mark->update([
-                'submission_status' => 'rejected',
-                'reviewer_notes' => $notes,
-                'reviewed_by' => Auth::id(),
-                'reviewed_at' => now(),
-            ]);
-            $this->logMarkApproval($mark, 'rejected', $notes);
-            $updated++;
-        }
+            foreach ($marks as $mark) {
+                $mark->update([
+                    'submission_status' => 'rejected',
+                    'reviewer_notes' => $notes,
+                    'reviewed_by' => Auth::id(),
+                    'reviewed_at' => now(),
+                ]);
+                $this->logMarkApproval($mark, 'rejected', $notes);
+            }
 
-        return ['updated' => $updated];
+            return ['updated' => $marks->count()];
+        });
     }
 
     public function publishMarks(array $markIds): array
     {
-        $marks = Mark::whereIn('id', $markIds)
-            ->where('submission_status', 'approved')
-            ->where('visibility_status', 'draft')
-            ->get();
+        return DB::transaction(function () use ($markIds) {
+            $marks = $this->marksForTransition($markIds, ['approved'], true);
 
-        $updated = 0;
-        foreach ($marks as $mark) {
-            $mark->update([
-                'visibility_status' => 'published',
-                'published_at' => now(),
+            foreach ($marks as $mark) {
+                $mark->update([
+                    'visibility_status' => 'published',
+                    'published_at' => now(),
+                ]);
+                $this->logMarkPublication($mark);
+                app(NotificationService::class)->notifyMarkPublished($mark);
+            }
+
+            return ['updated' => $marks->count()];
+        });
+    }
+
+    public function assertMarkIntegrity(Mark $mark): void
+    {
+        $mark->loadMissing(['student', 'course.department', 'courseSection.course.department', 'courseSection.semester.academicYear']);
+        $section = $mark->courseSection;
+        $course = $mark->course;
+        $student = $mark->student;
+
+        if (! $section || ! $course || ! $student
+            || (int) $section->course_id !== (int) $mark->course_id
+            || (int) $section->course_id !== (int) $course->id
+            || (int) $student->university_id !== (int) $course->department?->university_id
+            || ! Enrollment::withTrashed()
+                ->where('student_id', $student->id)
+                ->where('course_section_id', $section->id)
+                ->where('status', 'enrolled')
+                ->exists()) {
+            throw ValidationException::withMessages([
+                'mark_ids' => 'A selected mark has an invalid student, module, course, or enrollment relationship and cannot enter the official results workflow.',
             ]);
-            $this->logMarkPublication($mark);
-            app(NotificationService::class)->notifyMarkPublished($mark);
-            $updated++;
         }
 
-        return ['updated' => $updated];
+        if ($section->semester?->academicYear?->isLocked()) {
+            throw ValidationException::withMessages([
+                'mark_ids' => 'Marks in a closed or archived academic year are read-only.',
+            ]);
+        }
+    }
+
+    private function marksForTransition(array $markIds, array $statuses, bool $publishing = false)
+    {
+        $ids = collect($markIds)->map(fn ($id) => (int) $id)->unique()->values();
+        $marks = Mark::with(['student', 'course.department', 'courseSection.course.department', 'courseSection.semester.academicYear'])
+            ->whereIn('id', $ids)
+            ->whereIn('submission_status', $statuses)
+            ->when($publishing, fn ($query) => $query->where('visibility_status', 'draft'))
+            ->lockForUpdate()
+            ->get();
+
+        if ($marks->count() !== $ids->count()) {
+            throw ValidationException::withMessages([
+                'mark_ids' => 'One or more marks are outside your scope or are no longer in the required workflow state.',
+            ]);
+        }
+
+        $marks->each(fn (Mark $mark) => $this->assertMarkIntegrity($mark));
+
+        return $marks;
     }
 
     private function logMarkSubmission(Mark $mark, string $status): void

@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseSection;
-use App\Models\College;
 use App\Models\Department;
+use App\Models\Enrollment;
 use App\Models\Mark;
 use App\Models\Permission;
 use App\Models\Role;
@@ -34,9 +35,38 @@ class MarkSubmissionTest extends TestCase
             'university_id' => $this->department->university_id,
             'department_id' => $this->department->id,
         ]);
+        $this->semester = Semester::create([
+            'university_id' => $this->department->university_id,
+            'name' => 'Current Semester',
+            'academic_year' => '2026/2027',
+        ]);
+        $this->section = CourseSection::create([
+            'course_id' => $this->course->id,
+            'semester_id' => $this->semester->id,
+            'section_code' => 'A',
+            'capacity' => 40,
+            'status' => 'active',
+        ]);
+        Enrollment::create([
+            'student_id' => $this->student->id,
+            'course_section_id' => $this->section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now()->toDateString(),
+        ]);
+        Mark::creating(function (Mark $mark) {
+            if (! $mark->course_section_id
+                && (int) $mark->student_id === (int) $this->student->id
+                && (int) $mark->course_id === (int) $this->course->id) {
+                $mark->course_section_id = $this->section->id;
+            }
+        });
         $this->teacher = User::factory()->create(['email' => 'teacher@test.com']);
         $this->admin = User::factory()->create([
             'email' => 'admin@test.com',
+            'university_id' => $this->department->university_id,
+        ]);
+        $this->committee = User::factory()->create([
+            'email' => 'committee@test.com',
             'university_id' => $this->department->university_id,
         ]);
 
@@ -44,6 +74,7 @@ class MarkSubmissionTest extends TestCase
         $this->createRoles();
         $this->teacher->roles()->attach($this->getRole('teacher'));
         $this->admin->roles()->attach($this->getRole('examination_administrator'));
+        $this->committee->roles()->attach($this->getRole('examination_committee'));
     }
 
     private function createRoles()
@@ -62,6 +93,17 @@ class MarkSubmissionTest extends TestCase
                 $role->permissions()->attach($permission);
             }
         }
+        if (! Role::where('name', 'examination_committee')->exists()) {
+            $role = Role::create(['name' => 'examination_committee', 'display_name' => 'Examination Committee']);
+
+            foreach (['marks.enter_final_exam', 'marks.review', 'marks.approve', 'marks.request_change'] as $permissionName) {
+                $permission = Permission::firstOrCreate(
+                    ['name' => $permissionName],
+                    ['display_name' => $permissionName]
+                );
+                $role->permissions()->syncWithoutDetaching($permission);
+            }
+        }
     }
 
     private function getRole($name)
@@ -74,6 +116,7 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'course_section_id' => $this->section->id,
             'final_mark' => 85,
             'submission_status' => 'draft',
         ]);
@@ -101,7 +144,7 @@ class MarkSubmissionTest extends TestCase
             'submission_status' => 'draft',
         ]);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->post(route('marks.final-exam.store'), [
                 'mark_id' => $mark->id,
                 'trial' => 'first',
@@ -116,6 +159,192 @@ class MarkSubmissionTest extends TestCase
             'final_exam' => 38,
             'final_mark' => 80,
             'submission_status' => 'submitted',
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+        $this->assertDatabaseHas('mark_score_histories', [
+            'mark_id' => $mark->id,
+            'actor_id' => $this->committee->id,
+            'trial' => 'first',
+            'previous_score' => null,
+            'new_score' => 38,
+        ]);
+    }
+
+    public function test_final_exam_entry_cannot_overwrite_a_submitted_mark()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 40,
+            'first_trial_final_exam' => 30,
+            'final_mark' => 70,
+            'submission_status' => 'submitted',
+        ]);
+
+        $this->actingAs($this->committee)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 35,
+            ])
+            ->assertSessionHasErrors('score');
+
+        $this->assertDatabaseHas('marks', [
+            'id' => $mark->id,
+            'first_trial_final_exam' => 30,
+            'submission_status' => 'submitted',
+        ]);
+    }
+
+    public function test_examination_administrator_cannot_enter_final_exam_even_with_direct_permission()
+    {
+        $permission = Permission::where('name', 'marks.enter_final_exam')->firstOrFail();
+        $this->admin->permissionOverrides()->attach($permission->id, ['effect' => 'grant']);
+
+        $this->actingAs($this->admin)
+            ->get(route('marks.final-exam.index'))
+            ->assertForbidden();
+    }
+
+    public function test_closed_academic_year_blocks_final_exam_entry()
+    {
+        $this->semester->academicYear->update(['status' => 'closed']);
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'submission_status' => 'draft',
+        ]);
+
+        $this->actingAs($this->committee)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 38,
+            ])
+            ->assertSessionHasErrors('mark_ids');
+
+        $this->assertNull($mark->fresh()->first_trial_final_exam);
+    }
+
+    public function test_final_exam_enterer_cannot_approve_the_same_mark()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'submission_status' => 'draft',
+        ]);
+
+        $this->actingAs($this->committee)->post(route('marks.final-exam.store'), [
+            'mark_id' => $mark->id,
+            'trial' => 'first',
+            'score' => 38,
+        ]);
+
+        $this->actingAs($this->committee)
+            ->postJson(route('marks.approve'), ['mark_ids' => [$mark->id]])
+            ->assertUnprocessable();
+
+        $this->actingAs($this->admin)
+            ->postJson(route('marks.approve'), ['mark_ids' => [$mark->id]])
+            ->assertOk();
+
+        $this->assertSame('approved', $mark->fresh()->submission_status);
+    }
+
+    public function test_queue_batch_is_atomic_when_one_mark_has_invalid_relationships()
+    {
+        $validMark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'submission_status' => 'submitted',
+        ]);
+        $invalidStudent = Student::factory()->create([
+            'university_id' => $this->department->university_id,
+            'department_id' => $this->department->id,
+        ]);
+        $invalidMark = Mark::factory()->create([
+            'student_id' => $invalidStudent->id,
+            'course_id' => $this->course->id,
+            'course_section_id' => null,
+            'submission_status' => 'submitted',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson(route('marks.approve'), ['mark_ids' => [$validMark->id, $invalidMark->id]])
+            ->assertUnprocessable();
+
+        $this->assertSame('submitted', $validMark->fresh()->submission_status);
+        $this->assertSame('submitted', $invalidMark->fresh()->submission_status);
+    }
+
+    public function test_closed_academic_year_blocks_queue_transitions()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'submission_status' => 'submitted',
+        ]);
+        $this->semester->academicYear->update(['status' => 'archived']);
+
+        $this->actingAs($this->admin)
+            ->postJson(route('marks.approve'), ['mark_ids' => [$mark->id]])
+            ->assertUnprocessable();
+
+        $this->assertSame('submitted', $mark->fresh()->submission_status);
+    }
+
+    public function test_examination_users_cannot_mutate_marks_outside_their_organization_scope()
+    {
+        $otherDepartment = Department::factory()->create();
+        $otherCourse = Course::factory()->create(['department_id' => $otherDepartment->id]);
+        $otherStudent = Student::factory()->create([
+            'university_id' => $otherDepartment->university_id,
+            'department_id' => $otherDepartment->id,
+        ]);
+        $otherSemester = Semester::create([
+            'university_id' => $otherDepartment->university_id,
+            'name' => 'Current Semester',
+            'academic_year' => '2026/2027',
+        ]);
+        $otherSection = CourseSection::create([
+            'course_id' => $otherCourse->id,
+            'semester_id' => $otherSemester->id,
+            'section_code' => 'A',
+            'capacity' => 40,
+            'status' => 'active',
+        ]);
+        Enrollment::create([
+            'student_id' => $otherStudent->id,
+            'course_section_id' => $otherSection->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now()->toDateString(),
+        ]);
+        $outsideMark = Mark::factory()->create([
+            'student_id' => $otherStudent->id,
+            'course_id' => $otherCourse->id,
+            'course_section_id' => $otherSection->id,
+            'prefinal_mark' => 40,
+            'submission_status' => 'submitted',
+        ]);
+
+        $this->actingAs($this->committee)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $outsideMark->id,
+                'trial' => 'first',
+                'score' => 35,
+            ])
+            ->assertNotFound();
+
+        $this->actingAs($this->admin)
+            ->postJson(route('marks.approve'), ['mark_ids' => [$outsideMark->id]])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseHas('marks', [
+            'id' => $outsideMark->id,
+            'first_trial_final_exam' => null,
+            'submission_status' => 'submitted',
         ]);
     }
 
@@ -124,12 +353,13 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'course_section_id' => $this->section->id,
             'prefinal_mark' => 22,
             'final_mark' => 0,
             'submission_status' => 'draft',
         ]);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->post(route('marks.final-exam.store'), [
                 'mark_id' => $mark->id,
                 'trial' => 'first',
@@ -144,7 +374,7 @@ class MarkSubmissionTest extends TestCase
             'submission_status' => 'draft',
         ]);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->get(route('marks.final-exam.course', ['course' => $this->course]))
             ->assertOk()
             ->assertSee('Second trial active')
@@ -152,7 +382,7 @@ class MarkSubmissionTest extends TestCase
             ->assertSee('data-final-score-input', false)
             ->assertDontSee('>Save<', false);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->post(route('marks.final-exam.store'), [
                 'mark_id' => $mark->id,
                 'trial' => 'second',
@@ -175,6 +405,7 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'course_section_id' => $this->section->id,
             'prefinal_mark' => 45,
             'first_trial_final_exam' => 20,
             'final_exam' => 20,
@@ -182,7 +413,7 @@ class MarkSubmissionTest extends TestCase
             'submission_status' => 'draft',
         ]);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->from(route('marks.submission-queue'))
             ->post(route('marks.final-exam.store'), [
                 'mark_id' => $mark->id,
@@ -270,7 +501,7 @@ class MarkSubmissionTest extends TestCase
             'visibility_status' => 'draft',
         ]);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->get(route('marks.final-exam.index', [
                 'academic_year' => '2027/2028',
                 'college_id' => $college->id,
@@ -284,7 +515,7 @@ class MarkSubmissionTest extends TestCase
             ->assertSee('Courses Waiting for Final Exam Entry')
             ->assertDontSee('Visible Final Entry Student');
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->get(route('marks.final-exam.course', [
                 'course' => $this->course,
                 'academic_year' => '2027/2028',
@@ -373,7 +604,7 @@ class MarkSubmissionTest extends TestCase
             'college_id' => $firstCollege->id,
             'department_id' => $this->department->id,
         ]);
-        $scopedUser->roles()->attach($this->getRole('examination_administrator'));
+        $scopedUser->roles()->attach($this->getRole('examination_committee'));
 
         $this->actingAs($scopedUser)
             ->get(route('marks.final-exam.index'))
@@ -395,7 +626,7 @@ class MarkSubmissionTest extends TestCase
         ]);
         $redirectTo = route('marks.final-exam.course', ['course' => $this->course, 'academic_year' => '2026/2027']);
 
-        $this->actingAs($this->admin)
+        $this->actingAs($this->committee)
             ->post(route('marks.final-exam.store'), [
                 'mark_id' => $mark->id,
                 'trial' => 'first',
@@ -601,6 +832,16 @@ class MarkSubmissionTest extends TestCase
 
     public function test_admin_can_approve_and_reject_under_review_marks()
     {
+        $rejectStudent = Student::factory()->create([
+            'university_id' => $this->department->university_id,
+            'department_id' => $this->department->id,
+        ]);
+        Enrollment::create([
+            'student_id' => $rejectStudent->id,
+            'course_section_id' => $this->section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now()->toDateString(),
+        ]);
         $approveMark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
@@ -608,8 +849,9 @@ class MarkSubmissionTest extends TestCase
             'submission_status' => 'under_review',
         ]);
         $rejectMark = Mark::factory()->create([
-            'student_id' => $this->student->id,
+            'student_id' => $rejectStudent->id,
             'course_id' => $this->course->id,
+            'course_section_id' => $this->section->id,
             'final_mark' => 72,
             'submission_status' => 'under_review',
         ]);
