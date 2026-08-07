@@ -160,25 +160,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/module-offerings', [EnrollmentController::class, 'moduleOfferings'])
         ->name('module-offerings.index');
     Route::get('/course-sections/create', [EnrollmentController::class, 'createSection'])
-        ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.create');
     Route::get('/course-sections/archived', [EnrollmentController::class, 'archived'])
-        ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.archived');
     Route::patch('/course-sections/{sectionId}/restore', [EnrollmentController::class, 'restoreSection'])
-        ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.restore');
     Route::post('/course-sections', [EnrollmentController::class, 'storeSection'])
-        ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.store');
     Route::get('/course-sections/{courseSection}', [EnrollmentController::class, 'show'])
-        ->middleware('permission.any:enrollments.view')
         ->name('course-sections.show');
     Route::patch('/course-sections/{courseSection}', [EnrollmentController::class, 'updateSection'])
-        ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.update');
     Route::delete('/course-sections/{courseSection}', [EnrollmentController::class, 'destroySection'])
-        ->middleware('permission.any:enrollments.manage')
         ->name('course-sections.destroy');
     Route::post('/course-sections/{courseSection}/bulk-enroll', [EnrollmentController::class, 'bulkEnroll'])
         ->middleware('permission.any:enrollments.manage')

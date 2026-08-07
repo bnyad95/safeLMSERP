@@ -123,7 +123,7 @@ class EnrollmentController extends Controller
 
     public function createSection(Request $request)
     {
-        $this->requireAnyPermission('enrollments.manage');
+        $this->requireOfferingAccess($request, true);
 
         $filters = [
             'q' => trim((string) $request->query('q', '')),
@@ -228,7 +228,7 @@ class EnrollmentController extends Controller
 
     public function show(Request $request, CourseSection $courseSection)
     {
-        $this->requireAnyPermission('enrollments.view');
+        $this->requireOfferingAccess($request);
         $this->authorizeSection($courseSection, $request->user());
 
         $courseSection->load(['course.department.college', 'semester.university', 'stage', 'teacher', 'timetables.classroom'])
@@ -312,7 +312,7 @@ class EnrollmentController extends Controller
 
     public function storeSection(Request $request)
     {
-        $this->requireAnyPermission('enrollments.manage');
+        $this->requireOfferingAccess($request, true);
 
         if ($request->filled('teacher_id') && ! $this->canAssignTeachers($request)) {
             abort(403);
@@ -370,7 +370,7 @@ class EnrollmentController extends Controller
 
     public function updateSection(Request $request, CourseSection $courseSection)
     {
-        $this->requireAnyPermission('enrollments.manage');
+        $this->requireOfferingAccess($request, true);
         $this->authorizeSection($courseSection, $request->user());
 
         if ($request->has('teacher_id') && ! $this->canAssignTeachers($request)) {
@@ -597,7 +597,7 @@ class EnrollmentController extends Controller
 
     public function destroySection(CourseSection $courseSection)
     {
-        $this->requireAnyPermission('enrollments.manage');
+        $this->requireOfferingAccess(request(), true);
         $this->authorizeSection($courseSection, auth()->user());
         $courseSection->load('semester.academicYear');
         $this->ensureSemesterWritable($courseSection->semester);
@@ -616,7 +616,7 @@ class EnrollmentController extends Controller
 
     public function archived(Request $request)
     {
-        $this->requireAnyPermission('enrollments.manage');
+        $this->requireOfferingAccess($request, true);
         $search = trim((string) $request->query('q', ''));
         $sectionsQuery = CourseSection::onlyTrashed()
             ->with(['course.department', 'semester', 'teacher'])
@@ -635,7 +635,7 @@ class EnrollmentController extends Controller
 
     public function restoreSection(int $sectionId)
     {
-        $this->requireAnyPermission('enrollments.manage');
+        $this->requireOfferingAccess(request(), true);
         $query = CourseSection::withTrashed()->whereKey($sectionId);
         OrganizationScope::apply($query, request()->user(), 'section');
         $section = $query->firstOrFail();
@@ -1036,12 +1036,24 @@ class EnrollmentController extends Controller
     private function canManage(Request $request): bool
     {
         return $request->user()->hasRole('super_administrator')
-            || $request->user()->hasPermission('enrollments.manage');
+            || $request->user()->hasPermission('enrollments.manage')
+            || $request->user()->hasDirectPermissionGrant('academic_setup.manage');
     }
 
     private function canAssignTeachers(Request $request): bool
     {
         return $request->user()->hasRole('super_administrator')
-            || $request->user()->hasPermission('courses.assign_teacher');
+            || $request->user()->hasPermission('courses.assign_teacher')
+            || $request->user()->hasDirectPermissionGrant('academic_setup.manage');
+    }
+
+    private function requireOfferingAccess(Request $request, bool $manage = false): void
+    {
+        $user = $request->user();
+        $permission = $manage ? 'enrollments.manage' : 'enrollments.view';
+        $academicGrant = $user->hasDirectPermissionGrant($manage ? 'academic_setup.manage' : 'academic_setup.view')
+            || $user->hasDirectPermissionGrant('academic_setup.manage');
+
+        abort_unless($user->hasRole('super_administrator') || $user->hasPermission($permission) || $academicGrant, 403);
     }
 }

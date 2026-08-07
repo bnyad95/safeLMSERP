@@ -14,7 +14,7 @@ class CourseController extends Controller
 {
     public function index(Request $request)
     {
-        $this->requireAnyPermission('courses.view');
+        $this->requireCatalogAccess($request, 'courses.view');
         $user = $request->user();
 
         $filters = [
@@ -60,7 +60,7 @@ class CourseController extends Controller
 
     public function create()
     {
-        $this->requireAnyPermission('courses.create');
+        $this->requireCatalogAccess(request(), 'courses.create', true);
 
         [$colleges, $departments] = $this->organizationOptions(request()->user());
 
@@ -69,7 +69,7 @@ class CourseController extends Controller
 
     public function store(Request $request)
     {
-        $this->requireAnyPermission('courses.create');
+        $this->requireCatalogAccess($request, 'courses.create', true);
 
         $validated = $this->validateCourse($request);
         $department = $this->scopedDepartment((int) $validated['department_id'], $request->user());
@@ -83,7 +83,7 @@ class CourseController extends Controller
 
     public function show(Request $request, Course $course)
     {
-        $this->requireAnyPermission('courses.view');
+        $this->requireCatalogAccess($request, 'courses.view');
         $this->authorizeCourse($course, $request->user());
 
         $course->load([
@@ -108,7 +108,7 @@ class CourseController extends Controller
 
     public function edit(Course $course)
     {
-        $this->requireAnyPermission('courses.update');
+        $this->requireCatalogAccess(request(), 'courses.update', true);
         $this->authorizeCourse($course, request()->user());
 
         [$colleges, $departments] = $this->organizationOptions(request()->user());
@@ -118,13 +118,18 @@ class CourseController extends Controller
 
     public function update(Request $request, Course $course)
     {
-        $this->requireAnyPermission('courses.update');
+        $this->requireCatalogAccess($request, 'courses.update', true);
         $this->authorizeCourse($course, $request->user());
 
         $validated = $this->validateCourse($request);
         $department = $this->scopedDepartment((int) $validated['department_id'], $request->user());
         $this->validateCode($request, $department->university_id, $course);
         unset($validated['college_id']);
+
+        if ((int) $course->department_id !== (int) $department->id
+            && $course->sections()->withTrashed()->exists()) {
+            return back()->withInput()->with('error', 'A catalog course with module offerings cannot be moved to another department.');
+        }
 
         $course->update($validated + ['university_id' => $department->university_id]);
 
@@ -133,7 +138,7 @@ class CourseController extends Controller
 
     public function destroy(Course $course)
     {
-        $this->requireAnyPermission('courses.archive');
+        $this->requireCatalogAccess(request(), 'courses.archive', true);
         $this->authorizeCourse($course, request()->user());
 
         if ($course->sections()->whereIn('status', ['planned', 'active'])->exists()) {
@@ -147,7 +152,7 @@ class CourseController extends Controller
 
     public function archived(Request $request)
     {
-        $this->requireAnyPermission('courses.archive');
+        $this->requireCatalogAccess($request, 'courses.archive', true);
 
         $search = trim((string) $request->query('q', ''));
         $coursesQuery = Course::onlyTrashed()
@@ -169,7 +174,7 @@ class CourseController extends Controller
 
     public function restore(int $courseId)
     {
-        $this->requireAnyPermission('courses.archive');
+        $this->requireCatalogAccess(request(), 'courses.archive', true);
 
         $query = Course::withTrashed()->whereKey($courseId);
         OrganizationScope::apply($query, request()->user(), 'course');
@@ -309,9 +314,21 @@ class CourseController extends Controller
         $isSuper = $user->hasRole('super_administrator');
 
         return [
-            'create' => $isSuper || $user->hasPermission('courses.create'),
-            'update' => $isSuper || $user->hasPermission('courses.update'),
-            'archive' => $isSuper || $user->hasPermission('courses.archive'),
+            'create' => $isSuper || $user->hasPermission('courses.create') || $user->hasDirectPermissionGrant('academic_setup.manage'),
+            'update' => $isSuper || $user->hasPermission('courses.update') || $user->hasDirectPermissionGrant('academic_setup.manage'),
+            'archive' => $isSuper || $user->hasPermission('courses.archive') || $user->hasDirectPermissionGrant('academic_setup.manage'),
         ];
+    }
+
+    private function requireCatalogAccess(Request $request, string $permission, bool $manage = false): void
+    {
+        $user = $request->user();
+        $academicGrant = $user->hasDirectPermissionGrant($manage ? 'academic_setup.manage' : 'academic_setup.view')
+            || $user->hasDirectPermissionGrant('academic_setup.manage');
+        $classroomOnly = $user->hasAnyRole(['student', 'teacher', 'teaching_assistant'])
+            && ! $user->hasAnyRole(['super_administrator', 'administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'registrar']);
+
+        abort_if($classroomOnly && ! $academicGrant, 403);
+        abort_unless($user->hasRole('super_administrator') || $user->hasPermission($permission) || $academicGrant, 403);
     }
 }

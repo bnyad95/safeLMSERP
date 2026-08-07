@@ -8,6 +8,7 @@ class SemesterCreditPolicy extends Model
 {
     protected $fillable = [
         'university_id',
+        'academic_year_id',
         'semester_credits',
         'passing_credits',
         'graduation_credits',
@@ -25,5 +26,10 @@ class SemesterCreditPolicy extends Model
     public function university()
     {
         return $this->belongsTo(University::class);
+    }
+
+    public function academicYear()
+    {
+        return $this->belongsTo(AcademicYear::class);
     }
 }

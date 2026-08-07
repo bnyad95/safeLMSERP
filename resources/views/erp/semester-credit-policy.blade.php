@@ -3,7 +3,7 @@
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
                 <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Semester Credit Policy</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Define semester credit load, progression requirements, and graduation requirements for each institution.</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Define credit load and progression requirements for each academic year. Closed years remain read-only.</p>
             </div>
             <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 Back to Bologna Definition
@@ -38,6 +38,7 @@
                             <thead class="bg-gray-50 dark:bg-gray-950">
                                 <tr>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Institution</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Academic Year</th>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Type</th>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">ECTS/Credits Per Semester</th>
                                     <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Credits Required To Progress</th>
@@ -45,26 +46,32 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
-                                @forelse($universities as $university)
+                                @forelse($academicYears as $academicYear)
                                     @php
-                                        $policy = $policies->get($university->id);
-                                        $oldPolicy = old("policies.{$university->id}", []);
+                                        $university = $academicYear->university;
+                                        $policy = $policies->get($academicYear->id);
+                                        $oldPolicy = old("policies.{$academicYear->id}", []);
                                         $semesterCredits = $oldPolicy['semester_credits'] ?? $policy?->semester_credits ?? 30;
                                         $passingCredits = $oldPolicy['passing_credits'] ?? $policy?->passing_credits ?? 18;
                                         $graduationCredits = $oldPolicy['graduation_credits'] ?? $policy?->graduation_credits ?? ($semesterCredits * $university->expectedStageCount() * $university->expectedSemesterCount());
+                                        $readOnly = ! $canManageAcademicSetup || $academicYear->isLocked();
                                     @endphp
                                     <tr>
                                         <td class="px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $university->name }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                            <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $academicYear->name }}</span>
+                                            <span class="block text-xs capitalize text-gray-500 dark:text-gray-400">{{ $academicYear->status }}</span>
+                                        </td>
                                         <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $university->institution_type === 'institute' ? 'Institute' : 'University' }}</td>
                                         <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
                                             <input
                                                 type="number"
                                                 min="1"
                                                 max="120"
-                                                name="policies[{{ $university->id }}][semester_credits]"
+                                                name="policies[{{ $academicYear->id }}][semester_credits]"
                                                 value="{{ $semesterCredits }}"
                                                 class="w-36 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
-                                                @disabled(! $canManageAcademicSetup)
+                                                @disabled($readOnly)
                                                 required
                                             >
                                         </td>
@@ -73,10 +80,10 @@
                                                 type="number"
                                                 min="1"
                                                 max="120"
-                                                name="policies[{{ $university->id }}][passing_credits]"
+                                                name="policies[{{ $academicYear->id }}][passing_credits]"
                                                 value="{{ $passingCredits }}"
                                                 class="w-36 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
-                                                @disabled(! $canManageAcademicSetup)
+                                                @disabled($readOnly)
                                                 required
                                             >
                                         </td>
@@ -85,18 +92,18 @@
                                                 type="number"
                                                 min="1"
                                                 max="2000"
-                                                name="policies[{{ $university->id }}][graduation_credits]"
+                                                name="policies[{{ $academicYear->id }}][graduation_credits]"
                                                 value="{{ $graduationCredits }}"
                                                 class="w-36 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
-                                                @disabled(! $canManageAcademicSetup)
+                                                @disabled($readOnly)
                                                 required
                                             >
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                                            No institutions are available in your scope.
+                                        <td colspan="6" class="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                                            No academic years are available in your scope. Create an academic year before defining its credit policy.
                                         </td>
                                     </tr>
                                 @endforelse
@@ -107,7 +114,7 @@
                     <div class="flex items-center justify-end gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
                         <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</a>
                         @if($canManageAcademicSetup)
-                            <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" @disabled($universities->isEmpty())>
+                            <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" @disabled($academicYears->whereNotIn('status', ['closed', 'archived'])->isEmpty())>
                                 Save Semester Credit Policy
                             </button>
                         @endif

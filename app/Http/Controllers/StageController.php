@@ -76,8 +76,10 @@ class StageController extends Controller
         $university = University::findOrFail($department->university_id);
         $this->ensureStageSequenceWithinInstitutionRule($university, (int) $validated['sequence']);
 
-        if ((int) $stage->department_id !== $department->id && $stage->courseSections()->withTrashed()->exists()) {
-            return back()->withInput()->with('error', 'A stage with modules cannot be moved to another department.');
+        if ($stage->courseSections()->withTrashed()->exists()
+            && ((int) $stage->department_id !== $department->id
+                || (int) $stage->sequence !== (int) $validated['sequence'])) {
+            return back()->withInput()->with('error', 'A stage used by module offerings cannot change department or sequence. Its name and code can still be updated.');
         }
 
         unset($validated['college_id']);

@@ -20,6 +20,20 @@ class CourseCatalogTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_student_and_teacher_roles_cannot_open_the_global_course_catalog(): void
+    {
+        $permission = Permission::create(['name' => 'courses.view', 'display_name' => 'View courses']);
+
+        foreach (['student', 'teacher'] as $roleName) {
+            $role = Role::create(['name' => $roleName, 'display_name' => ucfirst($roleName)]);
+            $role->permissions()->attach($permission);
+            $user = User::factory()->create();
+            $user->roles()->attach($role);
+
+            $this->actingAs($user)->get(route('course-records.index'))->assertForbidden();
+        }
+    }
+
     public function test_view_only_user_can_search_catalog_and_open_course_profile(): void
     {
         [, $college, $department] = $this->organization('VIEW');

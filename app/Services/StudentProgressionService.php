@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AcademicYear;
 use App\Models\CourseSection;
 use App\Models\Enrollment;
 use App\Models\Mark;
@@ -185,10 +186,18 @@ class StudentProgressionService
             ->whereIn('student_id', $studentIds)
             ->get()
             ->keyBy('student_id');
-        $policies = SemesterCreditPolicy::whereIn(
-            'university_id',
-            Student::whereIn('id', $studentIds)->pluck('university_id')->filter()->unique()
-        )->get()->keyBy('university_id');
+        $universityIds = Student::whereIn('id', $studentIds)->pluck('university_id')->filter()->unique();
+        $academicYearIds = AcademicYear::whereIn('university_id', $universityIds)
+            ->where('name', $academicYear)
+            ->pluck('id', 'university_id');
+        $policies = SemesterCreditPolicy::whereIn('university_id', $universityIds)
+            ->where(function ($query) use ($academicYearIds) {
+                $query->whereIn('academic_year_id', $academicYearIds->values())->orWhereNull('academic_year_id');
+            })
+            ->get()
+            ->groupBy('university_id')
+            ->map(fn ($items, $universityId) => $items->firstWhere('academic_year_id', $academicYearIds->get($universityId))
+                ?? $items->firstWhere('academic_year_id', null));
         $report = [
             'expected_students' => $studentIds->count(),
             'decided_students' => 0,
@@ -223,6 +232,7 @@ class StudentProgressionService
                     $student->update(['academic_standing' => $exception->status]);
                     $report['approved_exceptions']++;
                     $report['decided_students']++;
+
                     continue;
                 }
 

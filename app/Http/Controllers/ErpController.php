@@ -1617,12 +1617,13 @@ class ErpController extends Controller
         $academicYearCount = (clone $academicYearsQuery)->count();
         $semesterCreditPolicyCount = SemesterCreditPolicy::query()
             ->whereIn('university_id', (clone $universitiesQuery)->select('id'))
+            ->whereNotNull('academic_year_id')
             ->count();
         $stageCount = (clone $stagesQuery)->count();
         $courseCount = (clone $coursesQuery)->count();
         $moduleCount = (clone $sectionsQuery)->reorder()->count();
         $inactiveCourseCount = (clone $coursesQuery)->where('status', 'inactive')->count();
-        $missingCreditPolicyCount = max(0, $universityCount - $semesterCreditPolicyCount);
+        $missingCreditPolicyCount = max(0, $academicYearCount - $semesterCreditPolicyCount);
 
         $structureStats = [
             ['label' => 'Universities', 'value' => number_format($universityCount), 'detail' => 'Institution records in scope'],
@@ -1809,7 +1810,9 @@ class ErpController extends Controller
         ]);
         $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
-        $canViewCourseCatalog = $user->hasRole('super_administrator') || $user->hasPermission('courses.view');
+        $canViewCourseCatalog = $user->hasRole('super_administrator')
+            || $user->hasPermission('courses.view')
+            || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
         $canViewModuleOfferings = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasPermission('enrollments.view')
             || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
@@ -1845,14 +1848,21 @@ class ErpController extends Controller
         OrganizationScope::apply($universitiesQuery, $user, 'university');
         $universities = $universitiesQuery->get(['id', 'name', 'institution_type']);
 
-        $policies = SemesterCreditPolicy::query()
+        $academicYearsQuery = AcademicYear::with('university')
             ->whereIn('university_id', $universities->pluck('id'))
+            ->orderByDesc('starts_on')
+            ->orderByDesc('name');
+        OrganizationScope::apply($academicYearsQuery, $user, 'academic_year');
+        $academicYears = $academicYearsQuery->get();
+
+        $policies = SemesterCreditPolicy::query()
+            ->whereIn('academic_year_id', $academicYears->pluck('id'))
             ->get()
-            ->keyBy('university_id');
+            ->keyBy('academic_year_id');
         $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
 
-        return view('erp.semester-credit-policy', compact('universities', 'policies', 'canManageAcademicSetup'));
+        return view('erp.semester-credit-policy', compact('academicYears', 'policies', 'canManageAcademicSetup'));
     }
 
     public function storeSemesterCreditPolicy(Request $request)
@@ -1860,19 +1870,36 @@ class ErpController extends Controller
         $user = auth()->user();
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
 
-        $universitiesQuery = University::query()->orderBy('name');
-        OrganizationScope::apply($universitiesQuery, $user, 'university');
-        $universities = $universitiesQuery->get(['id', 'name']);
+        $academicYearsQuery = AcademicYear::with('university')->orderByDesc('starts_on');
+        OrganizationScope::apply($academicYearsQuery, $user, 'academic_year');
+        $academicYears = $academicYearsQuery->get()->keyBy('id');
 
         $validated = $request->validate([
             'policies' => ['required', 'array'],
         ]);
 
-        foreach ($universities as $university) {
-            $policy = $validated['policies'][$university->id] ?? null;
+        foreach ($validated['policies'] as $targetId => $policy) {
             if (! is_array($policy)) {
                 continue;
             }
+
+            $academicYear = $academicYears->get((int) $targetId);
+            if (! $academicYear) {
+                $academicYear = $academicYears
+                    ->where('university_id', (int) $targetId)
+                    ->whereNotIn('status', ['closed', 'archived'])
+                    ->sortByDesc('starts_on')
+                    ->first();
+            }
+            abort_unless($academicYear, 403);
+
+            if ($academicYear->isLocked()) {
+                return back()->withInput()->withErrors([
+                    "policies.{$academicYear->id}" => "{$academicYear->name}: policies for closed or archived years are read-only.",
+                ]);
+            }
+
+            $university = $academicYear->university;
 
             $semesterCredits = (int) ($policy['semester_credits'] ?? 0);
             $passingCredits = (int) ($policy['passing_credits'] ?? 0);
@@ -1880,24 +1907,24 @@ class ErpController extends Controller
 
             if ($semesterCredits < 1 || $semesterCredits > 120) {
                 return back()->withInput()->withErrors([
-                    "policies.{$university->id}.semester_credits" => "{$university->name}: semester credits must be between 1 and 120.",
+                    "policies.{$academicYear->id}.semester_credits" => "{$university->name} {$academicYear->name}: semester credits must be between 1 and 120.",
                 ]);
             }
 
             if ($passingCredits < 1 || $passingCredits > $semesterCredits) {
                 return back()->withInput()->withErrors([
-                    "policies.{$university->id}.passing_credits" => "{$university->name}: passing credits must be between 1 and semester credits.",
+                    "policies.{$academicYear->id}.passing_credits" => "{$university->name} {$academicYear->name}: passing credits must be between 1 and semester credits.",
                 ]);
             }
 
             if ($graduationCredits < $semesterCredits || $graduationCredits > 2000) {
                 return back()->withInput()->withErrors([
-                    "policies.{$university->id}.graduation_credits" => "{$university->name}: graduation credits must be at least one semester and no more than 2000.",
+                    "policies.{$academicYear->id}.graduation_credits" => "{$university->name} {$academicYear->name}: graduation credits must be at least one semester and no more than 2000.",
                 ]);
             }
 
             SemesterCreditPolicy::updateOrCreate(
-                ['university_id' => $university->id],
+                ['university_id' => $university->id, 'academic_year_id' => $academicYear->id],
                 [
                     'semester_credits' => $semesterCredits,
                     'passing_credits' => $passingCredits,
@@ -2013,12 +2040,20 @@ class ErpController extends Controller
             ->join('course_sections', 'enrollments.course_section_id', '=', 'course_sections.id')
             ->join('students', 'enrollments.student_id', '=', 'students.id')
             ->join('semesters', 'course_sections.semester_id', '=', 'semesters.id')
+            ->leftJoin('academic_years as ranking_years', 'semesters.academic_year_id', '=', 'ranking_years.id')
             ->join('courses', 'course_sections.course_id', '=', 'courses.id')
             ->join('departments', 'courses.department_id', '=', 'departments.id')
             ->join('colleges', 'departments.college_id', '=', 'colleges.id')
             ->join('universities', 'departments.university_id', '=', 'universities.id')
             ->leftJoin('stages', 'course_sections.stage_id', '=', 'stages.id')
-            ->leftJoin('semester_credit_policies', 'universities.id', '=', 'semester_credit_policies.university_id')
+            ->leftJoin('semester_credit_policies as year_credit_policies', function ($join) {
+                $join->on('universities.id', '=', 'year_credit_policies.university_id')
+                    ->on('ranking_years.id', '=', 'year_credit_policies.academic_year_id');
+            })
+            ->leftJoin('semester_credit_policies as default_credit_policies', function ($join) {
+                $join->on('universities.id', '=', 'default_credit_policies.university_id')
+                    ->whereNull('default_credit_policies.academic_year_id');
+            })
             ->leftJoinSub($lifetimeCredits, 'lifetime_credits', function ($join) {
                 $join->on('lifetime_credits.student_id', '=', 'students.id')
                     ->on('lifetime_credits.university_id', '=', 'universities.id');
@@ -2049,8 +2084,8 @@ class ErpController extends Controller
             ->selectRaw('COUNT(DISTINCT course_sections.semester_id) as semester_count')
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark >= ? THEN courses.credits ELSE 0 END) as earned_credits", [$passMark])
             ->selectRaw('COALESCE(MAX(lifetime_credits.earned_credits), 0) as lifetime_credits')
-            ->selectRaw('COALESCE(MAX(semester_credit_policies.passing_credits), 0) * COUNT(DISTINCT course_sections.semester_id) as required_progression_credits')
-            ->selectRaw('COALESCE(MAX(semester_credit_policies.graduation_credits), 0) as required_graduation_credits')
+            ->selectRaw('COALESCE(MAX(year_credit_policies.passing_credits), MAX(default_credit_policies.passing_credits), 0) * COUNT(DISTINCT course_sections.semester_id) as required_progression_credits')
+            ->selectRaw('COALESCE(MAX(year_credit_policies.graduation_credits), MAX(default_credit_policies.graduation_credits), 0) as required_graduation_credits')
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark IS NOT NULL THEN 1 ELSE 0 END) as published_count")
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark >= ? THEN 1 ELSE 0 END) as passed_count", [$passMark])
             ->groupBy(

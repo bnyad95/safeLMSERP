@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AcademicYearClosure;
+use App\Models\Classroom;
+use App\Models\SemesterCreditPolicy;
 use App\Models\University;
+use App\Models\User;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -18,22 +22,21 @@ class UniversityController extends Controller
         $query = University::orderBy('name');
         OrganizationScope::apply($query, $user, 'university');
         $universities = $query->paginate(15);
-        $canManageUniversities = $user->hasAnyRole(['super_administrator', 'administrator'])
-            || $user->hasDirectPermissionGrant('academic_setup.manage');
+        $canManageUniversities = $user->hasAnyRole(['super_administrator', 'administrator']);
 
         return view('universities.index', compact('universities', 'canManageUniversities'));
     }
 
     public function create()
     {
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], []);
 
         return view('universities.create');
     }
 
     public function store(Request $request)
     {
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], []);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -52,7 +55,7 @@ class UniversityController extends Controller
 
     public function edit(University $university)
     {
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], []);
         $this->authorizeUniversityScope($university);
 
         return view('universities.edit', compact('university'));
@@ -60,7 +63,7 @@ class UniversityController extends Controller
 
     public function update(Request $request, University $university)
     {
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], []);
         $this->authorizeUniversityScope($university);
 
         $validated = $request->validate([
@@ -78,6 +81,15 @@ class UniversityController extends Controller
                 'institution_type' => "This organization has stages beyond Stage {$structure['expected_stage_count']}. Remove or reassign their module offerings before changing the institution type.",
             ]);
         }
+        $identityChanged = $university->name !== $validated['name']
+            || $university->code !== $validated['code']
+            || $university->institution_type !== $validated['institution_type'];
+        if ($identityChanged && $this->hasOperationalData($university)) {
+            $field = $university->institution_type !== $validated['institution_type'] ? 'institution_type' : 'name';
+            throw ValidationException::withMessages([
+                $field => 'The institution name, code, and type are locked after academic or user records exist. Contact details can still be updated.',
+            ]);
+        }
 
         $validated = array_merge($validated, $structure);
 
@@ -88,23 +100,30 @@ class UniversityController extends Controller
 
     public function destroy(University $university)
     {
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], []);
         $this->authorizeUniversityScope($university);
 
-        $hasAcademicData = $university->colleges()->exists()
-            || $university->departments()->withTrashed()->exists()
-            || $university->semesters()->exists()
-            || $university->students()->withTrashed()->exists()
-            || $university->teachers()->withTrashed()->exists()
-            || $university->academicYears()->exists();
-
-        if ($hasAcademicData) {
+        if ($this->hasOperationalData($university)) {
             return back()->with('error', 'This university contains academic or historical records and cannot be deleted.');
         }
 
         $university->delete();
 
         return redirect()->route('universities.index')->with('success', 'University deleted successfully.');
+    }
+
+    private function hasOperationalData(University $university): bool
+    {
+        return $university->colleges()->exists()
+            || $university->departments()->withTrashed()->exists()
+            || $university->semesters()->exists()
+            || $university->students()->withTrashed()->exists()
+            || $university->teachers()->withTrashed()->exists()
+            || $university->academicYears()->exists()
+            || User::withTrashed()->where('university_id', $university->id)->exists()
+            || Classroom::where('university_id', $university->id)->exists()
+            || SemesterCreditPolicy::where('university_id', $university->id)->exists()
+            || AcademicYearClosure::where('university_id', $university->id)->exists();
     }
 
     private function authorizeUniversityScope(University $university): void

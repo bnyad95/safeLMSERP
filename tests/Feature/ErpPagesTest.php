@@ -488,10 +488,10 @@ class ErpPagesTest extends TestCase
 
         $this->assertDatabaseHas('academic_years', [
             'university_id' => $university->id,
-                'name' => '2027/2028',
-                'status' => 'upcoming',
-                'starts_on' => '2027-09-01 00:00:00',
-                'ends_on' => '2028-06-30 00:00:00',
+            'name' => '2027/2028',
+            'status' => 'upcoming',
+            'starts_on' => '2027-09-01 00:00:00',
+            'ends_on' => '2028-06-30 00:00:00',
         ]);
 
         $this->assertDatabaseMissing('semesters', [
@@ -694,6 +694,74 @@ class ErpPagesTest extends TestCase
             ->assertOk()
             ->assertSee('Scoped Department')
             ->assertDontSee('Hidden Department');
+    }
+
+    public function test_scoped_academic_manager_cannot_create_sibling_or_top_level_organizations(): void
+    {
+        $university = University::create(['name' => 'Scoped University', 'code' => 'SCOPED']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Scoped College', 'code' => 'SC']);
+        $permission = Permission::create(['name' => 'academic_setup.manage', 'display_name' => 'Manage academic setup']);
+        $user = User::factory()->create(['university_id' => $university->id, 'college_id' => $college->id]);
+        $user->permissionOverrides()->attach($permission, ['effect' => 'grant']);
+
+        $this->actingAs($user)->get(route('universities.create'))->assertForbidden();
+        $this->actingAs($user)->get(route('colleges.create'))->assertForbidden();
+        $this->actingAs($user)->get(route('departments.create'))->assertOk();
+    }
+
+    public function test_semester_credit_policies_are_versioned_and_closed_years_are_read_only(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Policy University', 'code' => 'POL']);
+        $firstYear = AcademicYear::create([
+            'university_id' => $university->id,
+            'name' => '2026/2027',
+            'starts_on' => '2026-09-01',
+            'ends_on' => '2027-06-30',
+            'status' => 'closed',
+        ]);
+        $secondYear = AcademicYear::create([
+            'university_id' => $university->id,
+            'name' => '2027/2028',
+            'starts_on' => '2027-09-01',
+            'ends_on' => '2028-06-30',
+            'status' => 'upcoming',
+        ]);
+        SemesterCreditPolicy::create([
+            'university_id' => $university->id,
+            'academic_year_id' => $firstYear->id,
+            'semester_credits' => 30,
+            'passing_credits' => 18,
+            'graduation_credits' => 240,
+        ]);
+
+        $this->actingAs($admin)->post(route('bologna-definition.semester-credit-policy.store'), [
+            'policies' => [
+                $secondYear->id => ['semester_credits' => 30, 'passing_credits' => 20, 'graduation_credits' => 240],
+            ],
+        ])->assertRedirect(route('bologna-definition.semester-credit-policy'));
+
+        $this->assertDatabaseHas('semester_credit_policies', [
+            'university_id' => $university->id,
+            'academic_year_id' => $firstYear->id,
+            'passing_credits' => 18,
+        ]);
+        $this->assertDatabaseHas('semester_credit_policies', [
+            'university_id' => $university->id,
+            'academic_year_id' => $secondYear->id,
+            'passing_credits' => 20,
+        ]);
+
+        $this->actingAs($admin)->post(route('bologna-definition.semester-credit-policy.store'), [
+            'policies' => [
+                $firstYear->id => ['semester_credits' => 30, 'passing_credits' => 25, 'graduation_credits' => 240],
+            ],
+        ])->assertSessionHasErrors("policies.{$firstYear->id}");
+
+        $this->assertDatabaseHas('semester_credit_policies', [
+            'academic_year_id' => $firstYear->id,
+            'passing_credits' => 18,
+        ]);
     }
 
     public function test_academic_year_dates_cannot_overlap_and_open_years_can_be_edited(): void

@@ -169,7 +169,7 @@ class RolePermissionSeeder extends Seeder
                 'display_name' => 'Instructor',
                 'description' => 'Manages assigned courses, attendance, and mark entry.',
                 'permissions' => [
-                    'courses.view', 'timetable.view',
+                    'timetable.view',
                     'attendance.view', 'attendance.create', 'attendance.update',
                     'marks.view', 'marks.enter',
                     'lms.view', 'lms.create_content', 'lms.create_assignment', 'lms.grade_assignment',
@@ -179,7 +179,7 @@ class RolePermissionSeeder extends Seeder
                 'display_name' => 'Assistant Instructor',
                 'description' => 'Assists instructor with practicals, attendance, and assignments.',
                 'permissions' => [
-                    'courses.view', 'attendance.view', 'attendance.create',
+                    'attendance.view', 'attendance.create',
                     'marks.view', 'marks.enter',
                     'lms.view', 'lms.create_content', 'lms.grade_assignment',
                 ],
@@ -188,7 +188,7 @@ class RolePermissionSeeder extends Seeder
                 'display_name' => 'Student User',
                 'description' => 'Views own academic and financial information.',
                 'permissions' => [
-                    'courses.view', 'attendance.view', 'marks.view', 'finance.view', 'lms.view',
+                    'attendance.view', 'marks.view', 'finance.view', 'lms.view',
                 ],
             ],
             'accountant' => [

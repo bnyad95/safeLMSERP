@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\College;
 use App\Models\Department;
 use App\Models\University;
+use App\Models\User;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -20,7 +21,7 @@ class DepartmentController extends Controller
         OrganizationScope::apply($query, $user, 'department');
         $departments = $query->paginate(15);
         $canManageDepartments = $user->hasAnyRole(['super_administrator', 'administrator'])
-            || $user->hasDirectPermissionGrant('academic_setup.manage');
+            || ($user->hasDirectPermissionGrant('academic_setup.manage') && ! $user->department_id);
 
         return view('departments.index', compact('departments', 'canManageDepartments'));
     }
@@ -28,6 +29,7 @@ class DepartmentController extends Controller
     public function create()
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->authorizeCreationScope();
 
         $universities = $this->scopedUniversities()->get();
         $colleges = $this->scopedColleges()->get();
@@ -38,6 +40,7 @@ class DepartmentController extends Controller
     public function store(Request $request)
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->authorizeCreationScope();
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', Rule::unique('departments', 'name')->where(fn ($query) => $query->where('college_id', $request->integer('college_id'))->whereNull('deleted_at'))],
@@ -78,6 +81,12 @@ class DepartmentController extends Controller
         $this->authorizeUniversityId($validated['university_id']);
         $this->authorizeDepartmentAssignment($validated);
 
+        $parentChanged = (int) $department->university_id !== (int) $validated['university_id']
+            || (int) $department->college_id !== (int) $validated['college_id'];
+        if ($parentChanged && $this->hasOperationalData($department)) {
+            return back()->withInput()->with('error', 'A department with academic records or assigned users cannot be moved to another college or institution.');
+        }
+
         $department->update($validated);
 
         return redirect()->route('departments.index')->with('success', 'Department updated successfully.');
@@ -88,16 +97,28 @@ class DepartmentController extends Controller
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
         $this->authorizeDepartmentScope($department);
 
-        if ($department->students()->withTrashed()->exists()
-            || $department->teachers()->withTrashed()->exists()
-            || $department->courses()->withTrashed()->exists()
-            || $department->stages()->exists()) {
+        if ($this->hasOperationalData($department)) {
             return back()->with('error', 'This department contains academic or historical records and cannot be archived.');
         }
 
         $department->delete();
 
         return redirect()->route('departments.index')->with('success', 'Department deleted successfully.');
+    }
+
+    private function hasOperationalData(Department $department): bool
+    {
+        return $department->students()->withTrashed()->exists()
+            || $department->teachers()->withTrashed()->exists()
+            || $department->courses()->withTrashed()->exists()
+            || $department->stages()->exists()
+            || User::withTrashed()->where('department_id', $department->id)->exists();
+    }
+
+    private function authorizeCreationScope(): void
+    {
+        $user = auth()->user();
+        abort_if(! $user->hasAnyRole(['super_administrator', 'administrator']) && $user->department_id, 403);
     }
 
     private function scopedUniversities()

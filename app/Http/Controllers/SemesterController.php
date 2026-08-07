@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
+use App\Models\CourseSection;
 use App\Models\Semester;
 use App\Models\University;
 use App\Support\OrganizationScope;
@@ -111,7 +112,7 @@ class SemesterController extends Controller
             ->orderBy('sequence')
             ->orderBy('name')
             ->get();
-        $modules = \App\Models\CourseSection::query()
+        $modules = CourseSection::query()
             ->with(['course.department', 'semester', 'teacher', 'stage'])
             ->whereHas('semester', fn ($query) => $query->where('academic_year_id', $academicYear->id))
             ->withCount('activeEnrollments')
@@ -244,6 +245,11 @@ class SemesterController extends Controller
         $this->ensureExistingSemestersFitAcademicYear($academicYear, $validated['starts_on'], $validated['ends_on']);
 
         $oldName = $academicYear->name;
+        if ($oldName !== $validated['name'] && $academicYear->semesters()->exists()) {
+            throw ValidationException::withMessages([
+                'name' => 'The academic year name is locked after semesters have been created. Dates and status can still be updated.',
+            ]);
+        }
         $academicYear->update($validated);
         if ($oldName !== $academicYear->name) {
             $academicYear->semesters()->update(['academic_year' => $academicYear->name]);
@@ -304,9 +310,11 @@ class SemesterController extends Controller
 
         if ($semester->courseSections()->withTrashed()->exists()
             && ((int) $semester->academic_year_id !== (int) $academicYear->id
-                || (int) $semester->university_id !== (int) $academicYear->university_id)) {
+                || (int) $semester->university_id !== (int) $academicYear->university_id
+                || (int) $semester->sequence !== (int) $validated['sequence']
+                || $semester->term_type !== $validated['term_type'])) {
             throw ValidationException::withMessages([
-                'academic_year_id' => 'A semester with modules cannot be moved to another academic year or university.',
+                'academic_year_id' => 'A semester with module offerings cannot change academic year, institution, type, or sequence. Dates and display details can still be updated.',
             ]);
         }
 
