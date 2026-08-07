@@ -22,6 +22,7 @@ use App\Models\Stage;
 use App\Models\Student;
 use App\Models\StudentProgressionException;
 use App\Models\Timetable;
+use App\Models\University;
 use App\Models\User;
 use App\Services\StudentProgressionService;
 use App\Support\OrganizationScope;
@@ -36,7 +37,14 @@ class AcademicYearClosureController extends Controller
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
 
-        $academicYears = Semester::query()
+        $universities = $this->accessibleClosingUniversities($request->user());
+        $selectedUniversityId = $request->integer('university_id') ?: ($request->user()->university_id ?: $universities->first()?->id);
+        $selectedUniversity = $universities->firstWhere('id', $selectedUniversityId);
+        abort_if($selectedUniversityId && ! $selectedUniversity, 403);
+
+        $academicYears = Semester::withTrashed()
+            ->when($selectedUniversity, fn ($query) => $query->where('university_id', $selectedUniversity->id))
+            ->when(! $selectedUniversity, fn ($query) => $query->whereRaw('1 = 0'))
             ->distinct()
             ->orderByDesc('academic_year')
             ->pluck('academic_year')
@@ -44,13 +52,25 @@ class AcademicYearClosureController extends Controller
             ->values();
 
         $selectedYear = $request->query('academic_year', $academicYears->first());
-        $summary = $selectedYear ? $this->buildSummary($selectedYear) : $this->emptySummary();
+        if (! $selectedUniversity) {
+            $selectedYear = null;
+        } else {
+            abort_if($selectedYear && ! $academicYears->contains($selectedYear), 404);
+        }
+        $summary = $selectedYear && $selectedUniversity
+            ? $this->buildSummary($selectedYear, $selectedUniversity->id, $request->user())
+            : $this->emptySummary();
 
         return view('academic-year-closures.index', [
+            'universities' => $universities,
+            'selectedUniversity' => $selectedUniversity,
             'academicYears' => $academicYears,
             'selectedYear' => $selectedYear,
             'summary' => $summary,
-            'canManageClosure' => $this->canManageClosure($request),
+            'canResolveClosure' => $this->canResolveClosure($request),
+            'canManageClosure' => $selectedUniversity
+                ? $this->canManageClosure($request, $selectedUniversity->id)
+                : false,
         ]);
     }
 
@@ -489,25 +509,22 @@ class AcademicYearClosureController extends Controller
 
         foreach ($years as $year) {
             $closures = AcademicYearClosure::where('academic_year', $year)->get();
-            $needsRebuild = $closures->contains(function (AcademicYearClosure $closure) {
+            foreach ($closures as $closure) {
                 $summary = $closure->summary ?? [];
+                $needsRebuild = empty($summary['archive_snapshot'] ?? null);
 
-                return empty($summary['archive_snapshot'] ?? null);
-            });
+                if (! $force && ! $needsRebuild) {
+                    $skipped++;
 
-            if (! $force && ! $needsRebuild) {
-                $skipped += $closures->count();
+                    continue;
+                }
 
-                continue;
+                $rebuiltSummary = $this->buildSummary($year, $closure->university_id, null, true);
+
+                $closure->update(['summary' => $rebuiltSummary['snapshot']]);
+
+                $rebuilt++;
             }
-
-            $summary = $this->buildSummary($year, true);
-
-            AcademicYearClosure::where('academic_year', $year)->update([
-                'summary' => $summary['snapshot'],
-            ]);
-
-            $rebuilt += $closures->count();
         }
 
         return [
@@ -521,15 +538,27 @@ class AcademicYearClosureController extends Controller
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
 
-        $academicYears = Semester::query()->distinct()->pluck('academic_year')->filter()->values()->all();
+        $accessibleUniversities = $this->accessibleClosingUniversities($request->user());
+        if (! $request->filled('university_id') && $accessibleUniversities->count() === 1) {
+            $request->merge(['university_id' => $accessibleUniversities->first()->id]);
+        }
 
         $validated = $request->validate([
-            'academic_year' => ['required', 'string', Rule::in($academicYears)],
+            'university_id' => ['required', 'integer', 'exists:universities,id'],
+            'academic_year' => ['required', 'string', 'max:20'],
             'confirm_results' => ['accepted'],
             'confirm_finance' => ['accepted'],
         ]);
+        $university = $accessibleUniversities->firstWhere('id', (int) $validated['university_id']);
+        abort_unless($university, 403);
+        abort_unless($this->canManageClosure($request, $university->id), 403);
+        $yearExists = Semester::withTrashed()
+            ->where('university_id', $university->id)
+            ->where('academic_year', $validated['academic_year'])
+            ->exists();
+        abort_unless($yearExists, 404);
 
-        $summary = $this->buildSummary($validated['academic_year']);
+        $summary = $this->buildSummary($validated['academic_year'], $university->id, $request->user());
 
         if ($summary['blockers_count'] > 0) {
             return back()
@@ -538,7 +567,7 @@ class AcademicYearClosureController extends Controller
         }
 
         $progressionReport = null;
-        DB::transaction(function () use ($request, $summary, $validated, &$progressionReport) {
+        DB::transaction(function () use ($request, $summary, $validated, $university, &$progressionReport) {
             if ($summary['section_ids']->isNotEmpty()) {
                 $progressionReport = app(StudentProgressionService::class)->process(
                     $summary['section_ids'],
@@ -556,32 +585,33 @@ class AcademicYearClosureController extends Controller
                     ->delete();
             }
 
-            $closureSummary = $this->buildSummary($validated['academic_year'], true);
+            $closureSummary = $this->buildSummary($validated['academic_year'], $university->id, $request->user(), true);
             $closureSummary['snapshot']['progression'] = $progressionReport;
-            $this->archiveYearRecords($closureSummary, $validated['academic_year']);
+            $this->archiveYearRecords($closureSummary, $validated['academic_year'], $university->id);
 
-            foreach ($closureSummary['university_ids'] as $universityId) {
-                AcademicYearClosure::updateOrCreate(
-                    [
-                        'university_id' => $universityId,
-                        'academic_year' => $validated['academic_year'],
-                    ],
-                    [
-                        'status' => 'closed',
-                        'closed_by' => $request->user()->id,
-                        'closed_at' => now(),
-                        'summary' => $closureSummary['snapshot'],
-                    ]
-                );
+            AcademicYearClosure::updateOrCreate(
+                [
+                    'university_id' => $university->id,
+                    'academic_year' => $validated['academic_year'],
+                ],
+                [
+                    'status' => 'closed',
+                    'closed_by' => $request->user()->id,
+                    'closed_at' => now(),
+                    'summary' => $closureSummary['snapshot'],
+                ]
+            );
 
-                AcademicYear::where('university_id', $universityId)
-                    ->where('name', $validated['academic_year'])
-                    ->update(['status' => 'closed']);
-            }
+            AcademicYear::where('university_id', $university->id)
+                ->where('name', $validated['academic_year'])
+                ->update(['status' => 'closed']);
         });
 
         return redirect()
-            ->route('academic-year-closures.index', ['academic_year' => $validated['academic_year']])
+            ->route('academic-year-closures.index', [
+                'university_id' => $university->id,
+                'academic_year' => $validated['academic_year'],
+            ])
             ->with('success', 'Academic year closed and archived. Current rosters were completed, waitlists were cleared, and year records were moved to archive history.');
     }
 
@@ -594,8 +624,8 @@ class AcademicYearClosureController extends Controller
             'status' => ['required', Rule::in(StudentProgressionException::STATUSES)],
             'reason' => ['required', 'string', 'min:10', 'max:2000'],
         ]);
-        $this->ensureYearOpen($validated['academic_year']);
         $student = $this->managedStudentForYear((int) $validated['student_id'], $validated['academic_year'], $request->user());
+        $this->ensureYearOpen($validated['academic_year'], $student->university_id);
 
         StudentProgressionException::updateOrCreate(
             ['student_id' => $student->id, 'academic_year' => $validated['academic_year']],
@@ -607,19 +637,25 @@ class AcademicYearClosureController extends Controller
             ]
         );
 
-        return redirect()->route('academic-year-closures.index', ['academic_year' => $validated['academic_year']])
+        return redirect()->route('academic-year-closures.index', [
+            'university_id' => $student->university_id,
+            'academic_year' => $validated['academic_year'],
+        ])
             ->with('success', 'The student exception was approved and recorded for year closing.');
     }
 
     public function destroyProgressionException(Request $request, StudentProgressionException $exception)
     {
         $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
-        $this->ensureYearOpen($exception->academic_year);
-        $this->managedStudentForYear($exception->student_id, $exception->academic_year, $request->user());
+        $student = $this->managedStudentForYear($exception->student_id, $exception->academic_year, $request->user());
+        $this->ensureYearOpen($exception->academic_year, $student->university_id);
         $academicYear = $exception->academic_year;
         $exception->delete();
 
-        return redirect()->route('academic-year-closures.index', ['academic_year' => $academicYear])
+        return redirect()->route('academic-year-closures.index', [
+            'university_id' => $student->university_id,
+            'academic_year' => $academicYear,
+        ])
             ->with('success', 'The progression exception was removed. The student must now receive a normal decision or another approved exception.');
     }
 
@@ -630,8 +666,8 @@ class AcademicYearClosureController extends Controller
             'academic_year' => ['required', 'string', 'max:20'],
             'stage_id' => ['required', 'integer', 'exists:stages,id'],
         ]);
-        $this->ensureYearOpen($validated['academic_year']);
         $student = $this->managedStudentForYear($student->id, $validated['academic_year'], $request->user());
+        $this->ensureYearOpen($validated['academic_year'], $student->university_id);
         $stageQuery = Stage::whereKey($validated['stage_id'])
             ->where('university_id', $student->university_id)
             ->where('department_id', $student->department_id);
@@ -639,35 +675,46 @@ class AcademicYearClosureController extends Controller
         $stage = $stageQuery->firstOrFail();
         $student->update(['current_stage_id' => $stage->id]);
 
-        return redirect()->route('academic-year-closures.index', ['academic_year' => $validated['academic_year']])
+        return redirect()->route('academic-year-closures.index', [
+            'university_id' => $student->university_id,
+            'academic_year' => $validated['academic_year'],
+        ])
             ->with('success', 'The student current stage was assigned.');
     }
 
-    private function buildSummary(string $academicYear, bool $includeArchiveSnapshot = false): array
+    private function buildSummary(string $academicYear, int $universityId, ?User $user = null, bool $includeArchiveSnapshot = false): array
     {
         $semesters = Semester::withTrashed()->with('university')
+            ->where('university_id', $universityId)
             ->where('academic_year', $academicYear)
             ->orderBy('name')
             ->get();
 
         $semesterIds = $semesters->pluck('id');
-        $universityIds = $semesters->pluck('university_id')->unique()->values();
+        $university = University::find($universityId);
 
-        $sections = CourseSection::withTrashed()
+        $sectionQuery = CourseSection::withTrashed()
             ->with(['course.department.college', 'semester.university'])
             ->withCount(['activeEnrollments', 'marks'])
             ->whereIn('semester_id', $semesterIds)
             ->orderBy('semester_id')
-            ->orderBy('section_code')
-            ->get();
+            ->orderBy('section_code');
+        if ($user) {
+            OrganizationScope::apply($sectionQuery, $user, 'section');
+        }
+        $sections = $sectionQuery->get();
 
         $sectionIds = $sections->pluck('id');
         $readiness = app(StudentProgressionService::class)->readiness($sectionIds, $academicYear);
         $resultEnrollmentQuery = Enrollment::withTrashed()->whereIn('course_section_id', $sectionIds)->whereIn('status', ['enrolled', 'completed']);
         $markQuery = Mark::withTrashed()->whereIn('course_section_id', $sectionIds);
         $financeQuery = FinanceTransaction::withTrashed()->where('academic_year', $academicYear)
+            ->whereHas('student', fn ($student) => $student->where('university_id', $universityId))
             ->where('type', 'invoice')
             ->where('status', '!=', 'cancelled');
+        if ($user) {
+            OrganizationScope::apply($financeQuery, $user, 'student_record');
+        }
 
         $enrollmentsCount = (clone $resultEnrollmentQuery)->count();
         $studentCount = (clone $resultEnrollmentQuery)->distinct('student_id')->count('student_id');
@@ -688,9 +735,10 @@ class AcademicYearClosureController extends Controller
             ]);
 
         $closures = AcademicYearClosure::with(['university', 'closedBy'])
+            ->where('university_id', $universityId)
             ->where('academic_year', $academicYear)
             ->get();
-        $archiveSnapshot = $includeArchiveSnapshot ? $this->buildArchiveSnapshot($academicYear, $sections) : [];
+        $archiveSnapshot = $includeArchiveSnapshot ? $this->buildArchiveSnapshot($academicYear, $universityId, $sections) : [];
 
         $blockers = collect([
             [
@@ -740,8 +788,9 @@ class AcademicYearClosureController extends Controller
 
         return [
             'academic_year' => $academicYear,
-            'universities' => $semesters->pluck('university.name')->filter()->unique()->values(),
-            'university_ids' => $universityIds,
+            'universities' => collect([$university?->name])->filter(),
+            'university_ids' => collect([$universityId]),
+            'university_id' => $universityId,
             'semester_count' => $semesters->count(),
             'semester_ids' => $semesterIds,
             'section_count' => $sections->count(),
@@ -778,7 +827,7 @@ class AcademicYearClosureController extends Controller
         ];
     }
 
-    private function buildArchiveSnapshot(string $academicYear, $sections): array
+    private function buildArchiveSnapshot(string $academicYear, int $universityId, $sections): array
     {
         $sectionIds = $sections->pluck('id')->filter()->values();
 
@@ -919,7 +968,10 @@ class AcademicYearClosureController extends Controller
             'materials' => CourseMaterial::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
             'stream_posts' => ClassStreamPost::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
             'class_messages' => ClassMessage::withTrashed()->whereIn('course_section_id', $sectionIds)->count(),
-            'finance_transactions' => FinanceTransaction::withTrashed()->where('academic_year', $academicYear)->count(),
+            'finance_transactions' => FinanceTransaction::withTrashed()
+                ->where('academic_year', $academicYear)
+                ->whereHas('student', fn ($student) => $student->where('university_id', $universityId))
+                ->count(),
         ];
 
         if (array_sum($recordCounts) > config('academics.archive_inline_record_limit', 5000)) {
@@ -1094,6 +1146,7 @@ class AcademicYearClosureController extends Controller
 
         $financeTransactions = FinanceTransaction::withTrashed()->with(['student.department.college'])
             ->where('academic_year', $academicYear)
+            ->whereHas('student', fn ($student) => $student->where('university_id', $universityId))
             ->orderBy('transaction_date')
             ->orderBy('id')
             ->get()
@@ -1263,21 +1316,44 @@ class AcademicYearClosureController extends Controller
         return $query->firstOrFail();
     }
 
-    private function ensureYearOpen(string $academicYear): void
+    private function ensureYearOpen(string $academicYear, int $universityId): void
     {
-        if (AcademicYearClosure::where('academic_year', $academicYear)->exists()) {
+        if (AcademicYearClosure::where('university_id', $universityId)->where('academic_year', $academicYear)->exists()) {
             throw ValidationException::withMessages([
                 'academic_year' => 'Progression decisions cannot be changed after the academic year is closed.',
             ]);
         }
     }
 
-    private function canManageClosure(Request $request): bool
+    private function accessibleClosingUniversities(User $user)
+    {
+        $query = University::orderBy('name');
+        if (! $user->hasAnyRole(['super_administrator', 'administrator'])) {
+            OrganizationScope::apply($query, $user, 'university');
+        }
+
+        return $query->get(['id', 'name', 'code']);
+    }
+
+    private function canResolveClosure(Request $request): bool
     {
         $user = $request->user();
 
         return $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
+    }
+
+    private function canManageClosure(Request $request, int $universityId): bool
+    {
+        $user = $request->user();
+        if ($user->hasAnyRole(['super_administrator', 'administrator'])) {
+            return true;
+        }
+
+        return $user->hasDirectPermissionGrant('academic_setup.manage')
+            && (int) $user->university_id === $universityId
+            && blank($user->college_id)
+            && blank($user->department_id);
     }
 
     private function authorizeArchiveView(Request $request): void
@@ -1393,7 +1469,7 @@ class AcademicYearClosureController extends Controller
         return $query;
     }
 
-    private function archiveYearRecords(array $summary, string $academicYear): void
+    private function archiveYearRecords(array $summary, string $academicYear, int $universityId): void
     {
         $sectionIds = collect($summary['section_ids'] ?? [])->filter()->values();
         $semesterIds = collect($summary['semester_ids'] ?? [])->filter()->values();
@@ -1450,6 +1526,7 @@ class AcademicYearClosureController extends Controller
         }
 
         FinanceTransaction::where('academic_year', $academicYear)
+            ->whereHas('student', fn ($student) => $student->where('university_id', $universityId))
             ->whereNull('deleted_at')
             ->delete();
 
@@ -1507,8 +1584,7 @@ class AcademicYearClosureController extends Controller
 
     private function canSeeAllArchiveData(User $user): bool
     {
-        return $user->hasAnyRole(['super_administrator', 'administrator'])
-            || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
+        return $user->hasAnyRole(['super_administrator', 'administrator']);
     }
 
     private function hasUniversityArchiveScope(User $user): bool

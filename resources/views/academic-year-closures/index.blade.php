@@ -31,7 +31,17 @@
             @endif
 
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                <form method="GET" action="{{ route('academic-year-closures.index') }}" class="grid gap-4 md:grid-cols-[minmax(220px,1fr)_auto] md:items-end">
+                <form method="GET" action="{{ route('academic-year-closures.index') }}" class="grid gap-4 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] md:items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">University</label>
+                        <select name="university_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                            @forelse($universities as $university)
+                                <option value="{{ $university->id }}" @selected($selectedUniversity?->id === $university->id)>{{ $university->name }}</option>
+                            @empty
+                                <option value="">No university in scope</option>
+                            @endforelse
+                        </select>
+                    </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Academic Year</label>
                         <select name="academic_year" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -125,6 +135,7 @@
                         @if($selectedYear && $canManageClosure)
                             <form method="POST" action="{{ route('academic-year-closures.store') }}" class="space-y-4">
                                 @csrf
+                                <input type="hidden" name="university_id" value="{{ $selectedUniversity->id }}">
                                 <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
                                 <label class="flex gap-3 text-sm text-gray-700">
                                     <input type="checkbox" name="confirm_results" value="1" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
@@ -144,7 +155,7 @@
                                 </button>
                             </form>
                         @elseif(! $canManageClosure)
-                            <p class="rounded-md bg-gray-50 p-4 text-sm text-gray-600">You can review this workflow, but closing requires academic setup management permission.</p>
+                            <p class="rounded-md bg-gray-50 p-4 text-sm text-gray-600">You can review and resolve records inside your organization scope, but final closing requires university-level academic authority.</p>
                         @endif
                     </div>
                 </section>
@@ -200,11 +211,12 @@
                                 </div>
                             </div>
 
-                            @if($canManageClosure)
+                            @if($canResolveClosure)
                                 <div class="grid gap-4 xl:grid-cols-2">
                                     <form method="POST" action="{{ route('academic-year-closures.students.stage', $item['student']) }}" class="grid gap-3 rounded-md bg-gray-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                                         @csrf
                                         @method('PATCH')
+                                        <input type="hidden" name="university_id" value="{{ $selectedUniversity?->id }}">
                                         <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
                                         <div>
                                             <label class="block text-xs font-semibold uppercase text-gray-500">Current Stage</label>
@@ -220,6 +232,7 @@
 
                                     <form method="POST" action="{{ route('academic-year-closures.exceptions.store') }}" class="grid gap-3 rounded-md bg-amber-50 p-4 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-end">
                                         @csrf
+                                        <input type="hidden" name="university_id" value="{{ $selectedUniversity?->id }}">
                                         <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
                                         <input type="hidden" name="student_id" value="{{ $item['student']->id }}">
                                         <div>
@@ -263,7 +276,7 @@
                                     <p class="mt-1 text-sm text-gray-600">{{ $exception->reason }}</p>
                                     <p class="mt-1 text-xs text-gray-500">Approved by {{ $exception->approvedBy->name ?? 'Unknown user' }} on {{ $exception->approved_at?->format('Y-m-d H:i') }}</p>
                                 </div>
-                                @if($canManageClosure)
+                                @if($canResolveClosure)
                                     <form method="POST" action="{{ route('academic-year-closures.exceptions.destroy', $exception) }}">
                                         @csrf
                                         @method('DELETE')

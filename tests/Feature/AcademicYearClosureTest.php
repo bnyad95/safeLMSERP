@@ -131,7 +131,7 @@ class AcademicYearClosureTest extends TestCase
             'student_id' => $setup['student']->id,
             'status' => 'incomplete',
             'reason' => 'Approved medical leave requires the final result to remain incomplete.',
-        ])->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+        ])->assertRedirect(route('academic-year-closures.index', ['university_id' => $setup['university']->id, 'academic_year' => $setup['semester']->academic_year]));
 
         $this->assertDatabaseHas('student_progression_exceptions', [
             'student_id' => $setup['student']->id,
@@ -144,7 +144,7 @@ class AcademicYearClosureTest extends TestCase
             'academic_year' => $setup['semester']->academic_year,
             'confirm_results' => '1',
             'confirm_finance' => '1',
-        ])->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+        ])->assertRedirect(route('academic-year-closures.index', ['university_id' => $setup['university']->id, 'academic_year' => $setup['semester']->academic_year]));
 
         $this->assertDatabaseHas('academic_year_closures', ['academic_year' => $setup['semester']->academic_year]);
         $this->assertSame(Student::STANDING_INCOMPLETE, $setup['student']->fresh()->academic_standing);
@@ -169,7 +169,7 @@ class AcademicYearClosureTest extends TestCase
         $this->actingAs($user)->patch(route('academic-year-closures.students.stage', $setup['student']), [
             'academic_year' => $setup['semester']->academic_year,
             'stage_id' => $setup['stage']->id,
-        ])->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+        ])->assertRedirect(route('academic-year-closures.index', ['university_id' => $setup['university']->id, 'academic_year' => $setup['semester']->academic_year]));
 
         $this->assertSame($setup['stage']->id, $setup['student']->fresh()->current_stage_id);
     }
@@ -326,7 +326,7 @@ class AcademicYearClosureTest extends TestCase
                 'confirm_results' => '1',
                 'confirm_finance' => '1',
             ])
-            ->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+            ->assertRedirect(route('academic-year-closures.index', ['university_id' => $setup['university']->id, 'academic_year' => $setup['semester']->academic_year]));
 
         $this->assertDatabaseHas('academic_year_closures', [
             'university_id' => $setup['university']->id,
@@ -1027,7 +1027,7 @@ class AcademicYearClosureTest extends TestCase
                 'confirm_results' => '1',
                 'confirm_finance' => '1',
             ])
-            ->assertRedirect(route('academic-year-closures.index', ['academic_year' => $setup['semester']->academic_year]));
+            ->assertRedirect(route('academic-year-closures.index', ['university_id' => $setup['university']->id, 'academic_year' => $setup['semester']->academic_year]));
 
         $this->assertSoftDeleted('course_sections', ['id' => $setup['section']->id]);
     }
@@ -1101,6 +1101,169 @@ class AcademicYearClosureTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_closing_one_university_does_not_archive_another_university_with_the_same_year(): void
+    {
+        $admin = $this->adminUser();
+        $first = $this->academicSetup();
+        $second = $this->secondAcademicSetup();
+
+        foreach ([$first, $second] as $setup) {
+            Mark::create([
+                'student_id' => $setup['student']->id,
+                'course_id' => $setup['course']->id,
+                'course_section_id' => $setup['section']->id,
+                'final_mark' => 70,
+                'submission_status' => 'approved',
+                'visibility_status' => 'published',
+                'published_at' => now(),
+            ]);
+        }
+        $firstInvoice = FinanceTransaction::create([
+            'student_id' => $first['student']->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => 100,
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-SCOPE-A',
+            'academic_year' => $first['semester']->academic_year,
+            'transaction_date' => now(),
+        ]);
+        $secondInvoice = FinanceTransaction::create([
+            'student_id' => $second['student']->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => 200,
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-SCOPE-B',
+            'academic_year' => $second['semester']->academic_year,
+            'transaction_date' => now(),
+        ]);
+
+        $this->actingAs($admin)->post(route('academic-year-closures.store'), [
+            'university_id' => $first['university']->id,
+            'academic_year' => $first['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ])->assertRedirect(route('academic-year-closures.index', [
+            'university_id' => $first['university']->id,
+            'academic_year' => $first['semester']->academic_year,
+        ]));
+
+        $this->assertDatabaseHas('academic_year_closures', [
+            'university_id' => $first['university']->id,
+            'academic_year' => $first['semester']->academic_year,
+        ]);
+        $this->assertDatabaseMissing('academic_year_closures', [
+            'university_id' => $second['university']->id,
+            'academic_year' => $second['semester']->academic_year,
+        ]);
+        $this->assertSoftDeleted('course_sections', ['id' => $first['section']->id]);
+        $this->assertNotSoftDeleted('course_sections', ['id' => $second['section']->id]);
+        $this->assertSoftDeleted('finance_transactions', ['id' => $firstInvoice->id]);
+        $this->assertNotSoftDeleted('finance_transactions', ['id' => $secondInvoice->id]);
+        $this->assertNotSoftDeleted('enrollments', [
+            'student_id' => $second['student']->id,
+            'course_section_id' => $second['section']->id,
+        ]);
+        $this->assertNotSoftDeleted('marks', [
+            'student_id' => $second['student']->id,
+            'course_section_id' => $second['section']->id,
+        ]);
+    }
+
+    public function test_department_scoped_manager_can_resolve_but_cannot_close_the_university_year(): void
+    {
+        $first = $this->academicSetup();
+        $second = $this->secondAcademicSetup();
+        $permission = Permission::create(['name' => 'academic_setup.manage', 'display_name' => 'Manage academic setup']);
+        $user = User::factory()->create([
+            'university_id' => $first['university']->id,
+            'college_id' => $first['college']->id,
+            'department_id' => $first['department']->id,
+        ]);
+        $user->permissionOverrides()->attach($permission, ['effect' => 'grant']);
+        $first['student']->update(['current_stage_id' => null]);
+
+        $this->actingAs($user)
+            ->get(route('academic-year-closures.index', [
+                'university_id' => $first['university']->id,
+                'academic_year' => $first['semester']->academic_year,
+            ]))
+            ->assertOk()
+            ->assertSee($first['university']->name)
+            ->assertDontSee($second['university']->name)
+            ->assertSee('final closing requires university-level academic authority');
+
+        $this->actingAs($user)
+            ->get(route('academic-year-closures.index', [
+                'university_id' => $second['university']->id,
+                'academic_year' => $second['semester']->academic_year,
+            ]))
+            ->assertForbidden();
+
+        $this->actingAs($user)->patch(route('academic-year-closures.students.stage', $first['student']), [
+            'academic_year' => $first['semester']->academic_year,
+            'stage_id' => $first['stage']->id,
+        ])->assertRedirect();
+        $this->assertSame($first['stage']->id, $first['student']->fresh()->current_stage_id);
+
+        $this->actingAs($user)->post(route('academic-year-closures.store'), [
+            'university_id' => $first['university']->id,
+            'academic_year' => $first['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ])->assertForbidden();
+    }
+
+    public function test_university_scoped_direct_permission_cannot_close_or_archive_another_university(): void
+    {
+        $first = $this->academicSetup();
+        $second = $this->secondAcademicSetup();
+        $manage = Permission::create(['name' => 'academic_setup.manage', 'display_name' => 'Manage academic setup']);
+        $user = User::factory()->create(['university_id' => $first['university']->id]);
+        $user->permissionOverrides()->attach($manage, ['effect' => 'grant']);
+        Mark::create([
+            'student_id' => $first['student']->id,
+            'course_id' => $first['course']->id,
+            'course_section_id' => $first['section']->id,
+            'final_mark' => 75,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $this->actingAs($user)->post(route('academic-year-closures.store'), [
+            'university_id' => $first['university']->id,
+            'academic_year' => $first['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ])->assertRedirect();
+        $this->assertDatabaseHas('academic_year_closures', ['university_id' => $first['university']->id]);
+
+        $this->actingAs($user)->post(route('academic-year-closures.store'), [
+            'university_id' => $second['university']->id,
+            'academic_year' => $second['semester']->academic_year,
+            'confirm_results' => '1',
+            'confirm_finance' => '1',
+        ])->assertForbidden();
+
+        AcademicYearClosure::create([
+            'university_id' => $second['university']->id,
+            'academic_year' => $second['semester']->academic_year,
+            'status' => 'closed',
+            'closed_at' => now(),
+        ]);
+        $this->actingAs($user)
+            ->get(route('academic-year-closures.archive'))
+            ->assertOk()
+            ->assertSee($first['university']->name)
+            ->assertDontSee($second['university']->name);
+    }
+
     private function adminUser(): User
     {
         $role = Role::create(['name' => 'administrator', 'display_name' => 'Academic Administrator']);
@@ -1138,6 +1301,46 @@ class AcademicYearClosureTest extends TestCase
             'student_id' => 'CS-4001',
             'full_name' => 'Closing Student',
             'email' => 'closing.student@example.com',
+            'status' => 'Active',
+        ]);
+        Enrollment::create([
+            'student_id' => $student->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+            'enrolled_at' => now(),
+        ]);
+
+        return compact('university', 'college', 'department', 'stage', 'semester', 'course', 'section', 'student');
+    }
+
+    private function secondAcademicSetup(): array
+    {
+        $university = University::create(['name' => 'Second University', 'code' => 'SUN']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Second College', 'code' => 'SC']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Second Department', 'code' => 'SD']);
+        $stage = Stage::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'name' => 'Stage 4',
+            'sequence' => 4,
+        ]);
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Spring', 'academic_year' => '2026/2027']);
+        $course = Course::create(['department_id' => $department->id, 'code' => 'SD401', 'name' => 'Second Capstone', 'credits' => 4, 'status' => 'active']);
+        $section = CourseSection::create([
+            'course_id' => $course->id,
+            'semester_id' => $semester->id,
+            'stage_id' => $stage->id,
+            'section_code' => 'A',
+            'grade_level' => 'Stage 4',
+            'status' => 'active',
+        ]);
+        $student = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'current_stage_id' => $stage->id,
+            'student_id' => 'SD-4001',
+            'full_name' => 'Second Closing Student',
+            'email' => 'second.closing@example.com',
             'status' => 'Active',
         ]);
         Enrollment::create([
