@@ -349,7 +349,7 @@ class TimetableTest extends TestCase
             'capacity' => 40,
             'status' => 'active',
         ]);
-        $room = Classroom::create(['name' => 'Department Room', 'capacity' => 40]);
+        $room = Classroom::create(['university_id' => $university->id, 'name' => 'Department Room', 'capacity' => 40]);
         $permission = Permission::create(['name' => 'timetable.manage', 'display_name' => 'Manage timetable']);
         $role = Role::create(['name' => 'department_administrator', 'display_name' => 'Department Head']);
         $role->permissions()->attach($permission);

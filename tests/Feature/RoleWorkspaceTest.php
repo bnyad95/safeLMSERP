@@ -91,6 +91,11 @@ class RoleWorkspaceTest extends TestCase
         $parent = User::factory()->create(['email' => 'parent@example.com']);
         $parent->roles()->attach($role);
         $department = Department::factory()->create();
+        $parent->update([
+            'university_id' => $department->university_id,
+            'college_id' => $department->college_id,
+            'department_id' => $department->id,
+        ]);
         $course = Course::factory()->create(['department_id' => $department->id, 'name' => 'Parent Visible Course']);
         $semester = Semester::create([
             'university_id' => $department->university_id,

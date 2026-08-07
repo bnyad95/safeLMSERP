@@ -9,8 +9,10 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
+use App\Models\University;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TimetableController extends Controller
 {
@@ -136,6 +138,7 @@ class TimetableController extends Controller
             'classrooms' => Classroom::orderBy('name')->get(),
             'availableClassrooms' => Classroom::where('status', 'available')->orderBy('name')->get(),
             'teachers' => Teacher::where('status', 'Active')->orderBy('full_name')->get(['id', 'full_name']),
+            'universities' => University::orderBy('name')->get(['id', 'name', 'code']),
             'days' => Timetable::getDays(),
             'types' => Timetable::types(),
             'filters' => $filters,
@@ -182,7 +185,8 @@ class TimetableController extends Controller
         $this->requireAnyPermission('timetable.manage');
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:100', 'unique:classrooms,name'],
+            'university_id' => ['nullable', 'integer', 'exists:universities,id'],
+            'name' => ['required', 'string', 'max:100'],
             'building' => ['nullable', 'string', 'max:100'],
             'capacity' => ['required', 'integer', 'min:1', 'max:1000'],
             'type' => ['required', Rule::in(['classroom', 'lab', 'hall', 'online'])],
@@ -190,7 +194,27 @@ class TimetableController extends Controller
             'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        Classroom::create($validated);
+        $user = $request->user();
+        $universityId = $user->university_id
+            ?: ($validated['university_id'] ?? null)
+            ?: (University::count() === 1 ? University::value('id') : null);
+        if (! $universityId) {
+            throw ValidationException::withMessages([
+                'university_id' => 'Choose the university that owns this room.',
+            ]);
+        }
+
+        $university = University::whereKey($universityId)->firstOrFail();
+        $duplicate = Classroom::where('university_id', $university->id)
+            ->where('name', $validated['name'])
+            ->exists();
+        if ($duplicate) {
+            throw ValidationException::withMessages([
+                'name' => 'This university already has a room with that name.',
+            ]);
+        }
+
+        Classroom::create(array_merge($validated, ['university_id' => $university->id]));
 
         return redirect()->route('timetables.index')->with('success', 'Room added.');
     }
@@ -236,6 +260,11 @@ class TimetableController extends Controller
 
         if (($section->grade_level ?: '') !== $validated['grade_level']) {
             return ['ok' => false, 'message' => 'The selected module must match the selected stage.'];
+        }
+
+        $sectionUniversityId = $section->course?->department?->university_id;
+        if ($classroom->university_id && (int) $classroom->university_id !== (int) $sectionUniversityId) {
+            return ['ok' => false, 'message' => 'The selected room must belong to the same university as the module.'];
         }
 
         if ($section->semester?->academicYear?->isLocked()) {

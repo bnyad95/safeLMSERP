@@ -11,8 +11,6 @@ final class RoleAccessPolicy
         'marks.submit',
         'lms.create_content',
         'lms.manage_courses',
-        'reports.academic',
-        'reports.financial',
         'reports.audit',
     ];
 

@@ -154,7 +154,11 @@ class NotificationCalendarTest extends TestCase
         $studentUser = $this->makeRoleUser('student', ['finance.view'], [
             'email' => $setup['student']->email,
         ]);
-        $accountant = $this->makeRoleUser('accountant', ['finance.create_invoice']);
+        $accountant = $this->makeRoleUser('accountant', ['finance.view', 'finance.create_invoice']);
+        $accountant->update([
+            'university_id' => $setup['student']->university_id,
+            'department_id' => $setup['student']->department_id,
+        ]);
         $invoicePermission = Permission::where('name', 'finance.create_invoice')->first();
         $accountant->permissionOverrides()->attach($invoicePermission, ['effect' => 'grant']);
 

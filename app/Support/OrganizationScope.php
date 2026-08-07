@@ -15,6 +15,13 @@ class OrganizationScope
             return;
         }
 
+        if (
+            in_array($modelType, ['student', 'finance_record'], true)
+            && $user->hasDirectPermissionGrant('finance.view_global')
+        ) {
+            return;
+        }
+
         $scope = match (true) {
             $roleNames->intersect(UserRolePolicy::DEPARTMENT_SCOPED_ROLES)->isNotEmpty() => 'department',
             $roleNames->contains('college_administrator') => 'college',
@@ -43,12 +50,15 @@ class OrganizationScope
             'college' => self::scopeCollege($query, $user, $scope),
             'department' => self::scopeDepartment($query, $user, $scope),
             'student', 'teacher' => self::scopeDirectDepartment($query, $user, $scope),
+            'direct_university' => $query->where('university_id', $user->university_id),
             'course' => self::scopeThroughDepartment($query, $user, $scope),
             'section' => self::scopeThroughCourse($query, $user, $scope),
             'stage' => self::scopeThroughDepartment($query, $user, $scope),
             'course_record' => self::scopeRecordThroughCourse($query, $user, $scope),
             'student_record' => self::scopeThroughStudent($query, $user, $scope),
+            'finance_record' => self::scopeThroughStudent($query, $user, $scope),
             'section_record' => self::scopeThroughSection($query, $user, $scope),
+            'assessment_record' => self::scopeThroughAssessment($query, $user, $scope),
             'semester', 'academic_year' => $query->where('university_id', $user->university_id),
             default => null,
         };
@@ -150,6 +160,15 @@ class OrganizationScope
     private static function scopeThroughSection(Builder $query, User $user, string $scope): void
     {
         $query->whereHas('courseSection.course.department', function (Builder $department) use ($user, $scope) {
+            $department->where('university_id', $user->university_id)
+                ->when(in_array($scope, ['college', 'department'], true), fn (Builder $builder) => $builder->where('college_id', $user->college_id))
+                ->when($scope === 'department', fn (Builder $builder) => $builder->whereKey($user->department_id));
+        });
+    }
+
+    private static function scopeThroughAssessment(Builder $query, User $user, string $scope): void
+    {
+        $query->whereHas('assessmentItem.courseSection.course.department', function (Builder $department) use ($user, $scope) {
             $department->where('university_id', $user->university_id)
                 ->when(in_array($scope, ['college', 'department'], true), fn (Builder $builder) => $builder->where('college_id', $user->college_id))
                 ->when($scope === 'department', fn (Builder $builder) => $builder->whereKey($user->department_id));

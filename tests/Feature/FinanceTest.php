@@ -1630,7 +1630,7 @@ class FinanceTest extends TestCase
         ]);
         $role = Role::create(['name' => 'accountant', 'display_name' => 'Finance Officer']);
         $viewPermission = Permission::create(['name' => 'finance.view', 'display_name' => 'View finance']);
-        $globalPermission = Permission::create(['name' => 'finance.view_global', 'display_name' => 'View global finance']);
+        $globalPermission = Permission::firstOrCreate(['name' => 'finance.view_global'], ['display_name' => 'View global finance']);
         $role->permissions()->attach([$viewPermission->id, $globalPermission->id]);
         $accountant = User::factory()->create(['university_id' => $firstStudent->university_id]);
         $accountant->roles()->attach($role);

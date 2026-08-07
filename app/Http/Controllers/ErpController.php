@@ -2250,6 +2250,7 @@ class ErpController extends Controller
                         $q->where('name', 'like', "%{$query}%")
                             ->orWhere('code', 'like', "%{$query}%");
                     })
+                    ->tap(fn ($courseQuery) => $this->applyCourseSearchMembershipScope($courseQuery, $user))
                     ->latest()
                     ->limit($limit)
                     ->get();
@@ -2393,8 +2394,11 @@ class ErpController extends Controller
         }
 
         if ($canSearchCourses) {
-            $courses = Course::where('name', 'like', "%{$query}%")
-                ->orWhere('code', 'like', "%{$query}%")
+            $courses = Course::where(function ($courseQuery) use ($query) {
+                $courseQuery->where('name', 'like', "%{$query}%")
+                    ->orWhere('code', 'like', "%{$query}%");
+            })
+                ->tap(fn ($courseQuery) => $this->applyCourseSearchMembershipScope($courseQuery, $user))
                 ->limit($limit)
                 ->get(['name', 'code']);
 
@@ -2443,6 +2447,29 @@ class ErpController extends Controller
         return response()->json([
             'items' => collect($items)->take(12)->values(),
         ]);
+    }
+
+    private function applyCourseSearchMembershipScope($query, User $user): void
+    {
+        if ($user->hasRole('student')) {
+            $studentId = Student::where('email', $user->email)->value('id');
+            $query->when(
+                $studentId,
+                fn ($courseQuery, $id) => $courseQuery->whereHas('sections.activeEnrollments', fn ($enrollment) => $enrollment->where('student_id', $id)),
+                fn ($courseQuery) => $courseQuery->whereRaw('1 = 0')
+            );
+
+            return;
+        }
+
+        if ($user->hasRole('teacher')) {
+            $teacherId = Teacher::where('email', $user->email)->value('id');
+            $query->when(
+                $teacherId,
+                fn ($courseQuery, $id) => $courseQuery->whereHas('sections', fn ($section) => $section->where('teacher_id', $id)),
+                fn ($courseQuery) => $courseQuery->whereRaw('1 = 0')
+            );
+        }
     }
 
     public function accessMatrix(Request $request)

@@ -339,6 +339,17 @@
                         <h3 class="text-base font-semibold text-gray-900">Add Room</h3>
                         <form method="POST" action="{{ route('classrooms.store') }}" class="mt-5 grid gap-4">
                             @csrf
+                            @if($universities->count() > 1 || !auth()->user()->university_id)
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">University</label>
+                                    <select name="university_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                        <option value="">Select university</option>
+                                        @foreach($universities as $university)
+                                            <option value="{{ $university->id }}" @selected(old('university_id', auth()->user()->university_id) == $university->id)>{{ $university->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            @endif
                             <div class="grid gap-4 md:grid-cols-2">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Room Name</label>

@@ -55,6 +55,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/search/suggestions', [ErpController::class, 'searchSuggestions'])->name('search.suggestions');
     Route::get('/analytics', [AnalyticsController::class, 'index'])
         ->middleware('role.any:super_administrator,administrator,university_president')
+        ->middleware('permission.any:reports.academic')
         ->name('analytics.index');
     Route::prefix('integrations')
         ->name('integrations.')
@@ -77,6 +78,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         });
     Route::get('/integrations/export/finance', [CsvImportController::class, 'exportFinance'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->middleware('permission.any:reports.financial')
         ->name('integrations.export.finance');
     Route::get('/student-portal', [ErpController::class, 'studentPortal'])
         ->middleware('role.any:student')
@@ -309,6 +311,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('finance');
     Route::get('/finance/export', [FinanceController::class, 'export'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->middleware('permission.any:reports.financial')
         ->name('finance.export');
     Route::get('/finance/tuition-reminders', [FinanceController::class, 'tuitionReminders'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view,permission:finance.create_invoice,permission:finance.record_payment')

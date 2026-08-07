@@ -415,10 +415,12 @@ class UserManagementTest extends TestCase
             ])
             ->assertRedirect(route('users.edit', $librarian));
 
-        $this->withSession([
+        $librarian->refresh();
+
+        $this->actingAs($librarian)->withSession([
             'auth.password_fingerprint' => $oldFingerprint,
             'auth.password_fingerprint_user_id' => $librarian->id,
-        ])->actingAs($librarian)
+        ])
             ->get(route('dashboard'))
             ->assertRedirect(route('login'));
     }

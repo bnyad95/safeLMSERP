@@ -30,6 +30,11 @@ class AnalyticsTest extends TestCase
             'display_name' => 'Academic Administrator',
             'description' => 'Academic leadership',
         ]);
+        $reportPermission = Permission::firstOrCreate(
+            ['name' => 'reports.academic'],
+            ['display_name' => 'View academic reports']
+        );
+        $role->permissions()->attach($reportPermission);
 
         $user = User::factory()->create();
         $user->roles()->attach($role->id);

@@ -1866,7 +1866,9 @@ class FinanceController extends Controller
 
     private function scopedStudentQuery(User $user)
     {
-        $query = Student::query();
+        $query = $this->hasGlobalFinanceScope($user)
+            ? Student::withoutGlobalScope('organization')
+            : Student::query();
         if (! $this->hasGlobalFinanceScope($user)) {
             OrganizationScope::apply($query, $user, 'student');
         }
@@ -1877,7 +1879,9 @@ class FinanceController extends Controller
 
     private function scopedFinanceQuery(User $user)
     {
-        $query = FinanceTransaction::query();
+        $query = $this->hasGlobalFinanceScope($user)
+            ? FinanceTransaction::withoutGlobalScope('organization')
+            : FinanceTransaction::query();
         if (! $this->hasGlobalFinanceScope($user)) {
             OrganizationScope::apply($query, $user, 'student_record');
         }

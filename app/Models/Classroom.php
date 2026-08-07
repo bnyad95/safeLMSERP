@@ -10,6 +10,7 @@ class Classroom extends Model
     use HasFactory;
 
     protected $fillable = [
+        'university_id',
         'name',
         'building',
         'capacity',
@@ -17,6 +18,11 @@ class Classroom extends Model
         'status',
         'notes',
     ];
+
+    public function university()
+    {
+        return $this->belongsTo(University::class);
+    }
 
     public function timetables()
     {
