@@ -311,7 +311,21 @@ class TimetableController extends Controller
 
     private function conflictsFor(CourseSection $section, Classroom $classroom, string $dayOfWeek, string $startTime, string $endTime, ?int $ignoredTimetableId = null)
     {
-        $baseConflicts = Timetable::with(['course', 'courseSection', 'teacher', 'classroom'])
+        // Conflict detection must see across org boundaries (e.g. shared rooms used by
+        // other departments) even though the rest of the page scopes Timetable to the
+        // acting user's own organization. The eager-loaded relations and the nested
+        // whereHas below carry their own models' organization scopes too, so those are
+        // lifted as well or a conflicting entry from another department would still be
+        // invisible to this check (or resolve to a blank label).
+        $unscopedRelations = [
+            'course' => fn ($query) => $query->withoutGlobalScope('organization'),
+            'courseSection' => fn ($query) => $query->withoutGlobalScope('organization'),
+            'teacher' => fn ($query) => $query->withoutGlobalScope('organization'),
+            'classroom' => fn ($query) => $query->withoutGlobalScope('organization'),
+        ];
+
+        $baseConflicts = Timetable::withoutGlobalScope('organization')
+            ->with($unscopedRelations)
             ->overlapping($dayOfWeek, $startTime, $endTime)
             ->where('status', 'scheduled')
             ->when($ignoredTimetableId, fn ($query) => $query->whereKeyNot($ignoredTimetableId))
@@ -335,12 +349,18 @@ class TimetableController extends Controller
             return $baseConflicts;
         }
 
-        $studentConflicts = Timetable::with(['course', 'courseSection', 'teacher', 'classroom'])
+        $studentConflicts = Timetable::withoutGlobalScope('organization')
+            ->with($unscopedRelations)
             ->overlapping($dayOfWeek, $startTime, $endTime)
             ->where('status', 'scheduled')
             ->when($ignoredTimetableId, fn ($query) => $query->whereKeyNot($ignoredTimetableId))
             ->where('course_section_id', '!=', $section->id)
-            ->whereHas('courseSection.activeEnrollments', fn ($query) => $query->whereIn('student_id', $studentIds))
+            ->whereHas('courseSection', function ($query) use ($studentIds) {
+                $query->withoutGlobalScope('organization')
+                    ->whereHas('activeEnrollments', function ($enrollments) use ($studentIds) {
+                        $enrollments->withoutGlobalScope('organization')->whereIn('student_id', $studentIds);
+                    });
+            })
             ->get()
             ->map(fn (Timetable $entry) => [
                 'label' => 'enrolled student overlap with '.$this->entryName($entry),

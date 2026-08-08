@@ -97,8 +97,8 @@ class FinanceTest extends TestCase
                 'status' => 'pending',
                 'reference' => 'INV-2026-001',
                 'academic_year' => '2026/2027',
-                'transaction_date' => '2026-07-09',
-                'due_date' => '2026-08-09',
+                'transaction_date' => now()->toDateString(),
+                'due_date' => now()->addDays(30)->toDateString(),
                 'notes' => 'Fall tuition',
             ])
             ->assertRedirect(route('finance.students.show', $student));
@@ -396,8 +396,8 @@ class FinanceTest extends TestCase
             'amount' => '1000',
             'currency' => 'USD',
             'status' => 'pending',
-            'transaction_date' => '2026-07-09',
-            'due_date' => '2026-08-09',
+            'transaction_date' => now()->toDateString(),
+            'due_date' => now()->addDays(30)->toDateString(),
         ]);
         $invoice = FinanceTransaction::where('type', 'invoice')->first();
 
@@ -408,7 +408,7 @@ class FinanceTest extends TestCase
             'amount' => '400',
             'currency' => 'USD',
             'status' => 'pending',
-            'transaction_date' => '2026-07-10',
+            'transaction_date' => now()->toDateString(),
         ]);
         $payment = FinanceTransaction::where('type', 'payment')->first();
 
@@ -1124,7 +1124,7 @@ class FinanceTest extends TestCase
         $this->assertSame('paid', $agreement->transactions()->where('type', 'invoice')->firstOrFail()->payment_status);
     }
 
-    public function test_semester_tuition_plan_cannot_mix_academic_years(): void
+    public function test_semester_tuition_plan_can_span_multiple_academic_years(): void
     {
         $admin = $this->makeSuperAdmin();
         $student = $this->makeStudent();
@@ -1151,14 +1151,33 @@ class FinanceTest extends TestCase
                 'amount' => '1200000',
                 'currency' => 'IQD',
                 'status' => 'pending',
+                'reference' => 'Whole-program tuition',
                 'payment_plan' => 'semester',
                 'semester_ids' => [$first->id, $second->id],
                 'transaction_date' => '2026-08-01',
             ])
             ->assertRedirect(route('finance.students.show', $student))
-            ->assertSessionHasErrors('semester_ids');
+            ->assertSessionHas('success');
 
-        $this->assertDatabaseCount('tuition_agreements', 0);
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '600000.00',
+            'reference' => 'Whole-program tuition - Fall 2026/2027',
+            'academic_year' => '2026/2027',
+        ]);
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '600000.00',
+            'reference' => 'Whole-program tuition - Spring 2027/2028',
+            'academic_year' => '2027/2028',
+        ]);
+
+        $agreement = TuitionAgreement::firstOrFail();
+        $this->assertSame('semester', $agreement->payment_method);
+        $this->assertSame('2026/2027', $agreement->academicYear?->name);
+        $this->assertSame(2, $agreement->transactions()->count());
     }
 
     public function test_student_can_only_print_own_posted_receipt(): void

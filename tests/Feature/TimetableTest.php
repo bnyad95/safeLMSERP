@@ -399,6 +399,106 @@ class TimetableTest extends TestCase
         $this->assertDatabaseMissing('timetables', ['course_section_id' => $otherSection->id]);
     }
 
+    public function test_department_head_conflict_check_sees_a_shared_room_booked_by_another_department(): void
+    {
+        $university = University::create(['name' => 'Shared Room University', 'code' => 'SRU']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Engineering']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Networks']);
+        $otherDepartment = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Software']);
+        $semester = Semester::create([
+            'university_id' => $university->id,
+            'name' => 'Fall',
+            'academic_year' => '2026/2027',
+        ]);
+        $teacher = Teacher::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'staff_id' => 'SR-T1',
+            'full_name' => 'Networks Teacher',
+            'email' => 'networks-teacher@example.com',
+            'status' => 'Active',
+        ]);
+        $course = Course::create([
+            'department_id' => $department->id,
+            'code' => 'NET402',
+            'name' => 'Networks Scheduling 2',
+            'credits' => 3,
+        ]);
+        $section = CourseSection::create([
+            'course_id' => $course->id,
+            'semester_id' => $semester->id,
+            'teacher_id' => $teacher->id,
+            'section_code' => 'D2',
+            'grade_level' => 'Stage 4',
+            'capacity' => 40,
+            'status' => 'active',
+        ]);
+        $otherTeacher = Teacher::create([
+            'university_id' => $university->id,
+            'department_id' => $otherDepartment->id,
+            'staff_id' => 'SR-T2',
+            'full_name' => 'Software Teacher',
+            'email' => 'software-teacher@example.com',
+            'status' => 'Active',
+        ]);
+        $otherCourse = Course::create([
+            'department_id' => $otherDepartment->id,
+            'code' => 'SWE402',
+            'name' => 'Shared Room Scheduling',
+            'credits' => 3,
+        ]);
+        $otherSection = CourseSection::create([
+            'course_id' => $otherCourse->id,
+            'semester_id' => $semester->id,
+            'teacher_id' => $otherTeacher->id,
+            'section_code' => 'X2',
+            'grade_level' => 'Stage 4',
+            'capacity' => 40,
+            'status' => 'active',
+        ]);
+        $room = Classroom::create(['university_id' => $university->id, 'name' => 'Shared Hall', 'capacity' => 40]);
+
+        Timetable::create([
+            'course_id' => $otherCourse->id,
+            'course_section_id' => $otherSection->id,
+            'teacher_id' => $otherTeacher->id,
+            'classroom_id' => $room->id,
+            'day_of_week' => 'Thursday',
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'room_number' => $room->name,
+            'type' => 'lecture',
+            'status' => 'scheduled',
+        ]);
+
+        $permission = Permission::create(['name' => 'timetable.manage', 'display_name' => 'Manage timetable']);
+        $role = Role::create(['name' => 'department_administrator', 'display_name' => 'Department Head']);
+        $role->permissions()->attach($permission);
+        $head = User::factory()->create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+        ]);
+        $head->roles()->attach($role);
+
+        $this->actingAs($head)
+            ->post(route('timetables.store'), [
+                'department_id' => $department->id,
+                'grade_level' => 'Stage 4',
+                'course_section_id' => $section->id,
+                'classroom_id' => $room->id,
+                'day_of_week' => 'Thursday',
+                'start_time' => '09:30',
+                'end_time' => '10:30',
+                'type' => 'lecture',
+                'status' => 'scheduled',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame(1, Timetable::withoutGlobalScope('organization')->count());
+    }
+
     public function test_timetable_blocks_student_enrollment_conflicts(): void
     {
         $admin = $this->makeSuperAdmin();

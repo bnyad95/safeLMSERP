@@ -115,7 +115,9 @@ class FinanceLedgerService
         $amount = (float) $invoice->amount;
         $status = match (true) {
             $paid >= $amount => 'paid',
-            $invoice->due_date && $invoice->due_date->isPast() => 'overdue',
+            // Date-only comparison: an invoice due today is not overdue until tomorrow,
+            // matching paymentStatusForTransaction()'s creation-time check.
+            $invoice->due_date && $invoice->due_date->lt(today()) => 'overdue',
             $paid > 0 => 'partial',
             default => 'open',
         };

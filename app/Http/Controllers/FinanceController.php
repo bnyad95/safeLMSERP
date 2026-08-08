@@ -1720,10 +1720,6 @@ class FinanceController extends Controller
             throw ValidationException::withMessages(['semester_ids' => 'Every selected semester must have an end date before tuition can be split by semester.']);
         }
 
-        if ($semesters->pluck('academic_year_id')->filter()->unique()->count() !== 1) {
-            throw ValidationException::withMessages(['semester_ids' => 'All installments must belong to one academic year.']);
-        }
-
         if ($semesters->contains(fn (Semester $semester) => ! $semester->academicYear || $semester->academicYear->isLocked())) {
             throw ValidationException::withMessages(['semester_ids' => 'Closed or archived semesters cannot receive a new tuition agreement.']);
         }
