@@ -22,10 +22,6 @@
                 </div>
             @endif
 
-            @if(session('success'))
-                <div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{{ session('success') }}</div>
-            @endif
-
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="grid gap-4 md:grid-cols-3">
                     <div>

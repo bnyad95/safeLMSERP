@@ -549,7 +549,7 @@
                                                                                                 <form method="POST" action="{{ route('timetables.destroy', $entry) }}">
                                                                                                     @csrf
                                                                                                     @method('DELETE')
-                                                                                                    <button type="submit" class="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">
+                                                                                                    <button type="submit" class="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" onclick="return confirm('Remove this timetable entry?')">
                                                                                                         Remove
                                                                                                     </button>
                                                                                                 </form>

@@ -13,12 +13,6 @@
 
     <div class="py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{{ session('success') }}</div>
-            @endif
-            @if(session('error'))
-                <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{{ session('error') }}</div>
-            @endif
             @if($errors->any())
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                     <p class="font-semibold">Please confirm the closing checks.</p>
@@ -280,7 +274,7 @@
                                     <form method="POST" action="{{ route('academic-year-closures.exceptions.destroy', $exception) }}">
                                         @csrf
                                         @method('DELETE')
-                                        <button class="rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Remove Exception</button>
+                                        <button class="rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" onclick="return confirm('Remove this exception?')">Remove Exception</button>
                                     </form>
                                 @endif
                             </div>

@@ -10,10 +10,6 @@
 
     <div class="py-10">
         <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{{ session('success') }}</div>
-            @endif
-
             <form action="{{ route('users.store') }}" method="POST">
                 @csrf
                 @include('users.form')

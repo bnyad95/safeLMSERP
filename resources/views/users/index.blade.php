@@ -18,10 +18,6 @@
 
     <div class="py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-100">{{ session('success') }}</div>
-            @endif
-
             <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 @foreach($stats as $stat)
                     <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">

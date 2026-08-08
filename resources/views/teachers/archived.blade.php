@@ -11,9 +11,6 @@
 
     <div class="py-8">
         <div class="mx-auto max-w-6xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-100">{{ session('success') }}</div>
-            @endif
             <form method="GET" action="{{ route('teachers.archived') }}" class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-end">
                 <div class="flex-1">
                     <label for="archived-teacher-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search archived teachers</label>

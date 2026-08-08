@@ -282,7 +282,7 @@
                             @method('DELETE')
                             <h3 class="font-semibold text-red-900">Archive Module</h3>
                             <p class="mt-1 text-sm text-red-700">Only closed modules with no active roster or waitlist can be archived.</p>
-                            <button class="mt-4 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">Archive</button>
+                            <button class="mt-4 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100" onclick="return confirm('Archive this module? Only closed modules with no active roster or waitlist can be archived.')">Archive</button>
                         </form>
                     @endif
 

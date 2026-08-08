@@ -18,10 +18,6 @@
 
     <div class="py-10">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-100">{{ session('success') }}</div>
-            @endif
-
             <section aria-label="Student totals" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"><p class="text-sm text-gray-500 dark:text-gray-400">Matching students</p><p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $stats['total'] }}</p></div>
                 <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20"><p class="text-sm text-emerald-800 dark:text-emerald-200">Active</p><p class="mt-2 text-2xl font-semibold text-emerald-950 dark:text-emerald-100">{{ $stats['active'] }}</p></div>

@@ -10,10 +10,6 @@
 
     <div class="py-10">
         <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-100">{{ session('success') }}</div>
-            @endif
-
             @if($abilities['permissions'] && ! $user->hasRole('super_administrator'))
                 <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-5 shadow-sm dark:border-indigo-800 dark:bg-indigo-900/20">
                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

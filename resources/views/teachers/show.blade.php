@@ -17,13 +17,6 @@
 
     <div class="py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
-            @if(session('success'))
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-100">{{ session('success') }}</div>
-            @endif
-            @if(session('error'))
-                <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-100">{{ session('error') }}</div>
-            @endif
-
             <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 @foreach([
                     ['label' => 'Open classes', 'value' => $workload['classes'], 'tone' => 'gray'],
