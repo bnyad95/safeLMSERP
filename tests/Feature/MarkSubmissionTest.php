@@ -512,7 +512,7 @@ class MarkSubmissionTest extends TestCase
             ->assertOk()
             ->assertSee('MATH301 - Advanced Math')
             ->assertSee('/marks/final-exam/courses/'.$this->course->id, false)
-            ->assertSee('Courses Waiting for Final Exam Entry')
+            ->assertSee('Final Exam Entry &amp; Corrections', false)
             ->assertDontSee('Visible Final Entry Student');
 
         $this->actingAs($this->committee)
@@ -760,6 +760,162 @@ class MarkSubmissionTest extends TestCase
             'id' => $mark->id,
             'visibility_status' => 'published',
         ]);
+    }
+
+    public function test_committee_can_correct_a_published_mark_without_a_second_approver()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 38,
+            'final_mark' => 80,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now()->subDay(),
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+
+        $this->actingAs($this->committee)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 40,
+                'change_reason' => 'Recount requested by student.',
+            ])
+            ->assertRedirect(route('marks.submission-queue'))
+            ->assertSessionHas('success', 'Published mark corrected and republished.');
+
+        $this->assertDatabaseHas('marks', [
+            'id' => $mark->id,
+            'first_trial_final_exam' => 40,
+            'final_mark' => 82,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+        ]);
+        $this->assertDatabaseHas('mark_score_histories', [
+            'mark_id' => $mark->id,
+            'actor_id' => $this->committee->id,
+            'trial' => 'first',
+            'previous_score' => 38,
+            'new_score' => 40,
+            'reason' => 'Recount requested by student.',
+        ]);
+        $this->assertDatabaseHas('activity_logs', [
+            'log_name' => 'mark_correction',
+            'description' => 'mark_corrected',
+            'subject_type' => Mark::class,
+            'subject_id' => $mark->id,
+            'causer_id' => $this->committee->id,
+        ]);
+        $this->assertDatabaseHas('app_notifications', [
+            'student_id' => $this->student->id,
+            'type' => 'marks_corrected',
+        ]);
+    }
+
+    public function test_correcting_a_published_mark_requires_a_reason()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 38,
+            'final_mark' => 80,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+
+        $this->actingAs($this->committee)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 40,
+            ])
+            ->assertSessionHasErrors('change_reason');
+
+        $this->assertDatabaseHas('marks', [
+            'id' => $mark->id,
+            'first_trial_final_exam' => 38,
+            'visibility_status' => 'published',
+        ]);
+    }
+
+    public function test_correcting_a_published_first_trial_to_a_failing_score_unpublishes_it()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 10,
+            'first_trial_final_exam' => 45,
+            'final_mark' => 55,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+
+        $this->actingAs($this->committee)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 5,
+                'change_reason' => 'Marking error found during audit.',
+            ])
+            ->assertSessionHas('success', 'First trial score saved. Student is eligible for second trial.');
+
+        $this->assertDatabaseHas('marks', [
+            'id' => $mark->id,
+            'first_trial_final_exam' => 5,
+            'final_mark' => 15,
+            'submission_status' => 'draft',
+            'visibility_status' => 'draft',
+        ]);
+    }
+
+    public function test_final_exam_course_page_lists_published_marks_for_correction()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 38,
+            'final_mark' => 80,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+
+        $this->actingAs($this->committee)
+            ->get(route('marks.final-exam.course', $this->course))
+            ->assertOk()
+            ->assertSee('Published Marks', false)
+            ->assertSee($this->student->full_name)
+            ->assertSee('Save Correction');
+    }
+
+    public function test_a_fully_published_course_still_appears_on_the_final_exam_entry_list()
+    {
+        $this->course->update(['code' => 'FULLPUB101', 'name' => 'Fully Published Course']);
+
+        Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 38,
+            'final_mark' => 80,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+
+        $this->actingAs($this->committee)
+            ->get(route('marks.final-exam.index'))
+            ->assertOk()
+            ->assertSee('FULLPUB101')
+            ->assertSee('1 published', false);
     }
 
     public function test_mark_queue_filters_and_shows_class_context()

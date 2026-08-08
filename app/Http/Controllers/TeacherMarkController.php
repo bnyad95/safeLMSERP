@@ -13,6 +13,11 @@ class TeacherMarkController extends Controller
     public function storePrefinal(Request $request, CourseSection $courseSection)
     {
         $this->authorizeTeacher($request, $courseSection);
+
+        if (! $request->user()->hasRole('super_administrator') && ! $courseSection->semester?->prefinal_marks_open) {
+            throw ValidationException::withMessages(['prefinal_marks' => 'Pre-final mark entry is currently closed. The examination administrator must open it before you can save marks.']);
+        }
+
         $validated = $request->validate([
             'prefinal_marks' => ['required', 'array'],
             'prefinal_marks.*' => ['nullable', 'numeric', 'min:0', 'max:'.config('academics.prefinal_mark_max', 100)],

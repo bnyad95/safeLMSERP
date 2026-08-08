@@ -130,6 +130,69 @@
                     <div class="border-t px-4 py-3 dark:border-gray-800">{{ $finalExamDrafts->links() }}</div>
                 @endif
             </section>
+
+            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div class="border-b border-gray-100 px-6 py-4 dark:border-gray-800">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
+                        Published Marks &mdash; Corrections
+                        <span class="ml-2 rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-200">{{ $publishedMarks->total() }}</span>
+                    </h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Found a mistake after publishing? Enter the corrected score and a reason &mdash; it republishes immediately.</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-100 dark:divide-gray-800">
+                        <thead class="bg-gray-50 dark:bg-gray-950">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Class</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Published Final Mark</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Correct Score</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                            @forelse($publishedMarks as $mark)
+                                @php
+                                    $correctionTrial = is_null($mark->second_trial_final_exam) ? 'first' : 'second';
+                                    $correctionScore = $correctionTrial === 'first' ? $mark->first_trial_final_exam : $mark->second_trial_final_exam;
+                                    $section = $mark->courseSection;
+                                @endphp
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                                    <td class="px-4 py-4">
+                                        <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $mark->student->full_name ?? '-' }}</p>
+                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $mark->student->student_id ?? 'No ID' }}</p>
+                                    </td>
+                                    <td class="px-4 py-4">
+                                        <p class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ $section ? ($section->semester?->name ?? 'Semester').' / Group '.$section->section_code : 'No class linked' }}</p>
+                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Published {{ $mark->published_at?->format('Y-m-d') ?? 'unknown date' }}</p>
+                                    </td>
+                                    <td class="px-4 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $mark->final_mark, 2) }}</td>
+                                    <td class="px-4 py-4">
+                                        <form method="POST" action="{{ route('marks.final-exam.store') }}" class="flex min-w-56 flex-col items-end gap-1.5">
+                                            @csrf
+                                            <input type="hidden" name="mark_id" value="{{ $mark->id }}">
+                                            <input type="hidden" name="redirect_to" value="{{ request()->fullUrl() }}">
+                                            <input type="hidden" name="trial" value="{{ $correctionTrial }}">
+                                            <label class="text-xs font-semibold text-amber-700 dark:text-amber-300">{{ ucfirst($correctionTrial) }} trial score</label>
+                                            <input type="number" name="score" min="0" max="{{ config('academics.final_exam_mark_max', 100) }}" step="0.01" required value="{{ is_null($correctionScore) ? '' : number_format((float) $correctionScore, 2, '.', '') }}" class="w-28 rounded-md border-gray-300 text-xs shadow-sm focus:border-amber-500 focus:ring-amber-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                            <textarea name="change_reason" required maxlength="1000" rows="2" placeholder="Reason for correcting this published mark" class="w-56 rounded-md border-gray-300 text-xs shadow-sm focus:border-amber-500 focus:ring-amber-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"></textarea>
+                                            <button type="submit" class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Save Correction</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No published marks in this course.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                @if($publishedMarks->hasPages())
+                    <div class="border-t px-4 py-3 dark:border-gray-800">{{ $publishedMarks->links() }}</div>
+                @endif
+            </section>
         </div>
     </div>
 

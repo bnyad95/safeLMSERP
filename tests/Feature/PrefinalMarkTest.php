@@ -7,6 +7,7 @@ use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Enrollment;
 use App\Models\Mark;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Student;
@@ -24,6 +25,8 @@ class PrefinalMarkTest extends TestCase
 
     private CourseSection $section;
 
+    private Semester $semester;
+
     private Student $student;
 
     private Student $outsideStudent;
@@ -37,7 +40,7 @@ class PrefinalMarkTest extends TestCase
         $this->teacherUser->roles()->attach($role);
         $university = University::create(['name' => 'Marks University', 'code' => 'MRK']);
         $department = Department::create(['university_id' => $university->id, 'name' => 'Science', 'code' => 'SCI']);
-        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026/2027']);
+        $semester = $this->semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026/2027', 'prefinal_marks_open' => true]);
         $teacher = Teacher::create([
             'university_id' => $university->id,
             'department_id' => $department->id,
@@ -162,5 +165,87 @@ class PrefinalMarkTest extends TestCase
             ->assertSessionHasErrors('prefinal_marks');
 
         $this->assertDatabaseHas('marks', ['student_id' => $this->student->id, 'prefinal_mark' => 20]);
+    }
+
+    public function test_teacher_cannot_save_prefinal_marks_when_window_is_closed(): void
+    {
+        $this->semester->update(['prefinal_marks_open' => false]);
+
+        $this->actingAs($this->teacherUser)
+            ->post(route('teacher.prefinal-marks.store', $this->section), [
+                'prefinal_marks' => [$this->student->id => 72.5],
+            ])
+            ->assertSessionHasErrors('prefinal_marks');
+
+        $this->assertDatabaseMissing('marks', ['student_id' => $this->student->id]);
+    }
+
+    public function test_closed_window_disables_entry_on_teacher_dashboard(): void
+    {
+        $this->semester->update(['prefinal_marks_open' => false]);
+
+        $this->actingAs($this->teacherUser)
+            ->get(route('teacher-dashboard', ['section_id' => $this->section->id, 'tab' => 'grades']))
+            ->assertOk()
+            ->assertSee('Pre-final mark entry is closed')
+            ->assertSee('The examination administrator has not opened pre-final mark entry for this semester yet.', false);
+    }
+
+    public function test_examination_administrator_can_open_and_close_prefinal_window(): void
+    {
+        $this->semester->update(['prefinal_marks_open' => false]);
+        $role = Role::create(['name' => 'examination_administrator', 'display_name' => 'Examination Administrator']);
+        $permission = Permission::create(['name' => 'marks.manage_prefinal_window', 'display_name' => 'Manage prefinal window']);
+        $role->permissions()->attach($permission);
+        $admin = User::factory()->create(['university_id' => $this->semester->university_id]);
+        $admin->roles()->attach($role);
+
+        $this->actingAs($admin)
+            ->patch(route('marks.prefinal-window.toggle', $this->semester), ['open' => '1'])
+            ->assertRedirect(route('marks.submission-queue'));
+
+        $this->assertDatabaseHas('semesters', [
+            'id' => $this->semester->id,
+            'prefinal_marks_open' => true,
+            'prefinal_marks_opened_by' => $admin->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('marks.prefinal-window.toggle', $this->semester), ['open' => '0'])
+            ->assertRedirect(route('marks.submission-queue'));
+
+        $this->assertDatabaseHas('semesters', [
+            'id' => $this->semester->id,
+            'prefinal_marks_open' => false,
+            'prefinal_marks_opened_by' => null,
+        ]);
+    }
+
+    public function test_teacher_cannot_toggle_prefinal_window(): void
+    {
+        $this->actingAs($this->teacherUser)
+            ->patch(route('marks.prefinal-window.toggle', $this->semester), ['open' => '1'])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('semesters', [
+            'id' => $this->semester->id,
+            'prefinal_marks_open' => true,
+        ]);
+    }
+
+    public function test_examination_administrator_without_permission_cannot_toggle_prefinal_window(): void
+    {
+        $role = Role::create(['name' => 'examination_administrator', 'display_name' => 'Examination Administrator']);
+        $admin = User::factory()->create(['university_id' => $this->semester->university_id]);
+        $admin->roles()->attach($role);
+
+        $this->actingAs($admin)
+            ->patch(route('marks.prefinal-window.toggle', $this->semester), ['open' => '0'])
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('semesters', [
+            'id' => $this->semester->id,
+            'prefinal_marks_open' => true,
+        ]);
     }
 }

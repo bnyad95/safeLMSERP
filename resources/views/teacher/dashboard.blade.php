@@ -327,6 +327,9 @@
                             </div>
                         </section>
                     @elseif($filters['tab'] === 'grades')
+                        @php
+                            $prefinalWindowOpen = (bool) $selectedSection?->semester?->prefinal_marks_open;
+                        @endphp
                         <section x-data="{ editing: false }" class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                             <div class="flex flex-col gap-2 border-b border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
@@ -334,9 +337,14 @@
                                     <p class="mt-1 text-sm text-gray-500">{{ $stats['prefinal_marks_entered'] }} pre-final marks entered - final exam scores are entered by the examination committee</p>
                                 </div>
                                 @if($canManageClassroom)
-                                    <button type="button" x-show="! editing" x-on:click="editing = true" class="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">Enter pre-final marks</button>
+                                    <button type="button" x-show="! editing" x-on:click="editing = true" @disabled(! $prefinalWindowOpen) title="{{ $prefinalWindowOpen ? '' : 'The examination administrator has not opened pre-final mark entry for this semester yet.' }}" class="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 disabled:hover:bg-gray-300">Enter pre-final marks</button>
                                 @endif
                             </div>
+                            @if($canManageClassroom && ! $prefinalWindowOpen)
+                                <div class="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
+                                    Pre-final mark entry is closed for {{ $selectedSection?->semester?->name }} {{ $selectedSection?->semester?->academic_year }}. The examination administrator must open it before you can save marks.
+                                </div>
+                            @endif
                             @if($canManageClassroom)
                                 @error('prefinal_marks')<div class="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">{{ $message }}</div>@enderror
                                 <form method="POST" action="{{ route('teacher.prefinal-marks.store', $selectedSection) }}">
@@ -353,6 +361,7 @@
                                                     $mark = $classMarks->get($student->id);
                                                     $status = $mark->submission_status ?? 'draft';
                                                     $locked = in_array($status, ['submitted', 'under_review', 'approved'], true) || ! is_null($mark?->first_trial_final_exam) || ! is_null($mark?->second_trial_final_exam);
+                                                    $rowDisabled = $locked || ! $prefinalWindowOpen;
                                                 @endphp
                                                 <tr>
                                                     <td class="px-5 py-4"><p class="text-sm font-semibold text-gray-900">{{ $student->full_name }}</p><p class="mt-1 text-xs text-gray-500">{{ $student->student_id }}</p></td>
@@ -360,8 +369,8 @@
                                                         @if($canManageClassroom)
                                                             <span x-show="! editing" class="text-sm font-semibold text-gray-800">{{ is_null($mark?->prefinal_mark) ? '-' : number_format((float) $mark->prefinal_mark, 2) }}</span>
                                                             <div x-show="editing" x-cloak>
-                                                                <input type="number" name="prefinal_marks[{{ $student->id }}]" value="{{ old('prefinal_marks.'.$student->id, $mark?->prefinal_mark) }}" min="0" max="{{ config('academics.prefinal_mark_max', 100) }}" step="0.01" @disabled($locked) class="w-28 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500">
-                                                                @if($locked)<p class="mt-1 text-xs text-gray-500">Locked</p>@endif
+                                                                <input type="number" name="prefinal_marks[{{ $student->id }}]" value="{{ old('prefinal_marks.'.$student->id, $mark?->prefinal_mark) }}" min="0" max="{{ config('academics.prefinal_mark_max', 100) }}" step="0.01" @disabled($rowDisabled) class="w-28 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500">
+                                                                @if($locked)<p class="mt-1 text-xs text-gray-500">Locked</p>@elseif(! $prefinalWindowOpen)<p class="mt-1 text-xs text-gray-500">Entry closed</p>@endif
                                                             </div>
                                                         @else
                                                             <span class="text-sm font-semibold text-gray-800">{{ is_null($mark?->prefinal_mark) ? '-' : number_format((float) $mark->prefinal_mark, 2) }}</span>

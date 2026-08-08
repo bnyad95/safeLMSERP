@@ -40,6 +40,7 @@ class RolePermissionSeeder extends Seeder
             'marks.approve' => 'Approve marks',
             'marks.publish' => 'Publish marks',
             'marks.request_change' => 'Request mark changes',
+            'marks.manage_prefinal_window' => 'Open or close the pre-final mark entry window',
             'finance.view' => 'View finance data',
             'finance.view_global' => 'View finance data across all organizations',
             'finance.create_invoice' => 'Create invoices',
@@ -156,7 +157,7 @@ class RolePermissionSeeder extends Seeder
                 'display_name' => 'Examination Administrator',
                 'description' => 'Manages examinations and results lifecycle.',
                 'permissions' => [
-                    'marks.view', 'marks.review', 'marks.approve', 'marks.publish', 'reports.academic',
+                    'marks.view', 'marks.review', 'marks.approve', 'marks.publish', 'marks.manage_prefinal_window', 'reports.academic',
                 ],
             ],
             'examination_committee' => [

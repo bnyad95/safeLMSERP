@@ -14,6 +14,39 @@
                 </div>
             @endif
 
+            @if($canManagePrefinalWindow)
+                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Pre-final Mark Entry Window</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Teachers can only save pre-final marks for a semester while it's open here.</p>
+                    <div class="mt-4 divide-y divide-gray-100 dark:divide-gray-800">
+                        @forelse($prefinalWindowSemesters as $semester)
+                            <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ $semester->name }} {{ $semester->academic_year }}</p>
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        @if($semester->prefinal_marks_open)
+                                            Open{{ $semester->prefinalMarksOpener ? ' by '.$semester->prefinalMarksOpener->name : '' }}{{ $semester->prefinal_marks_opened_at ? ' on '.$semester->prefinal_marks_opened_at->format('Y-m-d') : '' }}
+                                        @else
+                                            Closed
+                                        @endif
+                                    </p>
+                                </div>
+                                <form method="POST" action="{{ route('marks.prefinal-window.toggle', $semester) }}">
+                                    @csrf
+                                    @method('PATCH')
+                                    <input type="hidden" name="open" value="{{ $semester->prefinal_marks_open ? '0' : '1' }}">
+                                    <button type="submit" class="rounded-md px-3 py-1.5 text-xs font-semibold {{ $semester->prefinal_marks_open ? 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20' : 'bg-emerald-600 text-white hover:bg-emerald-700' }}">
+                                        {{ $semester->prefinal_marks_open ? 'Close entry' : 'Open entry' }}
+                                    </button>
+                                </form>
+                            </div>
+                        @empty
+                            <p class="py-3 text-sm text-gray-500 dark:text-gray-400">No upcoming or active semesters found.</p>
+                        @endforelse
+                    </div>
+                </section>
+            @endif
+
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <form method="GET" action="{{ route('marks.submission-queue') }}" class="grid gap-4 lg:grid-cols-6">
                     <div class="lg:col-span-2">

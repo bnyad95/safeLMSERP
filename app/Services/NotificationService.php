@@ -294,6 +294,25 @@ class NotificationService
         ]);
     }
 
+    public function notifyMarkCorrected(Mark $mark): void
+    {
+        $mark->loadMissing(['student', 'course']);
+
+        if (! $mark->student) {
+            return;
+        }
+
+        $title = 'Marks corrected';
+        $body = ($mark->course->name ?? 'Course').' final mark was corrected to: '.($mark->final_mark ?? 'N/A');
+
+        $this->notifyStudent($mark->student, $title, $body, [
+            'type' => 'marks_corrected',
+            'severity' => 'warning',
+            'action_url' => route('student-portal'),
+            'data' => ['mark_id' => $mark->id],
+        ]);
+    }
+
     public function sendEnrollmentConfirmation(Student $student, Course $course): void
     {
         if (! $student->email) {

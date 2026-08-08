@@ -98,8 +98,8 @@
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Courses Waiting for Final Exam Entry</h3>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open a course to enter first-trial and eligible second-trial scores.</p>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Courses &mdash; Final Exam Entry &amp; Corrections</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open a course to enter final exam scores, or correct a mistake in an already-published mark.</p>
                     </div>
                 </div>
 
@@ -131,6 +131,11 @@
                                     <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $card['section_count'] }}</p>
                                 </div>
                             </div>
+                            @if($card['published_count'] > 0)
+                                <div class="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-center dark:bg-amber-900/20">
+                                    <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">{{ $card['published_count'] }} published &mdash; open to correct a mistake</p>
+                                </div>
+                            @endif
                             <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
                                 {{ $card['semesters']->map(fn ($semester) => trim($semester->name.' '.$semester->academic_year))->implode(', ') ?: 'No semester' }}
                                 @if($card['stages']->isNotEmpty())
@@ -140,7 +145,7 @@
                         </a>
                     @empty
                         <div class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3 dark:border-gray-700 dark:text-gray-400">
-                            No courses are waiting for final exam entry in your scope.
+                            No courses have final exam entries or published marks in your scope.
                         </div>
                     @endforelse
                 </div>

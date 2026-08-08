@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseSection;
@@ -10,7 +11,9 @@ use App\Models\Mark;
 use App\Models\MarkScoreHistory;
 use App\Models\Semester;
 use App\Models\Teacher;
+use App\Models\User;
 use App\Services\MarkSubmissionService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -32,8 +35,16 @@ class MarkSubmissionController extends Controller
         $canReject = $this->can($user, ['marks.approve', 'marks.request_change']);
         $canPublish = $this->canPublish($user);
         $canEnterFinalExam = $this->canEnterFinalExam($user);
+        $canManagePrefinalWindow = $this->canManagePrefinalWindow($user);
         $filters = $this->queueFilterState($request);
         $filterOptions = $this->queueFilterOptions();
+
+        $prefinalWindowSemesters = $canManagePrefinalWindow
+            ? Semester::whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
+                ->orderByDesc('academic_year')
+                ->orderBy('name')
+                ->get()
+            : collect();
 
         $finalExamDraftCount = $this->finalExamMarkQuery($filters)
             ->whereNotNull('prefinal_mark')
@@ -66,6 +77,8 @@ class MarkSubmissionController extends Controller
             'canReject',
             'canPublish',
             'canEnterFinalExam',
+            'canManagePrefinalWindow',
+            'prefinalWindowSemesters',
             'filters',
             'filterOptions',
             'queueStats'
@@ -116,9 +129,25 @@ class MarkSubmissionController extends Controller
             ->withQueryString();
         $finalExamStats = $this->finalExamStats($filters);
 
+        $publishedMarks = Mark::with([
+                'student.department.college',
+                'course.department.college',
+                'courseSection.course.department.college',
+                'courseSection.semester',
+                'courseSection.teacher',
+            ])
+            ->where('course_id', $course->id)
+            ->where('visibility_status', 'published')
+            ->where('submission_status', 'approved')
+            ->whereNotNull('prefinal_mark')
+            ->latest('published_at')
+            ->paginate(20, ['*'], 'published_page')
+            ->withQueryString();
+
         return view('marks.final-exam-course', compact(
             'course',
             'finalExamDrafts',
+            'publishedMarks',
             'finalExamStats',
             'filters',
             'filterOptions'
@@ -178,7 +207,7 @@ class MarkSubmissionController extends Controller
             'change_reason' => 'nullable|string|max:1000',
         ]);
 
-        $firstTrialFailed = DB::transaction(function () use ($validated, $user) {
+        [$firstTrialFailed, $isPublishedCorrection] = DB::transaction(function () use ($validated, $user) {
             $mark = Mark::with(['student', 'course.department', 'courseSection.course.department', 'courseSection.semester.academicYear'])
                 ->whereKey($validated['mark_id'])
                 ->lockForUpdate()
@@ -188,17 +217,17 @@ class MarkSubmissionController extends Controller
             if (is_null($mark->prefinal_mark)) {
                 throw ValidationException::withMessages(['score' => 'Pre-final mark must be entered by the teacher before final exam scores.']);
             }
-            if ($mark->visibility_status === 'published') {
-                throw ValidationException::withMessages(['score' => 'Published marks cannot be changed.']);
-            }
-            if (! in_array($mark->submission_status, ['draft', 'rejected'], true)) {
+
+            $isPublishedCorrection = $mark->visibility_status === 'published';
+
+            if (! $isPublishedCorrection && ! in_array($mark->submission_status, ['draft', 'rejected'], true)) {
                 throw ValidationException::withMessages(['score' => 'Submitted, under-review, or approved marks must be rejected before their final exam score can be changed.']);
             }
 
             $scoreField = $validated['trial'] === 'first' ? 'first_trial_final_exam' : 'second_trial_final_exam';
             $previousScore = $mark->{$scoreField};
             $previousStatus = $mark->submission_status;
-            if (! is_null($previousScore) && $previousStatus !== 'rejected') {
+            if (! is_null($previousScore) && ! $isPublishedCorrection && $previousStatus !== 'rejected') {
                 throw ValidationException::withMessages(['score' => ucfirst($validated['trial']).' trial has already been entered. Use the review workflow before correcting it.']);
             }
             if (! is_null($previousScore) && blank($validated['change_reason'] ?? null)) {
@@ -222,12 +251,36 @@ class MarkSubmissionController extends Controller
 
             $mark->recalculateFinalMark();
             $firstTrialFailed = $validated['trial'] === 'first' && (float) $mark->final_mark < (float) config('academics.pass_mark', 50);
-            $mark->submission_status = $firstTrialFailed ? 'draft' : 'submitted';
-            $mark->visibility_status = 'draft';
-            $mark->submitted_at = $firstTrialFailed ? null : now();
-            $mark->reviewer_notes = null;
-            $mark->reviewed_by = null;
-            $mark->reviewed_at = null;
+
+            if ($firstTrialFailed) {
+                // A corrected first trial that now fails still needs a second trial
+                // before it can be published again, regardless of prior publish state.
+                $mark->submission_status = 'draft';
+                $mark->visibility_status = 'draft';
+                $mark->submitted_at = null;
+                $mark->reviewer_notes = null;
+                $mark->reviewed_by = null;
+                $mark->reviewed_at = null;
+            } elseif ($isPublishedCorrection) {
+                // Corrections to an already-published mark go straight back to
+                // published by the same examination-committee member — no separate
+                // approver, since the mark was already reviewed once to be published.
+                $mark->submission_status = 'approved';
+                $mark->visibility_status = 'published';
+                $mark->submitted_at = now();
+                $mark->reviewer_notes = $validated['change_reason'] ?? null;
+                $mark->reviewed_by = $user->id;
+                $mark->reviewed_at = now();
+                $mark->published_at = now();
+            } else {
+                $mark->submission_status = 'submitted';
+                $mark->visibility_status = 'draft';
+                $mark->submitted_at = now();
+                $mark->reviewer_notes = null;
+                $mark->reviewed_by = null;
+                $mark->reviewed_at = null;
+            }
+
             $mark->final_exam_entered_by = $user->id;
             $mark->final_exam_entered_at = now();
             $mark->save();
@@ -242,7 +295,28 @@ class MarkSubmissionController extends Controller
                 'reason' => $validated['change_reason'] ?? null,
             ]);
 
-            return $firstTrialFailed;
+            if ($isPublishedCorrection && ! $firstTrialFailed) {
+                ActivityLog::create([
+                    'log_name' => 'mark_correction',
+                    'description' => 'mark_corrected',
+                    'subject_type' => Mark::class,
+                    'subject_id' => $mark->id,
+                    'causer_type' => User::class,
+                    'causer_id' => $user->id,
+                    'properties' => [
+                        'mark_id' => $mark->id,
+                        'student_id' => $mark->student_id,
+                        'course_id' => $mark->course_id,
+                        'trial' => $validated['trial'],
+                        'previous_score' => $previousScore,
+                        'new_score' => $validated['score'],
+                        'reason' => $validated['change_reason'] ?? null,
+                    ],
+                ]);
+                app(NotificationService::class)->notifyMarkCorrected($mark);
+            }
+
+            return [$firstTrialFailed, $isPublishedCorrection];
         });
 
         $redirectTo = (string) $request->input('redirect_to', '');
@@ -250,11 +324,15 @@ class MarkSubmissionController extends Controller
             ? $redirectTo
             : route('marks.submission-queue');
 
+        $message = match (true) {
+            $firstTrialFailed => 'First trial score saved. Student is eligible for second trial.',
+            $isPublishedCorrection => 'Published mark corrected and republished.',
+            default => 'Final exam score saved and submitted for review.',
+        };
+
         return redirect()
             ->to($redirectTo)
-            ->with('success', $firstTrialFailed
-                ? 'First trial score saved. Student is eligible for second trial.'
-                : 'Final exam score saved and submitted for review.');
+            ->with('success', $message);
     }
 
     public function rejectMarks(Request $request)
@@ -316,6 +394,37 @@ class MarkSubmissionController extends Controller
             'message' => "Published {$result['updated']} marks",
             'data' => $result,
         ]);
+    }
+
+    public function togglePrefinalWindow(Request $request, Semester $semester)
+    {
+        $user = Auth::user();
+
+        if (! $this->canManagePrefinalWindow($user)) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'open' => 'required|boolean',
+        ]);
+
+        $semester->update([
+            'prefinal_marks_open' => $validated['open'],
+            'prefinal_marks_opened_by' => $validated['open'] ? $user->id : null,
+            'prefinal_marks_opened_at' => $validated['open'] ? now() : null,
+        ]);
+
+        return redirect()
+            ->route('marks.submission-queue')
+            ->with('success', $validated['open']
+                ? "Pre-final mark entry opened for {$semester->name} {$semester->academic_year}."
+                : "Pre-final mark entry closed for {$semester->name} {$semester->academic_year}.");
+    }
+
+    private function canManagePrefinalWindow($user): bool
+    {
+        return $user->hasRole('super_administrator')
+            || ($user->hasRole('examination_administrator') && $user->hasPermission('marks.manage_prefinal_window'));
     }
 
     private function normalizeMarkIds(Request $request): void
@@ -572,7 +681,23 @@ class MarkSubmissionController extends Controller
             ->groupBy('course_id')
             ->get()
             ->keyBy('course_id');
-        $courseIds = $rows->keys()->filter()->values();
+
+        // Courses with every mark already published (nothing left "waiting") still need
+        // to be reachable so a mistake found after publishing can be corrected.
+        $publishedQuery = Mark::query()
+            ->where('visibility_status', 'published')
+            ->where('submission_status', 'approved')
+            ->whereNotNull('prefinal_mark');
+        $this->applyQueueFilters($publishedQuery, array_merge($filters, ['submission_status' => '']));
+        $publishedRows = $publishedQuery
+            ->select('course_id')
+            ->selectRaw('COUNT(*) as published_count')
+            ->selectRaw('COUNT(DISTINCT course_section_id) as published_section_count')
+            ->groupBy('course_id')
+            ->get()
+            ->keyBy('course_id');
+
+        $courseIds = $rows->keys()->merge($publishedRows->keys())->unique()->filter()->values();
         $courses = Course::with('department.college')
             ->whereIn('id', $courseIds)
             ->get()
@@ -583,17 +708,19 @@ class MarkSubmissionController extends Controller
             ->groupBy('course_id');
 
         return $courseIds
-            ->map(function ($courseId) use ($rows, $courses, $sectionsByCourse) {
+            ->map(function ($courseId) use ($rows, $publishedRows, $courses, $sectionsByCourse) {
                 $row = $rows->get($courseId);
+                $publishedRow = $publishedRows->get($courseId);
                 $course = $courses->get($courseId);
                 $sections = $sectionsByCourse->get($courseId, collect());
 
                 return [
                     'course' => $course,
-                    'marks_count' => (int) $row->marks_count,
-                    'section_count' => (int) $row->section_count,
-                    'waiting_first_trial' => (int) $row->waiting_first_trial,
-                    'waiting_second_trial' => (int) $row->waiting_second_trial,
+                    'marks_count' => (int) ($row->marks_count ?? 0),
+                    'section_count' => (int) ($row->section_count ?? $publishedRow->published_section_count ?? 0),
+                    'waiting_first_trial' => (int) ($row->waiting_first_trial ?? 0),
+                    'waiting_second_trial' => (int) ($row->waiting_second_trial ?? 0),
+                    'published_count' => (int) ($publishedRow->published_count ?? 0),
                     'college' => $course?->department?->college,
                     'department' => $course?->department,
                     'stages' => $sections->pluck('grade_level')->filter()->unique()->sort()->values(),
