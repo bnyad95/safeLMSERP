@@ -23,6 +23,7 @@ use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\Timetable;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Models\User;
 use App\Services\RolePermissionService;
@@ -1627,6 +1628,10 @@ class ErpController extends Controller
         $moduleCount = (clone $sectionsQuery)->reorder()->count();
         $inactiveCourseCount = (clone $coursesQuery)->where('status', 'inactive')->count();
         $missingCreditPolicyCount = max(0, $academicYearCount - $semesterCreditPolicyCount);
+        $tuitionRateCount = TuitionRate::query()
+            ->whereIn('department_id', (clone $departmentsQuery)->select('id'))
+            ->count();
+        $missingTuitionRateCount = max(0, ($departmentCount * $academicYearCount * 2) - $tuitionRateCount);
 
         $structureStats = [
             ['label' => 'Universities', 'value' => number_format($universityCount), 'detail' => 'Institution records in scope'],
@@ -1810,6 +1815,11 @@ class ErpController extends Controller
                 'value' => $missingCreditPolicyCount,
                 'detail' => 'Every institution should define semester, progression, and graduation credit requirements.',
             ],
+            [
+                'label' => 'Missing tuition rate',
+                'value' => $missingTuitionRateCount,
+                'detail' => 'Every department should have a per-credit tuition rate defined per academic year and currency before charges can be generated.',
+            ],
         ]);
         $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
@@ -1826,6 +1836,7 @@ class ErpController extends Controller
             ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
             ['title' => 'Stages', 'description' => 'Reusable study stages defined for each department.', 'route' => route('stages.index'), 'count' => $stageCount, 'enabled' => true],
             ['title' => 'Semester Credit Policy', 'description' => 'Review semester ECTS/credits and passing credits required.', 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => true],
+            ['title' => 'Tuition Rates', 'description' => 'Per-credit tuition rates by department, academic year, and currency.', 'route' => route('bologna-definition.tuition-rates'), 'count' => $tuitionRateCount, 'enabled' => true],
             ['title' => 'Course Catalog', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
             ['title' => 'Academic Years', 'description' => 'Manage upcoming, active, closed, and archived academic periods.', 'route' => route('academic-years.index'), 'count' => $academicYearCount, 'enabled' => true],
             ['title' => 'Semesters', 'description' => 'Define regular and optional summer periods inside each academic year.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
@@ -1939,6 +1950,100 @@ class ErpController extends Controller
         return redirect()
             ->route('bologna-definition.semester-credit-policy')
             ->with('success', 'Semester credit policy updated successfully.');
+    }
+
+    public function tuitionRates()
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
+
+        $departmentsQuery = Department::with(['university', 'college'])->orderBy('name');
+        OrganizationScope::apply($departmentsQuery, $user, 'department');
+        $departments = $departmentsQuery->get();
+
+        $academicYearsQuery = AcademicYear::with('university')
+            ->whereIn('university_id', $departments->pluck('university_id')->unique())
+            ->whereIn('status', ['active', 'upcoming'])
+            ->orderByDesc('starts_on')
+            ->orderByDesc('name');
+        OrganizationScope::apply($academicYearsQuery, $user, 'academic_year');
+        $academicYears = $academicYearsQuery->get();
+
+        $rates = TuitionRate::query()
+            ->whereIn('department_id', $departments->pluck('id'))
+            ->get()
+            ->groupBy('department_id');
+
+        $currencies = ['IQD', 'USD'];
+        $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
+            || $user->hasDirectPermissionGrant('academic_setup.manage');
+
+        return view('erp.tuition-rates', compact('departments', 'academicYears', 'rates', 'currencies', 'canManageAcademicSetup'));
+    }
+
+    public function storeTuitionRates(Request $request)
+    {
+        $user = auth()->user();
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+
+        $departmentsQuery = Department::query();
+        OrganizationScope::apply($departmentsQuery, $user, 'department');
+        $departments = $departmentsQuery->get()->keyBy('id');
+
+        $academicYearsQuery = AcademicYear::query();
+        OrganizationScope::apply($academicYearsQuery, $user, 'academic_year');
+        $academicYears = $academicYearsQuery->get()->keyBy('id');
+
+        $validated = $request->validate([
+            'rates' => ['required', 'array'],
+        ]);
+
+        foreach ($validated['rates'] as $departmentId => $years) {
+            $department = $departments->get((int) $departmentId);
+            if (! $department || ! is_array($years)) {
+                continue;
+            }
+
+            foreach ($years as $academicYearId => $currencyValues) {
+                $academicYear = $academicYears->get((int) $academicYearId);
+                if (! $academicYear || ! is_array($currencyValues)) {
+                    continue;
+                }
+
+                if ($academicYear->isLocked()) {
+                    return back()->withInput()->withErrors([
+                        "rates.{$departmentId}.{$academicYearId}" => "{$academicYear->name}: tuition rates for closed or archived years are read-only.",
+                    ]);
+                }
+
+                foreach ($currencyValues as $currency => $value) {
+                    if (! in_array($currency, ['IQD', 'USD'], true)) {
+                        continue;
+                    }
+
+                    $value = trim((string) $value);
+                    if ($value === '') {
+                        continue;
+                    }
+
+                    $rate = (float) $value;
+                    if ($rate <= 0 || $rate > 999999.99) {
+                        return back()->withInput()->withErrors([
+                            "rates.{$departmentId}.{$academicYearId}.{$currency}" => "{$department->name} {$academicYear->name} ({$currency}): rate per credit must be between 0.01 and 999999.99.",
+                        ]);
+                    }
+
+                    TuitionRate::updateOrCreate(
+                        ['department_id' => $department->id, 'academic_year_id' => $academicYear->id, 'currency' => $currency],
+                        ['rate_per_credit' => round($rate, 2), 'created_by' => $user->id]
+                    );
+                }
+            }
+        }
+
+        return redirect()
+            ->route('bologna-definition.tuition-rates')
+            ->with('success', 'Tuition rates updated successfully.');
     }
 
     public function studentRankings(Request $request)

@@ -96,6 +96,11 @@ class FinanceTransaction extends Model
         return $this->hasMany(self::class, 'original_transaction_id');
     }
 
+    public function chargeLines()
+    {
+        return $this->hasMany(TuitionChargeLine::class);
+    }
+
     public static function chargeTypes(): array
     {
         return ['invoice', 'refund'];

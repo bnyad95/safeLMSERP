@@ -224,7 +224,7 @@ class AdminAuthorizationTest extends TestCase
 
     public function test_registrar_can_manage_enrollments_with_dedicated_permission(): void
     {
-        [$university, , $department] = $this->organization('REG');
+        [$university, $college, $department] = $this->organization('REG');
         $semester = Semester::create([
             'university_id' => $university->id,
             'name' => 'Fall',
@@ -251,7 +251,11 @@ class AdminAuthorizationTest extends TestCase
             'status' => 'active',
         ]);
         $role = $this->roleWithPermissions('registrar', ['courses.view', 'enrollments.view', 'enrollments.manage', 'timetable.view']);
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+        ]);
         $user->roles()->attach($role);
 
         $this->actingAs($user)->get(route('enrollments.index'))->assertOk();

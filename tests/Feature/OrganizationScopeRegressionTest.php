@@ -53,6 +53,54 @@ class OrganizationScopeRegressionTest extends TestCase
         $this->assertSame([$firstAssessment->id], AssessmentSubmission::pluck('assessment_item_id')->all());
     }
 
+    public function test_university_scoped_examination_administrator_sees_marks_across_departments(): void
+    {
+        [$university, $firstDepartment] = $this->organization('UniExam', 'UEX');
+        $secondDepartment = Department::create(['university_id' => $university->id, 'name' => 'UniExam Second Department']);
+        [$otherUniversity, $otherDepartment] = $this->organization('OtherExam', 'OEX');
+
+        $firstStudent = $this->student($university, $firstDepartment, 'UEX-1');
+        $secondStudent = $this->student($university, $secondDepartment, 'UEX-2');
+        $otherStudent = $this->student($otherUniversity, $otherDepartment, 'OEX-1');
+
+        [$firstCourse, $firstSection] = $this->module($university, $firstDepartment, 'UEX101');
+        [$secondCourse, $secondSection] = $this->module($university, $secondDepartment, 'UEX201');
+        [$otherCourse, $otherSection] = $this->module($otherUniversity, $otherDepartment, 'OEX101');
+
+        Mark::create(['student_id' => $firstStudent->id, 'course_id' => $firstCourse->id, 'course_section_id' => $firstSection->id, 'final_mark' => 70]);
+        Mark::create(['student_id' => $secondStudent->id, 'course_id' => $secondCourse->id, 'course_section_id' => $secondSection->id, 'final_mark' => 80]);
+        Mark::create(['student_id' => $otherStudent->id, 'course_id' => $otherCourse->id, 'course_section_id' => $otherSection->id, 'final_mark' => 90]);
+
+        $role = Role::create(['name' => 'examination_administrator', 'display_name' => 'Examination Administrator']);
+        $user = User::factory()->create(['university_id' => $university->id]);
+        $user->roles()->attach($role);
+        $this->actingAs($user);
+
+        $this->assertEqualsCanonicalizing([$firstCourse->id, $secondCourse->id], Mark::pluck('course_id')->all());
+    }
+
+    public function test_university_scoped_registrar_sees_students_across_departments(): void
+    {
+        [$university, $firstDepartment] = $this->organization('UniRegistrar', 'URG');
+        $secondDepartment = Department::create(['university_id' => $university->id, 'name' => 'UniRegistrar Second Department']);
+        [$otherUniversity, $otherDepartment] = $this->organization('OtherRegistrar', 'ORG');
+
+        $firstStudent = $this->student($university, $firstDepartment, 'URG-1');
+        $secondStudent = $this->student($university, $secondDepartment, 'URG-2');
+        $otherStudent = $this->student($otherUniversity, $otherDepartment, 'ORG-1');
+
+        $role = Role::create(['name' => 'registrar', 'display_name' => 'Registrar']);
+        $user = User::factory()->create(['university_id' => $university->id]);
+        $user->roles()->attach($role);
+        $this->actingAs($user);
+
+        $this->assertEqualsCanonicalizing(
+            [$firstStudent->id, $secondStudent->id],
+            Student::pluck('id')->all()
+        );
+        $this->assertFalse(Student::whereKey($otherStudent->id)->exists());
+    }
+
     public function test_rooms_and_structure_models_are_limited_to_the_assigned_university(): void
     {
         [$firstUniversity, $firstDepartment] = $this->organization('First', 'ONE');

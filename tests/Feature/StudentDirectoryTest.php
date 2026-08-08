@@ -57,7 +57,7 @@ class StudentDirectoryTest extends TestCase
         $this->actingAs($user)->delete(route('students.destroy', $student))->assertForbidden();
     }
 
-    public function test_registrar_sees_students_from_all_departments(): void
+    public function test_registrar_only_sees_students_from_own_department(): void
     {
         [$university, $college, $department] = $this->organization('OWN');
         [, , $otherDepartment] = $this->organization('OTHERDEPT');
@@ -78,7 +78,7 @@ class StudentDirectoryTest extends TestCase
             ->get(route('students.index'))
             ->assertOk()
             ->assertSee('Department Registrar Student')
-            ->assertSee('Other Department Student');
+            ->assertDontSee('Other Department Student');
 
         $this->actingAs($registrar)
             ->get(route('students.show', $visibleStudent))
@@ -86,7 +86,51 @@ class StudentDirectoryTest extends TestCase
 
         $this->actingAs($registrar)
             ->get(route('students.show', $hiddenStudent))
+            ->assertNotFound();
+    }
+
+    public function test_university_scoped_registrar_sees_students_across_departments_in_own_university(): void
+    {
+        [$university, $college, $department] = $this->organization('UNIREG');
+        $otherDepartment = Department::create([
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'name' => 'Other Department UNIREG',
+        ]);
+        [$otherUniversity, , $otherUniversityDepartment] = $this->organization('UNIREGOTHER');
+
+        $registrar = $this->userWithPermissions('registrar', ['students.view', 'students.create'], [
+            'university_id' => $university->id,
+        ]);
+
+        $sameUniversityStudent = $this->student($university, $department, [
+            'full_name' => 'Same Department Registrar Student',
+        ]);
+        $otherDepartmentStudent = $this->student($university, $otherDepartment, [
+            'full_name' => 'Other Department Same University Student',
+        ]);
+        $otherUniversityStudent = $this->student($otherUniversity, $otherUniversityDepartment, [
+            'full_name' => 'Other University Student',
+        ]);
+
+        $this->actingAs($registrar)
+            ->get(route('students.index'))
+            ->assertOk()
+            ->assertSee('Same Department Registrar Student')
+            ->assertSee('Other Department Same University Student')
+            ->assertDontSee('Other University Student');
+
+        $this->actingAs($registrar)
+            ->get(route('students.show', $sameUniversityStudent))
             ->assertOk();
+
+        $this->actingAs($registrar)
+            ->get(route('students.show', $otherDepartmentStudent))
+            ->assertOk();
+
+        $this->actingAs($registrar)
+            ->get(route('students.show', $otherUniversityStudent))
+            ->assertNotFound();
     }
 
     public function test_student_directory_requires_view_permission(): void
@@ -351,8 +395,12 @@ class StudentDirectoryTest extends TestCase
     public function test_registrar_creates_student_login_account_when_adding_student(): void
     {
         Notification::fake();
-        [$university, , $department] = $this->organization('REGUSER');
-        $registrar = $this->userWithPermissions('registrar', ['students.create', 'students.view']);
+        [$university, $college, $department] = $this->organization('REGUSER');
+        $registrar = $this->userWithPermissions('registrar', ['students.create', 'students.view'], [
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+        ]);
 
         $this->actingAs($registrar)
             ->post(route('students.store'), $this->studentPayload($department, [
@@ -378,8 +426,12 @@ class StudentDirectoryTest extends TestCase
 
     public function test_student_with_temporary_password_must_change_it_after_login(): void
     {
-        [$university, , $department] = $this->organization('FORCEPWD');
-        $registrar = $this->userWithPermissions('registrar', ['students.create', 'students.view']);
+        [$university, $college, $department] = $this->organization('FORCEPWD');
+        $registrar = $this->userWithPermissions('registrar', ['students.create', 'students.view'], [
+            'university_id' => $university->id,
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+        ]);
 
         $this->actingAs($registrar)
             ->post(route('students.store'), $this->studentPayload($department, [

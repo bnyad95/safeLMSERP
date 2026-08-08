@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Student;
 use App\Services\TranscriptService;
+use App\Support\OrganizationScope;
 use Illuminate\Support\Facades\Auth;
 
 class TranscriptController extends Controller
@@ -43,12 +44,14 @@ class TranscriptController extends Controller
     {
         $user = Auth::user();
 
-        abort_unless(
-            $user->hasRole('super_administrator')
-            || ($user->hasAnyRole(['administrator', 'university_administrator', 'college_administrator', 'department_administrator'])
-                && $user->hasPermission('marks.view'))
-            || ($user->hasRole('student') && $user->email === $student->email),
-            403
-        );
+        if ($user->hasRole('student') && $user->email === $student->email) {
+            return;
+        }
+
+        abort_unless($user->hasRole('super_administrator') || $user->hasPermission('marks.view'), 403);
+
+        $query = Student::query();
+        OrganizationScope::apply($query, $user, 'student');
+        abort_unless($query->whereKey($student->id)->exists(), 404);
     }
 }

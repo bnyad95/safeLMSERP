@@ -102,6 +102,8 @@
                     @endif
                 </section>
 
+                @include('finance.partials.generate-tuition-charge')
+
                 <section class="min-w-0 overflow-hidden border-y border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                     <div class="flex items-center justify-between gap-3 px-4 py-4 sm:px-5">
                         <div>

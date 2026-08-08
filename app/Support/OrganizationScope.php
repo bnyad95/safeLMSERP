@@ -152,7 +152,6 @@ class OrganizationScope
     private static function scopeMarkRecord(Builder $query, User $user, string $scope): void
     {
         self::scopeRecordThroughCourse($query, $user, $scope);
-        self::scopeThroughStudent($query, $user, $scope);
 
         $query->where(function (Builder $mark) use ($user, $scope) {
             $mark->whereNull('course_section_id')

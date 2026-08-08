@@ -13,7 +13,6 @@ final class UserRolePolicy
         'admission_officer',
         'receptionist',
         'teaching_assistant',
-        'registrar',
     ];
 
     public const COLLEGE_SCOPED_ROLES = ['college_administrator'];
@@ -21,6 +20,7 @@ final class UserRolePolicy
     public const UNIVERSITY_SCOPED_ROLES = ['university_administrator', 'university_president'];
 
     public const FLEXIBLE_SCOPED_ROLES = [
+        'registrar',
         'examination_administrator',
         'examination_committee',
         'hr_manager',

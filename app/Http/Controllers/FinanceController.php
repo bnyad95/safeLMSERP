@@ -9,7 +9,9 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\TuitionAgreement;
 use App\Models\User;
+use App\Services\FinanceLedgerService;
 use App\Services\NotificationService;
+use App\Services\TuitionChargeService;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -401,7 +403,7 @@ class FinanceController extends Controller
 
         $filters = $this->financeFilters($request);
         $user = $request->user();
-        $this->refreshStudentInvoiceStatuses($student);
+        app(FinanceLedgerService::class)->refreshStudentInvoiceStatuses($student);
 
         $student->load([
             'department.college',
@@ -458,6 +460,13 @@ class FinanceController extends Controller
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
             'canVoidFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.refund', 'finance.approve_payment', 'finance.approve_expense']),
             'canManageAccountBlock' => $this->canManageStudentAccountBlock($user),
+            'tuitionChargeSemesterOptions' => Semester::where('university_id', $student->university_id)
+                ->with('academicYear')
+                ->whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
+                ->orderByDesc('academic_year')
+                ->orderBy('start_date')
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -502,6 +511,47 @@ class FinanceController extends Controller
                 ->orderByDesc('name')
                 ->get(),
         ]);
+    }
+
+    public function generateTuitionCharge(Request $request, Student $student)
+    {
+        $this->authorizeStudentFinanceView($request->user());
+        $this->authorizeStudentScope($request->user(), $student);
+        abort_unless(
+            $request->user()->hasRole('super_administrator') || $request->user()->hasPermission('finance.create_invoice'),
+            403
+        );
+
+        $validated = $request->validate([
+            'semester_id' => ['required', 'exists:semesters,id'],
+            'currency' => ['required', 'in:IQD,USD'],
+            'transaction_date' => ['required', 'date'],
+            'due_date' => ['nullable', 'date', 'after_or_equal:transaction_date'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $semester = Semester::where('university_id', $student->university_id)->findOrFail($validated['semester_id']);
+
+        $result = app(TuitionChargeService::class)->generateForStudentSemester(
+            $student,
+            $semester,
+            $validated['currency'],
+            $request->user(),
+            $validated['transaction_date'],
+            $validated['due_date'] ?? null,
+            $validated['notes'] ?? null
+        );
+
+        if (! $result['ok']) {
+            return redirect()->route('finance.students.show', $student)->with('error', $result['message']);
+        }
+
+        if (! $result['created']) {
+            return redirect()->route('finance.students.show', $student)->with('success', $result['message']);
+        }
+
+        return redirect()->route('finance.students.show', $student)
+            ->with('success', "Tuition charge generated: {$result['transaction']->amount} {$validated['currency']} for {$result['lines']->count()} course(s).");
     }
 
     public function tuitionReminders(Request $request)
@@ -582,15 +632,16 @@ class FinanceController extends Controller
                 ->firstOrFail();
             $validated['invoice_transaction_id'] = $this->validatedInvoiceAllocation($validated);
             $isSemesterPlan = $validated['type'] === 'invoice' && ($validated['payment_plan'] ?? 'full') === 'semester';
-            $validated['invoice_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'invoice_number');
-            $validated['receipt_number'] = $isSemesterPlan ? null : $this->documentNumber($validated, 'receipt_number');
+            $ledger = app(FinanceLedgerService::class);
+            $validated['invoice_number'] = $isSemesterPlan ? null : $ledger->documentNumber($validated, 'invoice_number');
+            $validated['receipt_number'] = $isSemesterPlan ? null : $ledger->documentNumber($validated, 'receipt_number');
             $validated['posting_status'] = $validated['type'] === 'invoice' || $validated['status'] === 'paid'
                 ? 'posted'
                 : 'pending';
             $validated['balance_after'] = $validated['posting_status'] === 'posted'
-                ? $this->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency'])
+                ? $ledger->balanceAfter($validated['student_id'], $validated['type'], (float) $validated['amount'], $validated['currency'])
                 : null;
-            $validated['payment_status'] = $this->paymentStatusForTransaction($validated);
+            $validated['payment_status'] = $ledger->paymentStatusForTransaction($validated);
             $transactions = $this->createFinanceTransactions(
                 $validated,
                 $request->user()->hasRole('super_administrator')
@@ -598,9 +649,9 @@ class FinanceController extends Controller
 
             if ($transactions->isNotEmpty()) {
                 $firstTransaction = $transactions->first();
-                $this->recalculateStudentBalances((int) $firstTransaction->student_id, $firstTransaction->currency);
-                $transactions->each(fn (FinanceTransaction $transaction) => $this->refreshAllocatedInvoice($transaction->fresh()));
-                $this->synchronizeFinanceHold($firstTransaction->student()->with('user')->first());
+                $ledger->recalculateStudentBalances((int) $firstTransaction->student_id, $firstTransaction->currency);
+                $transactions->each(fn (FinanceTransaction $transaction) => $ledger->refreshAllocatedInvoice($transaction->fresh()));
+                $ledger->synchronizeFinanceHold($firstTransaction->student()->with('user')->first());
             }
 
             return $transactions;
@@ -648,10 +699,11 @@ class FinanceController extends Controller
                     ]);
                 }
             }
+            $ledger = app(FinanceLedgerService::class);
             $financeTransaction->update([
                 'status' => 'approved',
                 'posting_status' => 'posted',
-                'payment_status' => $this->paymentStatusForTransaction([
+                'payment_status' => $ledger->paymentStatusForTransaction([
                     'type' => $financeTransaction->type,
                     'status' => 'approved',
                     'due_date' => $financeTransaction->due_date,
@@ -659,9 +711,9 @@ class FinanceController extends Controller
                 'approved_by' => $request->user()->id,
                 'approved_at' => now(),
             ]);
-            $this->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
-            $this->refreshAllocatedInvoice($financeTransaction);
-            $this->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
+            $ledger->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
+            $ledger->refreshAllocatedInvoice($financeTransaction);
+            $ledger->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
 
             return true;
         });
@@ -727,6 +779,7 @@ class FinanceController extends Controller
                 return;
             }
 
+            $ledger = app(FinanceLedgerService::class);
             $reversalType = $this->reversalType($financeTransaction->type);
             $reversal = FinanceTransaction::create([
                 'student_id' => $financeTransaction->student_id,
@@ -738,12 +791,12 @@ class FinanceController extends Controller
                 'approved_at' => now(),
                 'type' => $reversalType,
                 'amount' => $financeTransaction->amount,
-                'balance_after' => $this->balanceAfter($financeTransaction->student_id, $reversalType, (float) $financeTransaction->amount, $financeTransaction->currency),
+                'balance_after' => $ledger->balanceAfter($financeTransaction->student_id, $reversalType, (float) $financeTransaction->amount, $financeTransaction->currency),
                 'currency' => $financeTransaction->currency,
                 'status' => 'approved',
                 'posting_status' => 'posted',
                 'payment_status' => 'paid',
-                'receipt_number' => $this->documentNumber([
+                'receipt_number' => $ledger->documentNumber([
                     'type' => $reversalType,
                     'transaction_date' => now()->toDateString(),
                     'receipt_number' => null,
@@ -762,13 +815,13 @@ class FinanceController extends Controller
             ]);
 
             if ($financeTransaction->type === 'invoice') {
-                $this->refreshTuitionAgreementStatus($financeTransaction->tuition_agreement_id);
+                $ledger->refreshTuitionAgreementStatus($financeTransaction->tuition_agreement_id);
             }
 
-            $this->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
-            $this->refreshAllocatedInvoice($financeTransaction);
-            $this->refreshAllocatedInvoice($reversal);
-            $this->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
+            $ledger->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
+            $ledger->refreshAllocatedInvoice($financeTransaction);
+            $ledger->refreshAllocatedInvoice($reversal);
+            $ledger->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
         });
 
         return redirect()
@@ -792,8 +845,9 @@ class FinanceController extends Controller
                 ->with('error', 'This account has a non-finance hold. Finance cannot replace it.');
         }
 
-        $this->refreshStudentInvoiceStatuses($student);
-        $overdueInvoices = $this->overdueInvoiceQuery($student)->exists();
+        $ledger = app(FinanceLedgerService::class);
+        $ledger->refreshStudentInvoiceStatuses($student);
+        $overdueInvoices = $ledger->overdueInvoiceQuery($student)->exists();
         if (! $overdueInvoices) {
             return redirect()
                 ->route('finance.students.show', $student)
@@ -910,7 +964,7 @@ class FinanceController extends Controller
         $balances = collect();
 
         if ($student) {
-            $this->refreshStudentInvoiceStatuses($student);
+            app(FinanceLedgerService::class)->refreshStudentInvoiceStatuses($student);
             $transactions = $student->financeTransactions()
                 ->with(['invoice', 'originalTransaction'])
                 ->latest('transaction_date')
@@ -1490,7 +1544,7 @@ class FinanceController extends Controller
                 ? $this->selectedTuitionSemesters($validated)
                 : collect();
             $academicYear = $this->tuitionAcademicYear($validated, $semesters);
-            $agreementKey = $this->tuitionAgreementKey(
+            $agreementKey = app(FinanceLedgerService::class)->tuitionAgreementKey(
                 (int) $validated['student_id'],
                 $academicYear?->id,
                 $academicYear?->name ?? ($validated['academic_year'] ?? null)
@@ -1570,7 +1624,7 @@ class FinanceController extends Controller
                     'status' => $paymentStatus,
                     'posting_status' => $paymentPostingStatus,
                     'payment_status' => $canPostImmediately ? 'paid' : 'open',
-                    'receipt_number' => $this->documentNumber([
+                    'receipt_number' => app(FinanceLedgerService::class)->documentNumber([
                         'type' => 'payment',
                         'transaction_date' => $validated['transaction_date'],
                         'receipt_number' => null,
@@ -1628,9 +1682,10 @@ class FinanceController extends Controller
                     'academic_year' => $semester->academic_year,
                     'due_date' => $semester->end_date ?: ($validated['due_date'] ?? null),
                 ])->all();
-                $payload['invoice_number'] = $this->documentNumber($payload, 'invoice_number');
-                $payload['balance_after'] = $this->balanceAfter($payload['student_id'], $payload['type'], (float) $payload['amount'], $payload['currency']);
-                $payload['payment_status'] = $this->paymentStatusForTransaction($payload);
+                $ledger = app(FinanceLedgerService::class);
+                $payload['invoice_number'] = $ledger->documentNumber($payload, 'invoice_number');
+                $payload['balance_after'] = $ledger->balanceAfter($payload['student_id'], $payload['type'], (float) $payload['amount'], $payload['currency']);
+                $payload['payment_status'] = $ledger->paymentStatusForTransaction($payload);
 
                 return FinanceTransaction::create($payload);
             });
@@ -1965,146 +2020,6 @@ class FinanceController extends Controller
         abort_unless($visible, 404);
     }
 
-    private function documentNumber(array $transaction, string $column): ?string
-    {
-        $isInvoice = $transaction['type'] === 'invoice';
-
-        if ($column === 'invoice_number' && ! $isInvoice) {
-            return null;
-        }
-
-        if ($column === 'receipt_number' && $isInvoice) {
-            return null;
-        }
-
-        if (! empty($transaction[$column])) {
-            return $transaction[$column];
-        }
-
-        $prefix = $isInvoice ? 'INV' : 'RCT';
-        $year = date('Y', strtotime($transaction['transaction_date']));
-        $base = "{$prefix}-{$year}-";
-        DB::table('finance_document_sequences')->insertOrIgnore([
-            'document_type' => $prefix,
-            'document_year' => (int) $year,
-            'next_number' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $sequence = DB::table('finance_document_sequences')
-            ->where('document_type', $prefix)
-            ->where('document_year', (int) $year)
-            ->lockForUpdate()
-            ->first();
-        $next = (int) $sequence->next_number;
-
-        do {
-            $number = $base.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
-            $next++;
-        } while (FinanceTransaction::where($column, $number)->exists());
-
-        DB::table('finance_document_sequences')
-            ->where('id', $sequence->id)
-            ->update([
-                'next_number' => $next,
-                'updated_at' => now(),
-            ]);
-
-        return $number;
-    }
-
-    private function balanceAfter(int $studentId, string $type, float $amount, string $currency): float
-    {
-        $charges = FinanceTransaction::where('student_id', $studentId)
-            ->where('currency', $currency)
-            ->where('posting_status', 'posted')
-            ->whereIn('type', FinanceTransaction::chargeTypes())
-            ->sum('amount');
-        $credits = FinanceTransaction::where('student_id', $studentId)
-            ->where('currency', $currency)
-            ->where('posting_status', 'posted')
-            ->whereIn('type', FinanceTransaction::creditTypes())
-            ->sum('amount');
-        $signedAmount = in_array($type, FinanceTransaction::creditTypes(), true) ? -$amount : $amount;
-
-        return round($charges - $credits + $signedAmount, 2);
-    }
-
-    private function recalculateStudentBalances(int $studentId, string $currency): void
-    {
-        $balance = 0.0;
-        FinanceTransaction::where('student_id', $studentId)
-            ->where('currency', $currency)
-            ->oldest('transaction_date')
-            ->oldest()
-            ->lazy(500)
-            ->each(function (FinanceTransaction $transaction) use (&$balance) {
-                $transaction->timestamps = false;
-                if ($transaction->isPosted()) {
-                    $balance += $transaction->signedAmount();
-                    $transaction->balance_after = round($balance, 2);
-                } else {
-                    $transaction->balance_after = null;
-                }
-                $transaction->save();
-            });
-    }
-
-    private function refreshAllocatedInvoice(FinanceTransaction $transaction): void
-    {
-        $invoice = $transaction->invoice;
-
-        if (! $invoice && $transaction->type === 'invoice') {
-            $invoice = $transaction;
-        }
-
-        if (! $invoice || $invoice->type !== 'invoice' || $invoice->status === 'cancelled') {
-            return;
-        }
-
-        $paid = (float) $invoice->allocations()
-            ->where('status', '!=', 'cancelled')
-            ->where('posting_status', 'posted')
-            ->whereIn('type', FinanceTransaction::creditTypes())
-            ->sum('amount');
-        $amount = (float) $invoice->amount;
-        $status = match (true) {
-            $paid >= $amount => 'paid',
-            $invoice->due_date && $invoice->due_date->isPast() => 'overdue',
-            $paid > 0 => 'partial',
-            default => 'open',
-        };
-
-        $invoice->update(['payment_status' => $status]);
-        $this->refreshTuitionAgreementStatus($invoice->tuition_agreement_id);
-    }
-
-    private function paymentStatusForTransaction(array $transaction): string
-    {
-        if ($transaction['status'] === 'cancelled') {
-            return 'cancelled';
-        }
-
-        if ($transaction['status'] === 'partial') {
-            return 'partial';
-        }
-
-        if (in_array($transaction['type'], FinanceTransaction::creditTypes(), true)) {
-            return in_array($transaction['status'], ['paid', 'approved'], true) ? 'paid' : 'open';
-        }
-
-        if (
-            $transaction['type'] === 'invoice'
-            && ! empty($transaction['due_date'])
-            && strtotime((string) $transaction['due_date']) < strtotime(now()->toDateString())
-        ) {
-            return 'overdue';
-        }
-
-        return 'open';
-    }
-
     private function paymentStatusForBalances($balances): string
     {
         return collect($balances)->contains(fn ($balance) => (float) ($balance['balance'] ?? 0) > 0)
@@ -2121,77 +2036,6 @@ class FinanceController extends Controller
             ->sum('amount');
 
         return max(0, round((float) $invoice->amount - $allocated, 2));
-    }
-
-    private function refreshStudentInvoiceStatuses(Student $student): void
-    {
-        $student->financeTransactions()
-            ->where('type', 'invoice')
-            ->where('posting_status', 'posted')
-            ->where('status', '!=', 'cancelled')
-            ->whereIn('payment_status', ['open', 'partial', 'overdue'])
-            ->lazyById(200)
-            ->each(fn (FinanceTransaction $invoice) => $this->refreshAllocatedInvoice($invoice));
-    }
-
-    private function overdueInvoiceQuery(Student $student)
-    {
-        return $student->financeTransactions()
-            ->where('type', 'invoice')
-            ->where('posting_status', 'posted')
-            ->where('status', '!=', 'cancelled')
-            ->where('payment_status', 'overdue');
-    }
-
-    private function synchronizeFinanceHold(?Student $student): void
-    {
-        if (! $student) {
-            return;
-        }
-
-        $this->refreshStudentInvoiceStatuses($student);
-        $account = $student->user;
-
-        if ($account && $account->account_block_type === 'finance' && ! $this->overdueInvoiceQuery($student)->exists()) {
-            $account->update([
-                'account_blocked_at' => null,
-                'account_blocked_by' => null,
-                'account_block_reason' => null,
-                'account_block_type' => null,
-            ]);
-        }
-    }
-
-    private function refreshTuitionAgreementStatus(?int $agreementId): void
-    {
-        if (! $agreementId) {
-            return;
-        }
-
-        $agreement = TuitionAgreement::find($agreementId);
-        if (! $agreement || $agreement->status === 'cancelled') {
-            return;
-        }
-
-        $invoiceQuery = $agreement->transactions()
-            ->where('type', 'invoice')
-            ->where('status', '!=', 'cancelled');
-        $invoiceCount = (clone $invoiceQuery)->count();
-        $hasUnpaid = (clone $invoiceQuery)->where('payment_status', '!=', 'paid')->exists();
-
-        $agreement->update([
-            'status' => $invoiceCount === 0 ? 'cancelled' : ($hasUnpaid ? 'active' : 'completed'),
-            'agreement_key' => $invoiceCount === 0 ? null : $agreement->agreement_key,
-        ]);
-    }
-
-    private function tuitionAgreementKey(int $studentId, ?int $academicYearId, ?string $academicYear): string
-    {
-        $yearKey = $academicYearId
-            ? 'id:'.$academicYearId
-            : 'name:'.strtolower(trim($academicYear ?: 'legacy'));
-
-        return hash('sha256', $studentId.'|'.$yearKey);
     }
 
     private function reversalType(string $type): string

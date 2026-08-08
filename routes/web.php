@@ -315,6 +315,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/finance/students/{student}/records/create', [FinanceController::class, 'createStudentRecord'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice,permission:finance.record_payment,permission:finance.record_expense,permission:finance.refund')
         ->name('finance.students.records.create');
+    Route::post('/finance/students/{student}/tuition-charges', [FinanceController::class, 'generateTuitionCharge'])
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.create_invoice')
+        ->name('finance.students.tuition-charges.store');
     Route::get('/finance/students/{student}/statement', [FinanceController::class, 'statement'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.statement');
@@ -357,6 +360,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/bologna-definition/semester-credit-policy', [ErpController::class, 'storeSemesterCreditPolicy'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
         ->name('bologna-definition.semester-credit-policy.store');
+    Route::get('/bologna-definition/tuition-rates', [ErpController::class, 'tuitionRates'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
+        ->name('bologna-definition.tuition-rates');
+    Route::post('/bologna-definition/tuition-rates', [ErpController::class, 'storeTuitionRates'])
+        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->name('bologna-definition.tuition-rates.store');
     Route::get('/academic-year-closing', [AcademicYearClosureController::class, 'index'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
         ->name('academic-year-closures.index');
@@ -436,7 +445,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // Transcript Routes
-    Route::prefix('transcripts')->name('transcripts.')->middleware('role.any:student,administrator,super_administrator,university_administrator,college_administrator,department_administrator')->group(function () {
+    Route::prefix('transcripts')->name('transcripts.')->group(function () {
         Route::get('/{student}', [TranscriptController::class, 'show'])->name('show');
         Route::get('/{student}/download', [TranscriptController::class, 'download'])->name('download');
         Route::get('/{student}/preview', [TranscriptController::class, 'preview'])->name('preview');

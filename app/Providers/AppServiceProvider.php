@@ -30,6 +30,8 @@ use App\Models\StudentStageProgression;
 use App\Models\Teacher;
 use App\Models\Timetable;
 use App\Models\TuitionAgreement;
+use App\Models\TuitionChargeLine;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Support\OrganizationScope;
 use Illuminate\Database\Eloquent\Builder;
@@ -80,6 +82,8 @@ class AppServiceProvider extends ServiceProvider
             Attendance::class => 'course_record',
             FinanceTransaction::class => 'finance_record',
             TuitionAgreement::class => 'finance_record',
+            TuitionRate::class => 'course',
+            TuitionChargeLine::class => 'section_record',
         ];
 
         foreach ($scopes as $model => $type) {

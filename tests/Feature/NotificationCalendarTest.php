@@ -235,6 +235,7 @@ class NotificationCalendarTest extends TestCase
         $mark = Mark::create([
             'student_id' => $setup['student']->id,
             'course_id' => $setup['course']->id,
+            'course_section_id' => $setup['section']->id,
             'final_mark' => 91,
             'status' => 'Draft',
             'submission_status' => 'approved',

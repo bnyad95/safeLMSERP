@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\Course;
 use App\Models\Department;
 use App\Models\Mark;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Student;
+use App\Models\University;
 use App\Models\User;
 use App\Services\TranscriptService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -75,6 +77,70 @@ class TranscriptTest extends TestCase
         $response = $this->get("/transcripts/{$this->student->id}");
 
         $response->assertStatus(403);
+    }
+
+    private function userWithMarksView(string $roleName, array $attributes = []): User
+    {
+        $role = Role::firstOrCreate(['name' => $roleName], ['display_name' => str($roleName)->replace('_', ' ')->title()]);
+        $permission = Permission::firstOrCreate(['name' => 'marks.view'], ['display_name' => 'View marks']);
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+
+        $user = User::factory()->create($attributes);
+        $user->roles()->attach($role);
+
+        return $user;
+    }
+
+    public function test_registrar_with_marks_view_can_see_transcript_within_scope(): void
+    {
+        $university = University::create(['name' => 'Transcript Scope University', 'code' => 'TSU']);
+        $department = Department::factory()->create(['university_id' => $university->id]);
+        $student = Student::factory()->create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+        ]);
+        $registrar = $this->userWithMarksView('registrar', [
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+        ]);
+
+        $this->actingAs($registrar)
+            ->get(route('transcripts.show', $student))
+            ->assertOk();
+    }
+
+    public function test_department_scoped_user_cannot_view_transcript_outside_own_department(): void
+    {
+        $university = University::create(['name' => 'Transcript Outside University', 'code' => 'TOU']);
+        $ownDepartment = Department::factory()->create(['university_id' => $university->id]);
+        $otherDepartment = Department::factory()->create(['university_id' => $university->id]);
+        $outsideStudent = Student::factory()->create([
+            'university_id' => $university->id,
+            'department_id' => $otherDepartment->id,
+        ]);
+        $registrar = $this->userWithMarksView('registrar', [
+            'university_id' => $university->id,
+            'department_id' => $ownDepartment->id,
+        ]);
+
+        $this->actingAs($registrar)
+            ->get(route('transcripts.show', $outsideStudent))
+            ->assertNotFound();
+    }
+
+    public function test_user_with_marks_view_but_no_scope_match_cannot_view_transcript(): void
+    {
+        $university = University::create(['name' => 'Transcript No Scope University', 'code' => 'TNS']);
+        $department = Department::factory()->create(['university_id' => $university->id]);
+        $student = Student::factory()->create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+        ]);
+        $registrar = $this->userWithMarksView('registrar');
+
+        $this->actingAs($registrar)
+            ->get(route('transcripts.show', $student))
+            ->assertNotFound();
     }
 
     public function test_transcript_service_calculates_gpa()
