@@ -14,8 +14,8 @@ class TeacherMarkController extends Controller
     {
         $this->authorizeTeacher($request, $courseSection);
 
-        if (! $request->user()->hasRole('super_administrator') && ! $courseSection->semester?->prefinal_marks_open) {
-            throw ValidationException::withMessages(['prefinal_marks' => 'Pre-final mark entry is currently closed. The examination administrator must open it before you can save marks.']);
+        if (! $request->user()->hasRole('super_administrator') && ! $courseSection->semester?->university?->prefinal_marks_open) {
+            throw ValidationException::withMessages(['prefinal_marks' => 'Pre-final mark entry is currently disabled. The examination administrator must enable it before you can save marks.']);
         }
 
         $validated = $request->validate([

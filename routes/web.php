@@ -421,7 +421,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/approve', [MarkSubmissionController::class, 'approveMarks'])->name('approve');
         Route::post('/reject', [MarkSubmissionController::class, 'rejectMarks'])->name('reject');
         Route::post('/publish', [MarkSubmissionController::class, 'publishMarks'])->name('publish');
-        Route::patch('/prefinal-window/{semester}', [MarkSubmissionController::class, 'togglePrefinalWindow'])->name('prefinal-window.toggle');
+        Route::patch('/prefinal-window', [MarkSubmissionController::class, 'togglePrefinalWindow'])->name('prefinal-window.toggle');
     });
 
     // Attendance Routes

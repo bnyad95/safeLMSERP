@@ -11,6 +11,7 @@ use App\Models\Mark;
 use App\Models\MarkScoreHistory;
 use App\Models\Semester;
 use App\Models\Teacher;
+use App\Models\University;
 use App\Models\User;
 use App\Services\MarkSubmissionService;
 use App\Services\NotificationService;
@@ -39,12 +40,7 @@ class MarkSubmissionController extends Controller
         $filters = $this->queueFilterState($request);
         $filterOptions = $this->queueFilterOptions();
 
-        $prefinalWindowSemesters = $canManagePrefinalWindow
-            ? Semester::whereHas('academicYear', fn ($query) => $query->whereIn('status', ['upcoming', 'active']))
-                ->orderByDesc('academic_year')
-                ->orderBy('name')
-                ->get()
-            : collect();
+        $prefinalWindowUniversity = $canManagePrefinalWindow ? $this->prefinalWindowUniversity($user) : null;
 
         $finalExamDraftCount = $this->finalExamMarkQuery($filters)
             ->whereNotNull('prefinal_mark')
@@ -78,7 +74,7 @@ class MarkSubmissionController extends Controller
             'canPublish',
             'canEnterFinalExam',
             'canManagePrefinalWindow',
-            'prefinalWindowSemesters',
+            'prefinalWindowUniversity',
             'filters',
             'filterOptions',
             'queueStats'
@@ -396,7 +392,7 @@ class MarkSubmissionController extends Controller
         ]);
     }
 
-    public function togglePrefinalWindow(Request $request, Semester $semester)
+    public function togglePrefinalWindow(Request $request)
     {
         $user = Auth::user();
 
@@ -404,11 +400,14 @@ class MarkSubmissionController extends Controller
             abort(403);
         }
 
+        $university = $this->prefinalWindowUniversity($user);
+        abort_unless($university, 404);
+
         $validated = $request->validate([
             'open' => 'required|boolean',
         ]);
 
-        $semester->update([
+        $university->update([
             'prefinal_marks_open' => $validated['open'],
             'prefinal_marks_opened_by' => $validated['open'] ? $user->id : null,
             'prefinal_marks_opened_at' => $validated['open'] ? now() : null,
@@ -417,14 +416,23 @@ class MarkSubmissionController extends Controller
         return redirect()
             ->route('marks.submission-queue')
             ->with('success', $validated['open']
-                ? "Pre-final mark entry opened for {$semester->name} {$semester->academic_year}."
-                : "Pre-final mark entry closed for {$semester->name} {$semester->academic_year}.");
+                ? "Pre-final mark entry enabled for {$university->name}."
+                : "Pre-final mark entry disabled for {$university->name}.");
     }
 
     private function canManagePrefinalWindow($user): bool
     {
         return $user->hasRole('super_administrator')
             || ($user->hasRole('examination_administrator') && $user->hasPermission('marks.manage_prefinal_window'));
+    }
+
+    private function prefinalWindowUniversity($user): ?University
+    {
+        if ($user->university_id) {
+            return University::find($user->university_id);
+        }
+
+        return University::count() === 1 ? University::first() : null;
     }
 
     private function normalizeMarkIds(Request $request): void

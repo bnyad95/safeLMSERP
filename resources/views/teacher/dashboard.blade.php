@@ -328,7 +328,7 @@
                         </section>
                     @elseif($filters['tab'] === 'grades')
                         @php
-                            $prefinalWindowOpen = (bool) $selectedSection?->semester?->prefinal_marks_open;
+                            $prefinalWindowOpen = (bool) $selectedSection?->semester?->university?->prefinal_marks_open;
                         @endphp
                         <section x-data="{ editing: false }" class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                             <div class="flex flex-col gap-2 border-b border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -337,12 +337,12 @@
                                     <p class="mt-1 text-sm text-gray-500">{{ $stats['prefinal_marks_entered'] }} pre-final marks entered - final exam scores are entered by the examination committee</p>
                                 </div>
                                 @if($canManageClassroom)
-                                    <button type="button" x-show="! editing" x-on:click="editing = true" @disabled(! $prefinalWindowOpen) title="{{ $prefinalWindowOpen ? '' : 'The examination administrator has not opened pre-final mark entry for this semester yet.' }}" class="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 disabled:hover:bg-gray-300">Enter pre-final marks</button>
+                                    <button type="button" x-show="! editing" x-on:click="editing = true" @disabled(! $prefinalWindowOpen) title="{{ $prefinalWindowOpen ? '' : 'The examination administrator has not enabled pre-final mark entry yet.' }}" class="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 disabled:hover:bg-gray-300">Enter pre-final marks</button>
                                 @endif
                             </div>
                             @if($canManageClassroom && ! $prefinalWindowOpen)
                                 <div class="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
-                                    Pre-final mark entry is closed for {{ $selectedSection?->semester?->name }} {{ $selectedSection?->semester?->academic_year }}. The examination administrator must open it before you can save marks.
+                                    Pre-final mark entry is disabled. The examination administrator must enable it before you can save marks.
                                 </div>
                             @endif
                             @if($canManageClassroom)
@@ -370,7 +370,7 @@
                                                             <span x-show="! editing" class="text-sm font-semibold text-gray-800">{{ is_null($mark?->prefinal_mark) ? '-' : number_format((float) $mark->prefinal_mark, 2) }}</span>
                                                             <div x-show="editing" x-cloak>
                                                                 <input type="number" name="prefinal_marks[{{ $student->id }}]" value="{{ old('prefinal_marks.'.$student->id, $mark?->prefinal_mark) }}" min="0" max="{{ config('academics.prefinal_mark_max', 100) }}" step="0.01" @disabled($rowDisabled) class="w-28 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500">
-                                                                @if($locked)<p class="mt-1 text-xs text-gray-500">Locked</p>@elseif(! $prefinalWindowOpen)<p class="mt-1 text-xs text-gray-500">Entry closed</p>@endif
+                                                                @if($locked)<p class="mt-1 text-xs text-gray-500">Locked</p>@elseif(! $prefinalWindowOpen)<p class="mt-1 text-xs text-gray-500">Entry disabled</p>@endif
                                                             </div>
                                                         @else
                                                             <span class="text-sm font-semibold text-gray-800">{{ is_null($mark?->prefinal_mark) ? '-' : number_format((float) $mark->prefinal_mark, 2) }}</span>

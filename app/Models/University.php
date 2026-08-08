@@ -32,6 +32,9 @@ class University extends Model
         'institution_type',
         'expected_stage_count',
         'expected_semesters_per_year',
+        'prefinal_marks_open',
+        'prefinal_marks_opened_by',
+        'prefinal_marks_opened_at',
     ];
 
     protected function casts(): array
@@ -39,6 +42,8 @@ class University extends Model
         return [
             'expected_stage_count' => 'integer',
             'expected_semesters_per_year' => 'integer',
+            'prefinal_marks_open' => 'boolean',
+            'prefinal_marks_opened_at' => 'datetime',
         ];
     }
 
@@ -112,5 +117,10 @@ class University extends Model
     public function teachers()
     {
         return $this->hasMany(Teacher::class);
+    }
+
+    public function prefinalMarksOpener()
+    {
+        return $this->belongsTo(User::class, 'prefinal_marks_opened_by');
     }
 }

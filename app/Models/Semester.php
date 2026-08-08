@@ -10,7 +10,7 @@ class Semester extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['university_id', 'academic_year_id', 'name', 'term_type', 'sequence', 'academic_year', 'start_date', 'end_date', 'prefinal_marks_open', 'prefinal_marks_opened_by', 'prefinal_marks_opened_at'];
+    protected $fillable = ['university_id', 'academic_year_id', 'name', 'term_type', 'sequence', 'academic_year', 'start_date', 'end_date'];
 
     protected function casts(): array
     {
@@ -18,8 +18,6 @@ class Semester extends Model
             'sequence' => 'integer',
             'start_date' => 'date',
             'end_date' => 'date',
-            'prefinal_marks_open' => 'boolean',
-            'prefinal_marks_opened_at' => 'datetime',
         ];
     }
 
@@ -69,10 +67,5 @@ class Semester extends Model
     public function isLocked(): bool
     {
         return $this->academicYear?->isLocked() ?? false;
-    }
-
-    public function prefinalMarksOpener()
-    {
-        return $this->belongsTo(User::class, 'prefinal_marks_opened_by');
     }
 }
