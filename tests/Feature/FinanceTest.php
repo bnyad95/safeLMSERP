@@ -1488,6 +1488,65 @@ class FinanceTest extends TestCase
         ]);
     }
 
+    public function test_finance_administrator_can_post_a_payment_immediately_without_approval(): void
+    {
+        $financeAdministrator = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.record_payment']);
+        $student = $this->makeStudent();
+        $financeAdministrator->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($financeAdministrator)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'payment',
+                'amount' => 100,
+                'currency' => 'USD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'payment',
+            'status' => 'paid',
+            'posting_status' => 'posted',
+            'payment_status' => 'paid',
+        ]);
+    }
+
+    public function test_finance_administrator_collected_tuition_payment_posts_immediately(): void
+    {
+        $financeAdministrator = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
+        $student = $this->makeStudent();
+        $financeAdministrator->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($financeAdministrator)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => 500,
+                'currency' => 'USD',
+                'status' => 'pending',
+                'payment_plan' => 'full',
+                'collect_now' => 1,
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'payment',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'paid',
+            'approved_by' => $financeAdministrator->id,
+        ]);
+        $this->assertDatabaseHas('tuition_agreements', [
+            'student_id' => $student->id,
+            'status' => 'completed',
+        ]);
+    }
+
     public function test_invoice_with_allocated_payment_cannot_be_voided(): void
     {
         $admin = $this->makeSuperAdmin();

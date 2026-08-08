@@ -263,4 +263,40 @@ class NotificationCalendarTest extends TestCase
 
         $this->assertNotNull($notification->fresh()->read_at);
     }
+
+    public function test_sidebar_indicator_reflects_actual_unread_status_not_just_page_visits(): void
+    {
+        $user = $this->makeRoleUser('administrator');
+        $notification = AppNotification::create([
+            'user_id' => $user->id,
+            'type' => 'general',
+            'severity' => 'info',
+            'title' => 'Sidebar indicator check',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Unread notifications', false);
+
+        // Merely visiting the notifications page must not clear the sidebar
+        // indicator while the notification is still unread.
+        $this->actingAs($user)
+            ->get(route('notifications.index'))
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Unread notifications', false);
+
+        $this->actingAs($user)
+            ->patch(route('notifications.read', $notification))
+            ->assertRedirect(route('notifications.index'));
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('Unread notifications', false);
+    }
 }

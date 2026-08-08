@@ -62,19 +62,23 @@
 
         @unless(Auth::user()?->hasAnyRole(['student', 'parent_user', 'librarian', 'it_support']))
         <div class="border-b border-gray-200 p-4 dark:border-gray-800">
-            <form method="GET" action="{{ route('search') }}" class="relative space-y-2" data-live-search data-suggestions-url="{{ route('search.suggestions') }}">
-                <input
-                    type="text"
-                    name="q"
-                    autocomplete="off"
-                    data-live-search-input
-                    value="{{ request('q') }}"
-                    placeholder="Search ERP..."
-                    class="w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
-                />
-                <button type="submit" class="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">
-                    Search
-                </button>
+            <form method="GET" action="{{ route('search') }}" class="relative" data-live-search data-suggestions-url="{{ route('search.suggestions') }}">
+                <div class="relative">
+                    <input
+                        type="text"
+                        name="q"
+                        autocomplete="off"
+                        data-live-search-input
+                        value="{{ request('q') }}"
+                        placeholder="Search ERP..."
+                        class="w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+                    />
+                    <button type="submit" aria-label="Search" class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m1.35-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </button>
+                </div>
                 <div class="absolute left-0 right-0 top-full z-50 mt-2 hidden rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900" data-live-search-results></div>
             </form>
         </div>
@@ -95,8 +99,6 @@
                             ->value('id');
                     }
 
-                    $sidebarSeenAtRaw = session('notifications_sidebar_seen_at');
-
                     $hasNewNotifications = \App\Models\AppNotification::query()
                         ->where(function ($query) use ($sidebarUser, $sidebarStudentId) {
                             $query->where('user_id', $sidebarUser->id);
@@ -105,18 +107,17 @@
                                 $query->orWhere('student_id', $sidebarStudentId);
                             }
                         })
-                        ->when($sidebarSeenAtRaw, function ($query, $sidebarSeenAtRaw) {
-                            $query->where('created_at', '>', \Illuminate\Support\Carbon::parse($sidebarSeenAtRaw));
-                        }, function ($query) {
-                            $query->whereNull('read_at');
-                        })
+                        ->whereNull('read_at')
                         ->exists();
                 @endphp
                 <x-nav-link :href="$sidebarUsesStudentPortal ? route('student-portal') : route('dashboard')" :active="request()->routeIs('dashboard', 'finance.dashboard') || ($sidebarUsesStudentPortal && request()->routeIs('student-portal'))">
                     {{ __('Dashboard') }}
                 </x-nav-link>
-                <x-nav-link :href="route('notifications.index')" :active="request()->routeIs('notifications.*')" :class="$hasNewNotifications && ! request()->routeIs('notifications.*') ? 'font-bold text-gray-900 dark:text-gray-100' : ''">
-                    {{ __('Notifications') }}
+                <x-nav-link :href="route('notifications.index')" :active="request()->routeIs('notifications.*')">
+                    <span class="flex-1">{{ __('Notifications') }}</span>
+                    @if($hasNewNotifications)
+                        <span class="ml-2 h-2 w-2 shrink-0 rounded-full bg-red-500" aria-label="{{ __('Unread notifications') }}"></span>
+                    @endif
                 </x-nav-link>
                 @if ($sidebarUsesStudentPortal)
                     <x-nav-link :href="route('student.finance')" :active="request()->routeIs('student.finance')">
@@ -181,95 +182,120 @@
                             || $navUser->hasRole('administrator')
                             || $navUser->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
                         $canUserManagement = $isSuper || ($navUser->hasRole('it_support') && $navUser->hasAnyPermission(['users.create', 'users.update', 'users.assign_roles', 'users.reset_password']));
+
+                        $academicSectionActive = request()->routeIs('students.*', 'teachers.*', 'enrollments.*', 'course-sections.show', 'timetables.*', 'timetable-time-slots.*', 'attendance', 'attendance.*');
+                        $learningSectionActive = request()->routeIs('teacher-dashboard', 'classrooms.*', 'archived-classes.*', 'assessments.*', 'assessment-items.*', 'assessment-submissions.*', 'exams', 'marks.final-exam.*', 'marks.submission-queue', 'academic-year-closures.archive', 'academic-year-closures.archive.show');
+                        $reportsSectionActive = request()->routeIs('analytics.*');
+                        $financeSectionActive = request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export', 'finance.approvals.*', 'finance.tuition-reminders.*');
+                        $operationsSectionActive = request()->routeIs('integrations.*');
+                        $setupSectionActive = request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore', 'academic-year-closures.index', 'academic-year-closures.archive', 'academic-year-closures.archive.show');
+                        $systemSectionActive = request()->routeIs('users.*', 'access-matrix', 'activity-log');
                     @endphp
 
                     @if($canStudents || $canTeachers || $canEnrollments || $canTimetable || $canAttendance)
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Academic</p>
-                        @if($canStudents)<x-nav-link :href="route('students.index')" :active="request()->routeIs('students.*')">{{ __('Student Records') }}</x-nav-link>@endif
-                        @if($canTeachers)<x-nav-link :href="route('teachers.index')" :active="request()->routeIs('teachers.*')">{{ __('Teachers') }}</x-nav-link>@endif
-                        @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.show')">{{ __('Enrollments') }}</x-nav-link>@endif
-                        @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
-                        @if($canAttendance)<x-nav-link :href="route('attendance')" :active="request()->routeIs('attendance', 'attendance.*')">{{ __('Attendance') }}</x-nav-link>@endif
+                        <x-nav-group label="Academic" storage-key="academic" :active="$academicSectionActive">
+                            @if($canStudents)<x-nav-link :href="route('students.index')" :active="request()->routeIs('students.*')">{{ __('Student Records') }}</x-nav-link>@endif
+                            @if($canTeachers)<x-nav-link :href="route('teachers.index')" :active="request()->routeIs('teachers.*')">{{ __('Teachers') }}</x-nav-link>@endif
+                            @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.show')">{{ __('Enrollments') }}</x-nav-link>@endif
+                            @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
+                            @if($canAttendance)<x-nav-link :href="route('attendance')" :active="request()->routeIs('attendance', 'attendance.*')">{{ __('Attendance') }}</x-nav-link>@endif
+                        </x-nav-group>
                     @endif
 
                     @if($canClassrooms || $canAssessments || $canExams || $canMarkQueue || $canFinalExamEntry || ($canAcademicArchive && ! $canStructure))
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Learning &amp; Results</p>
-                        @if($canClassrooms)<x-nav-link :href="$usesTeachingWorkspace ? route('teacher-dashboard') : route('classrooms.index')" :active="request()->routeIs('teacher-dashboard', 'classrooms.*')">{{ $usesTeachingWorkspace ? __('Teaching') : __('Classrooms') }}</x-nav-link>@endif
-                        @if($navUser->hasRole('teacher'))<x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>@endif
-                        @if($canAssessments)<x-nav-link :href="route('assessments.index')" :active="request()->routeIs('assessments.*', 'assessment-items.*', 'assessment-submissions.*')">{{ $assessmentNavLabel }}</x-nav-link>@endif
-                        @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
-                        @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ __('Final Exam Entry') }}</x-nav-link>@endif
-                        @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
-                        @if($canAcademicArchive && ! $canStructure)<x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>@endif
+                        <x-nav-group label="Learning & Results" storage-key="learning" :active="$learningSectionActive">
+                            @if($canClassrooms)<x-nav-link :href="$usesTeachingWorkspace ? route('teacher-dashboard') : route('classrooms.index')" :active="request()->routeIs('teacher-dashboard', 'classrooms.*')">{{ $usesTeachingWorkspace ? __('Teaching') : __('Classrooms') }}</x-nav-link>@endif
+                            @if($navUser->hasRole('teacher'))<x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>@endif
+                            @if($canAssessments)<x-nav-link :href="route('assessments.index')" :active="request()->routeIs('assessments.*', 'assessment-items.*', 'assessment-submissions.*')">{{ $assessmentNavLabel }}</x-nav-link>@endif
+                            @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
+                            @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ __('Final Exam Entry') }}</x-nav-link>@endif
+                            @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
+                            @if($canAcademicArchive && ! $canStructure)<x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>@endif
+                        </x-nav-group>
                     @endif
 
                     @if($canAnalytics)
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Reports &amp; Analytics</p>
-                        <x-nav-link :href="route('analytics.index')" :active="request()->routeIs('analytics.*')">{{ __('Institution Analytics') }}</x-nav-link>
+                        <x-nav-group label="Reports & Analytics" storage-key="reports" :active="$reportsSectionActive">
+                            <x-nav-link :href="route('analytics.index')" :active="request()->routeIs('analytics.*')">{{ __('Institution Analytics') }}</x-nav-link>
+                        </x-nav-group>
                     @endif
 
                     @if($canFinance)
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Accounting &amp; Finance</p>
-                        <x-nav-link :href="route('finance')" :active="request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export')">{{ __('Student Finance') }}</x-nav-link>
-                        @if($canFinanceApprovals)<x-nav-link :href="route('finance.approvals.index')" :active="request()->routeIs('finance.approvals.*')">{{ __('Finance Approvals') }}</x-nav-link>@endif
-                        @if($canTuitionReminders)<x-nav-link :href="route('finance.tuition-reminders.index')" :active="request()->routeIs('finance.tuition-reminders.*')">{{ __('Tuition Reminders') }}</x-nav-link>@endif
+                        <x-nav-group label="Accounting & Finance" storage-key="finance" :active="$financeSectionActive">
+                            <x-nav-link :href="route('finance')" :active="request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export')">{{ __('Student Finance') }}</x-nav-link>
+                            @if($canFinanceApprovals)<x-nav-link :href="route('finance.approvals.index')" :active="request()->routeIs('finance.approvals.*')">{{ __('Finance Approvals') }}</x-nav-link>@endif
+                            @if($canTuitionReminders)<x-nav-link :href="route('finance.tuition-reminders.index')" :active="request()->routeIs('finance.tuition-reminders.*')">{{ __('Tuition Reminders') }}</x-nav-link>@endif
+                        </x-nav-group>
                     @endif
 
                     @if($canDataExchange)
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Operations</p>
-                        <x-nav-link :href="route('integrations.index')" :active="request()->routeIs('integrations.*')">{{ __('Data Import / Export') }}</x-nav-link>
+                        <x-nav-group label="Operations" storage-key="operations" :active="$operationsSectionActive">
+                            <x-nav-link :href="route('integrations.index')" :active="request()->routeIs('integrations.*')">{{ __('Data Import / Export') }}</x-nav-link>
+                        </x-nav-group>
                     @endif
 
                     @if($canStructure)
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">Academic Setup</p>
-                        <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore')">{{ __('Bologna Definition') }}</x-nav-link>
-                        <x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>
-                        <x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>
+                        <x-nav-group label="Academic Setup" storage-key="setup" :active="$setupSectionActive">
+                            <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore')">{{ __('Bologna Definition') }}</x-nav-link>
+                            <x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>
+                            <x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>
+                        </x-nav-group>
                     @endif
 
                     @if($canUserManagement || $isSuper)
-                        <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">System</p>
-                        @if($canUserManagement)<x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">{{ __('User Management') }}</x-nav-link>@endif
-                        @if($isSuper)<x-nav-link :href="route('access-matrix')" :active="request()->routeIs('access-matrix')">{{ __('Access Matrix') }}</x-nav-link>@endif
-                        @if($isSuper)<x-nav-link :href="route('activity-log')" :active="request()->routeIs('activity-log')">{{ __('Activity Log') }}</x-nav-link>@endif
+                        <x-nav-group label="System" storage-key="system" :active="$systemSectionActive">
+                            @if($canUserManagement)<x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">{{ __('User Management') }}</x-nav-link>@endif
+                            @if($isSuper)<x-nav-link :href="route('access-matrix')" :active="request()->routeIs('access-matrix')">{{ __('Access Matrix') }}</x-nav-link>@endif
+                            @if($isSuper)<x-nav-link :href="route('activity-log')" :active="request()->routeIs('activity-log')">{{ __('Activity Log') }}</x-nav-link>@endif
+                        </x-nav-group>
                     @endif
                 @endif
             </div>
         </div>
 
-        <div class="border-t border-gray-200 p-4 dark:border-gray-800">
+        <div class="border-t border-gray-200 p-3 dark:border-gray-800">
             <button
                 type="button"
                 @click="toggleTheme()"
-                class="mb-4 flex w-full items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800"
+                class="mb-2 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-400 dark:hover:bg-gray-800"
                 :aria-pressed="darkMode.toString()"
+                :aria-label="darkMode ? 'Dark mode' : 'Light mode'"
             >
-                <span x-text="darkMode ? 'Dark mode' : 'Light mode'">Theme</span>
-                <span class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition dark:bg-indigo-600">
+                <span class="flex items-center gap-1.5">
+                    <svg x-show="!darkMode" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                    </svg>
+                    <svg x-show="darkMode" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                    </svg>
+                    <span x-text="darkMode ? 'Dark mode' : 'Light mode'">Theme</span>
+                </span>
+                <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-gray-300 transition dark:bg-indigo-600">
                     <span
-                        class="inline-block h-5 w-5 rounded-full bg-white shadow transition"
-                        :class="darkMode ? 'translate-x-5' : 'translate-x-1'"
+                        class="inline-block h-4 w-4 rounded-full bg-white shadow transition"
+                        :class="darkMode ? 'translate-x-4' : 'translate-x-0.5'"
                     ></span>
                 </span>
             </button>
 
-            <div class="mb-3 min-w-0">
-                <div class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ Auth::user()->name }}</div>
-                <div class="truncate text-xs text-gray-500 dark:text-gray-400">{{ Auth::user()->email }}</div>
-            </div>
+            <div class="flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800">
+                <a href="{{ route('profile.edit') }}" class="min-w-0 flex-1" title="{{ Auth::user()?->hasRole('student') ? __('Account Settings') : __('Profile') }}">
+                    <div class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ Auth::user()->name }}</div>
+                    <div class="truncate text-xs text-gray-500 dark:text-gray-400">{{ Auth::user()->email }}</div>
+                </a>
 
-            <div class="space-y-1">
-                <x-nav-link :href="route('profile.edit')" :active="request()->routeIs('profile.edit')">
-                    {{ Auth::user()?->hasRole('student') ? __('Account Settings') : __('Profile') }}
-                </x-nav-link>
-
-                <form method="POST" action="{{ route('logout') }}">
+                <form method="POST" action="{{ route('logout') }}" class="shrink-0">
                     @csrf
-                    <x-nav-link :href="route('logout')"
-                            onclick="event.preventDefault();
-                                        this.closest('form').submit();">
-                        {{ __('Log Out') }}
-                    </x-nav-link>
+                    <button
+                        type="submit"
+                        title="{{ __('Log Out') }}"
+                        aria-label="{{ __('Log Out') }}"
+                        class="rounded-md p-1.5 text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l3 3m0 0-3 3m3-3H3" />
+                        </svg>
+                    </button>
                 </form>
             </div>
         </div>

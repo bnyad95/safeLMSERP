@@ -481,7 +481,7 @@ class FinanceController extends Controller
         abort_if($allowedEntryTypes === [], 403);
 
         $student->load(['department.college', 'university']);
-        $canPostImmediately = $user->hasRole('super_administrator');
+        $canPostImmediately = $user->hasAnyRole(['super_administrator', 'chief_accountant']);
 
         return view('finance.create', [
             'selectedStudent' => $student,
@@ -645,7 +645,7 @@ class FinanceController extends Controller
             $validated['payment_status'] = $ledger->paymentStatusForTransaction($validated);
             $transactions = $this->createFinanceTransactions(
                 $validated,
-                $request->user()->hasRole('super_administrator')
+                $request->user()->hasAnyRole(['super_administrator', 'chief_accountant'])
             );
 
             if ($transactions->isNotEmpty()) {
@@ -1782,7 +1782,7 @@ class FinanceController extends Controller
     private function validateFinancePostingAuthority(Request $request, array $validated): void
     {
         $user = $request->user();
-        if ($user->hasRole('super_administrator')) {
+        if ($user->hasAnyRole(['super_administrator', 'chief_accountant'])) {
             return;
         }
 
