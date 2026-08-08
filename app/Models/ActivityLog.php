@@ -27,4 +27,9 @@ class ActivityLog extends Model
     {
         return $this->morphTo();
     }
+
+    public function subject()
+    {
+        return $this->morphTo();
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
+use App\Models\ActivityLog;
 use App\Models\AssessmentItem;
 use App\Models\AssessmentSubmission;
 use App\Models\Attendance;
@@ -2033,10 +2034,27 @@ class ErpController extends Controller
                         ]);
                     }
 
-                    TuitionRate::updateOrCreate(
+                    $tuitionRate = TuitionRate::updateOrCreate(
                         ['department_id' => $department->id, 'academic_year_id' => $academicYear->id, 'currency' => $currency],
                         ['rate_per_credit' => round($rate, 2), 'created_by' => $user->id]
                     );
+
+                    if ($tuitionRate->wasRecentlyCreated || $tuitionRate->wasChanged()) {
+                        ActivityLog::create([
+                            'log_name' => 'tuition_rate',
+                            'description' => 'rate_saved',
+                            'subject_type' => TuitionRate::class,
+                            'subject_id' => $tuitionRate->id,
+                            'causer_type' => User::class,
+                            'causer_id' => $user->id,
+                            'properties' => [
+                                'department_id' => $department->id,
+                                'academic_year_id' => $academicYear->id,
+                                'currency' => $currency,
+                                'rate_per_credit' => round($rate, 2),
+                            ],
+                        ]);
+                    }
                 }
             }
         }

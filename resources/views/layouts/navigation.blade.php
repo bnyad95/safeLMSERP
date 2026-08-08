@@ -231,6 +231,7 @@
                         <p class="px-3 pb-1 pt-4 text-xs font-semibold uppercase text-gray-400">System</p>
                         @if($canUserManagement)<x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">{{ __('User Management') }}</x-nav-link>@endif
                         @if($isSuper)<x-nav-link :href="route('access-matrix')" :active="request()->routeIs('access-matrix')">{{ __('Access Matrix') }}</x-nav-link>@endif
+                        @if($isSuper)<x-nav-link :href="route('activity-log')" :active="request()->routeIs('activity-log')">{{ __('Activity Log') }}</x-nav-link>@endif
                     @endif
                 @endif
             </div>

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\Enrollment;
 use App\Models\FinanceTransaction;
 use App\Models\Semester;
@@ -164,6 +165,22 @@ class TuitionChargeService
             $ledger->refreshAllocatedInvoice($invoice->fresh());
             $agreement->increment('total_amount', $totalAmount);
             $ledger->synchronizeFinanceHold($student);
+
+            ActivityLog::create([
+                'log_name' => 'finance_transaction',
+                'description' => 'tuition_charge_generated',
+                'subject_type' => FinanceTransaction::class,
+                'subject_id' => $invoice->id,
+                'causer_type' => User::class,
+                'causer_id' => $actor->id,
+                'properties' => [
+                    'student_id' => $student->id,
+                    'semester_id' => $semester->id,
+                    'currency' => $currency,
+                    'amount' => $totalAmount,
+                    'enrollment_count' => $lines->count(),
+                ],
+            ]);
 
             return [
                 'ok' => true,

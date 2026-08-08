@@ -157,13 +157,13 @@ class MarkSubmissionService
             'subject_id' => $mark->id,
             'causer_type' => User::class,
             'causer_id' => Auth::id(),
-            'properties' => json_encode([
+            'properties' => [
                 'mark_id' => $mark->id,
                 'student_id' => $mark->student_id,
                 'course_id' => $mark->course_id,
                 'final_mark' => $mark->final_mark,
                 'status' => $status,
-            ]),
+            ],
         ]);
     }
 
@@ -176,12 +176,12 @@ class MarkSubmissionService
             'subject_id' => $mark->id,
             'causer_type' => User::class,
             'causer_id' => Auth::id(),
-            'properties' => json_encode([
+            'properties' => [
                 'mark_id' => $mark->id,
                 'status' => $status,
                 'reviewer_notes' => $notes,
                 'reviewed_by' => Auth::id(),
-            ]),
+            ],
         ]);
     }
 
@@ -194,12 +194,12 @@ class MarkSubmissionService
             'subject_id' => $mark->id,
             'causer_type' => User::class,
             'causer_id' => Auth::id(),
-            'properties' => json_encode([
+            'properties' => [
                 'mark_id' => $mark->id,
                 'student_id' => $mark->student_id,
                 'course_id' => $mark->course_id,
                 'published_at' => now(),
-            ]),
+            ],
         ]);
     }
 }

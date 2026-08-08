@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AcademicYearClosureController;
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\ArchivedClassController;
 use App\Http\Controllers\AssessmentController;
@@ -261,6 +262,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('users', UserManagementController::class)
         ->only(['index', 'create', 'store', 'edit', 'update'])
         ->middleware('role.any:super_administrator,it_support');
+    Route::get('/activity-log', [ActivityLogController::class, 'index'])
+        ->middleware('role.any:super_administrator')
+        ->name('activity-log');
     Route::get('/exams', [ErpController::class, 'exams'])
         ->middleware('role.any:administrator,super_administrator,university_administrator,college_administrator,department_administrator,examination_administrator,examination_committee')
         ->middleware('permission.any:marks.view,marks.review,marks.approve,marks.publish')

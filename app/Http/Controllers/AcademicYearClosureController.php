@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
 use App\Models\AcademicYearClosure;
+use App\Models\ActivityLog;
 use App\Models\AssessmentItem;
 use App\Models\AssessmentSubmission;
 use App\Models\Attendance;
@@ -589,7 +590,7 @@ class AcademicYearClosureController extends Controller
             $closureSummary['snapshot']['progression'] = $progressionReport;
             $this->archiveYearRecords($closureSummary, $validated['academic_year'], $university->id);
 
-            AcademicYearClosure::updateOrCreate(
+            $closure = AcademicYearClosure::updateOrCreate(
                 [
                     'university_id' => $university->id,
                     'academic_year' => $validated['academic_year'],
@@ -605,6 +606,19 @@ class AcademicYearClosureController extends Controller
             AcademicYear::where('university_id', $university->id)
                 ->where('name', $validated['academic_year'])
                 ->update(['status' => 'closed']);
+
+            ActivityLog::create([
+                'log_name' => 'academic_year_closure',
+                'description' => 'year_closed',
+                'subject_type' => AcademicYearClosure::class,
+                'subject_id' => $closure->id,
+                'causer_type' => User::class,
+                'causer_id' => $request->user()->id,
+                'properties' => array_merge(
+                    ['academic_year' => $validated['academic_year'], 'university_id' => $university->id],
+                    $closureSummary['snapshot']
+                ),
+            ]);
         });
 
         return redirect()

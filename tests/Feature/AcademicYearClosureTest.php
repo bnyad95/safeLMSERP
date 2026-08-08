@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AcademicYearClosure;
+use App\Models\ActivityLog;
 use App\Models\AssessmentItem;
 use App\Models\Attendance;
 use App\Models\ClassMessage;
@@ -437,6 +438,14 @@ class AcademicYearClosureTest extends TestCase
         ]);
         $this->assertSoftDeleted('finance_transactions', ['id' => $invoice->id]);
         $this->assertSame('open', FinanceTransaction::withTrashed()->find($invoice->id)?->payment_status);
+
+        $closureLog = ActivityLog::where('log_name', 'academic_year_closure')->first();
+        $this->assertNotNull($closureLog);
+        $this->assertSame('year_closed', $closureLog->description);
+        $this->assertSame(AcademicYearClosure::class, $closureLog->subject_type);
+        $this->assertSame($user->id, $closureLog->causer_id);
+        $this->assertIsArray($closureLog->properties);
+        $this->assertSame($setup['semester']->academic_year, $closureLog->properties['academic_year']);
 
         $this->actingAs($user)
             ->get(route('academic-year-closures.archive.show', ['academic_year' => $setup['semester']->academic_year]))

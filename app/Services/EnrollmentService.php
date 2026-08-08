@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\CourseSection;
 use App\Models\Enrollment;
 use App\Models\EnrollmentEvent;
@@ -328,6 +329,20 @@ class EnrollmentService
             'notes' => $notes,
             'metadata' => $metadata ?: null,
             'occurred_at' => now(),
+        ]);
+
+        ActivityLog::create([
+            'log_name' => 'enrollment',
+            'description' => $action,
+            'subject_type' => Enrollment::class,
+            'subject_id' => $enrollment->id,
+            'causer_type' => User::class,
+            'causer_id' => $actor->id,
+            'properties' => array_merge([
+                'student_id' => $enrollment->student_id,
+                'course_section_id' => $enrollment->course_section_id,
+                'notes' => $notes,
+            ], $metadata),
         ]);
     }
 

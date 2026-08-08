@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
+use App\Models\ActivityLog;
 use App\Models\AppNotification;
 use App\Models\FinanceTransaction;
 use App\Models\Semester;
@@ -652,6 +653,7 @@ class FinanceController extends Controller
                 $ledger->recalculateStudentBalances((int) $firstTransaction->student_id, $firstTransaction->currency);
                 $transactions->each(fn (FinanceTransaction $transaction) => $ledger->refreshAllocatedInvoice($transaction->fresh()));
                 $ledger->synchronizeFinanceHold($firstTransaction->student()->with('user')->first());
+                $transactions->each(fn (FinanceTransaction $transaction) => $this->logFinanceActivity($transaction, "{$transaction->type}_created", $request->user()));
             }
 
             return $transactions;
@@ -714,6 +716,7 @@ class FinanceController extends Controller
             $ledger->recalculateStudentBalances((int) $financeTransaction->student_id, $financeTransaction->currency);
             $ledger->refreshAllocatedInvoice($financeTransaction);
             $ledger->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
+            $this->logFinanceActivity($financeTransaction, 'transaction_approved', $request->user());
 
             return true;
         });
@@ -775,6 +778,7 @@ class FinanceController extends Controller
                     'voided_at' => now(),
                     'notes' => $validated['notes'],
                 ]);
+                $this->logFinanceActivity($financeTransaction, 'transaction_voided', $request->user(), ['notes' => $validated['notes']]);
 
                 return;
             }
@@ -822,6 +826,7 @@ class FinanceController extends Controller
             $ledger->refreshAllocatedInvoice($financeTransaction);
             $ledger->refreshAllocatedInvoice($reversal);
             $ledger->synchronizeFinanceHold($financeTransaction->student()->with('user')->first());
+            $this->logFinanceActivity($financeTransaction, 'transaction_voided', $request->user(), ['notes' => $validated['notes'], 'reversal_transaction_id' => $reversal->id]);
         });
 
         return redirect()
@@ -2041,5 +2046,23 @@ class FinanceController extends Controller
     private function reversalType(string $type): string
     {
         return in_array($type, FinanceTransaction::creditTypes(), true) ? 'refund' : 'discount';
+    }
+
+    private function logFinanceActivity(FinanceTransaction $transaction, string $description, User $actor, array $extra = []): void
+    {
+        ActivityLog::create([
+            'log_name' => 'finance_transaction',
+            'description' => $description,
+            'subject_type' => FinanceTransaction::class,
+            'subject_id' => $transaction->id,
+            'causer_type' => User::class,
+            'causer_id' => $actor->id,
+            'properties' => array_merge([
+                'student_id' => $transaction->student_id,
+                'type' => $transaction->type,
+                'amount' => $transaction->amount,
+                'currency' => $transaction->currency,
+            ], $extra),
+        ]);
     }
 }
