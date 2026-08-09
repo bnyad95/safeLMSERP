@@ -218,6 +218,105 @@ class TuitionChargeService
         });
     }
 
+    /**
+     * Bills the next installment of every active multi-semester tuition plan
+     * in this semester's university that still has installments remaining.
+     * Called when a new semester is created, so a student can be signed up
+     * for an N-semester plan (e.g. a full 8-semester program) even though
+     * only the semesters that exist today can be invoiced right away.
+     */
+    public function generateNextInstallmentsForSemester(Semester $semester, User $actor): Collection
+    {
+        return DB::transaction(function () use ($semester, $actor) {
+            $semester->loadMissing('academicYear');
+
+            $agreements = TuitionAgreement::query()
+                ->whereHas('student', fn ($query) => $query->where('university_id', $semester->university_id))
+                ->whereNotNull('installment_count')
+                ->whereColumn('installments_generated', '<', 'installment_count')
+                ->where('status', '!=', 'cancelled')
+                ->lockForUpdate()
+                ->get();
+
+            $ledger = app(FinanceLedgerService::class);
+            $created = collect();
+
+            foreach ($agreements as $agreement) {
+                $alreadyInvoiced = FinanceTransaction::where('tuition_agreement_id', $agreement->id)
+                    ->where('semester_id', $semester->id)
+                    ->where('type', 'invoice')
+                    ->exists();
+
+                if ($alreadyInvoiced) {
+                    continue;
+                }
+
+                $isFinalInstallment = ($agreement->installment_count - $agreement->installments_generated) <= 1;
+                $amount = $isFinalInstallment
+                    ? round((float) $agreement->total_amount - ((float) $agreement->installment_amount * $agreement->installments_generated), 2)
+                    : (float) $agreement->installment_amount;
+
+                $invoicePayload = [
+                    'type' => 'invoice',
+                    'transaction_date' => now()->toDateString(),
+                    'due_date' => $semester->end_date?->toDateString(),
+                ];
+
+                $invoice = FinanceTransaction::create([
+                    'student_id' => $agreement->student_id,
+                    'tuition_agreement_id' => $agreement->id,
+                    'semester_id' => $semester->id,
+                    'recorded_by' => $actor->id,
+                    'approved_by' => $actor->id,
+                    'approved_at' => now(),
+                    'type' => 'invoice',
+                    'amount' => $amount,
+                    'currency' => $agreement->currency,
+                    'status' => 'approved',
+                    'posting_status' => 'posted',
+                    'invoice_number' => $ledger->documentNumber($invoicePayload, 'invoice_number'),
+                    'reference' => substr('Tuition installment - '.$semester->name.' '.($semester->academicYear->name ?? $semester->academic_year), 0, 100),
+                    'academic_year' => $semester->academicYear->name ?? $semester->academic_year,
+                    'transaction_date' => $invoicePayload['transaction_date'],
+                    'due_date' => $invoicePayload['due_date'],
+                    'balance_after' => $ledger->balanceAfter($agreement->student_id, 'invoice', $amount, $agreement->currency),
+                    'payment_status' => $ledger->paymentStatusForTransaction([
+                        'type' => 'invoice',
+                        'status' => 'approved',
+                        'due_date' => $invoicePayload['due_date'],
+                    ]),
+                ]);
+
+                $agreement->increment('installments_generated');
+
+                $ledger->recalculateStudentBalances($agreement->student_id, $agreement->currency);
+                $ledger->refreshAllocatedInvoice($invoice->fresh());
+                $ledger->synchronizeFinanceHold($agreement->student()->with('user')->first());
+
+                ActivityLog::create([
+                    'log_name' => 'finance_transaction',
+                    'description' => 'tuition_installment_generated',
+                    'subject_type' => FinanceTransaction::class,
+                    'subject_id' => $invoice->id,
+                    'causer_type' => User::class,
+                    'causer_id' => $actor->id,
+                    'properties' => [
+                        'tuition_agreement_id' => $agreement->id,
+                        'student_id' => $agreement->student_id,
+                        'semester_id' => $semester->id,
+                        'amount' => $amount,
+                        'installment_number' => $agreement->installments_generated,
+                        'installment_count' => $agreement->installment_count,
+                    ],
+                ]);
+
+                $created->push($invoice);
+            }
+
+            return $created;
+        });
+    }
+
     private function failure(string $message): array
     {
         return ['ok' => false, 'message' => $message];

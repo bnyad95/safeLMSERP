@@ -85,12 +85,12 @@ class MarkSubmissionTest extends TestCase
         if (! Role::where('name', 'examination_administrator')->exists()) {
             $role = Role::create(['name' => 'examination_administrator', 'display_name' => 'Examination Administrator']);
 
-            foreach (['marks.review', 'marks.approve', 'marks.publish', 'marks.request_change'] as $permissionName) {
-                $permission = Permission::create([
-                    'name' => $permissionName,
-                    'display_name' => $permissionName,
-                ]);
-                $role->permissions()->attach($permission);
+            foreach (['marks.enter_final_exam', 'marks.review', 'marks.approve', 'marks.publish', 'marks.request_change'] as $permissionName) {
+                $permission = Permission::firstOrCreate(
+                    ['name' => $permissionName],
+                    ['display_name' => $permissionName]
+                );
+                $role->permissions()->syncWithoutDetaching($permission);
             }
         }
         if (! Role::where('name', 'examination_committee')->exists()) {
@@ -196,14 +196,24 @@ class MarkSubmissionTest extends TestCase
         ]);
     }
 
-    public function test_examination_administrator_cannot_enter_final_exam_even_with_direct_permission()
+    public function test_examination_administrator_can_enter_final_exam_marks()
     {
-        $permission = Permission::where('name', 'marks.enter_final_exam')->firstOrFail();
-        $this->admin->permissionOverrides()->attach($permission->id, ['effect' => 'grant']);
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'submission_status' => 'draft',
+        ]);
 
         $this->actingAs($this->admin)
-            ->get(route('marks.final-exam.index'))
-            ->assertForbidden();
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 38,
+            ])
+            ->assertRedirect(route('marks.submission-queue'));
+
+        $this->assertSame(38.0, (float) $mark->fresh()->first_trial_final_exam);
     }
 
     public function test_closed_academic_year_blocks_final_exam_entry()
@@ -811,6 +821,61 @@ class MarkSubmissionTest extends TestCase
         $this->assertDatabaseHas('app_notifications', [
             'student_id' => $this->student->id,
             'type' => 'marks_corrected',
+        ]);
+    }
+
+    public function test_examination_administrator_can_correct_a_published_mark()
+    {
+        $mark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 38,
+            'final_mark' => 80,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now()->subDay(),
+            'final_exam_entered_by' => $this->committee->id,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('marks.final-exam.index'))
+            ->assertOk()
+            ->assertSee('Final Exam Entry')
+            ->assertSee($this->course->code);
+
+        $this->actingAs($this->admin)
+            ->get(route('marks.final-exam.course', $this->course))
+            ->assertOk()
+            ->assertSee('Published Marks', false)
+            ->assertSee('Save Correction')
+            ->assertSee('Students Waiting for Final Exam Entry');
+
+        $this->actingAs($this->admin)
+            ->post(route('marks.final-exam.store'), [
+                'mark_id' => $mark->id,
+                'trial' => 'first',
+                'score' => 40,
+                'change_reason' => 'Examination administrator corrected an entry mistake.',
+            ])
+            ->assertRedirect(route('marks.submission-queue'))
+            ->assertSessionHas('success', 'Published mark corrected and republished.');
+
+        $this->assertDatabaseHas('marks', [
+            'id' => $mark->id,
+            'first_trial_final_exam' => 40,
+            'final_mark' => 82,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'final_exam_entered_by' => $this->admin->id,
+        ]);
+        $this->assertDatabaseHas('mark_score_histories', [
+            'mark_id' => $mark->id,
+            'actor_id' => $this->admin->id,
+            'trial' => 'first',
+            'previous_score' => 38,
+            'new_score' => 40,
+            'reason' => 'Examination administrator corrected an entry mistake.',
         ]);
     }
 

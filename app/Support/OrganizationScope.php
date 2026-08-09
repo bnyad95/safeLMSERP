@@ -22,18 +22,7 @@ class OrganizationScope
             return;
         }
 
-        $scope = match (true) {
-            $roleNames->intersect(UserRolePolicy::DEPARTMENT_SCOPED_ROLES)->isNotEmpty() => 'department',
-            $roleNames->contains('college_administrator') => 'college',
-            $roleNames->intersect(UserRolePolicy::UNIVERSITY_SCOPED_ROLES)->isNotEmpty() => 'university',
-            $roleNames->intersect(UserRolePolicy::FLEXIBLE_SCOPED_ROLES)->isNotEmpty() => self::assignedScope($user),
-            $roleNames->intersect(['examination_administrator', 'examination_committee'])->isNotEmpty() => self::examinationScope($user),
-            $roleNames->contains('administrator') => null,
-            $roleNames->contains('hr_manager') => self::assignedScope($user),
-            self::hasDirectAcademicSetupGrant($user) => self::assignedScope($user),
-            self::hasTeacherManagementAccess($user) => self::assignedScope($user),
-            default => null,
-        };
+        $scope = self::resolveRoleScope($roleNames, $user);
 
         if (! $scope) {
             return;
@@ -65,9 +54,34 @@ class OrganizationScope
         };
     }
 
-    private static function examinationScope(User $user): ?string
+    /**
+     * True when apply() would leave the given user's query fully unrestricted
+     * for a non-finance_record/student model type — i.e. neither super
+     * administrator nor any role-based scope applies. Callers that also need
+     * to gate finance-specific data (which additionally recognizes a direct
+     * finance.view_global grant) must check that separately.
+     */
+    public static function isUnscoped(User $user): bool
     {
-        return self::assignedScope($user);
+        $roleNames = $user->roles->pluck('name');
+
+        return $roleNames->contains('super_administrator')
+            || self::resolveRoleScope($roleNames, $user) === null;
+    }
+
+    private static function resolveRoleScope($roleNames, User $user): ?string
+    {
+        return match (true) {
+            $roleNames->intersect(UserRolePolicy::DEPARTMENT_SCOPED_ROLES)->isNotEmpty() => 'department',
+            $roleNames->contains('college_administrator') => 'college',
+            $roleNames->intersect(UserRolePolicy::UNIVERSITY_SCOPED_ROLES)->isNotEmpty() => 'university',
+            $roleNames->intersect(UserRolePolicy::FLEXIBLE_SCOPED_ROLES)->isNotEmpty() => self::assignedScope($user),
+            $roleNames->contains('administrator') => null,
+            $roleNames->contains('hr_manager') => self::assignedScope($user),
+            self::hasDirectAcademicSetupGrant($user) => self::assignedScope($user),
+            self::hasTeacherManagementAccess($user) => self::assignedScope($user),
+            default => null,
+        };
     }
 
     private static function assignedScope(User $user): string

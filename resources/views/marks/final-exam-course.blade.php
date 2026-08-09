@@ -3,7 +3,7 @@
         <div>
             <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Final Exam Entry</p>
             <h2 class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ $course->code }} - {{ $course->name }}</h2>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Enter first-trial and eligible second-trial scores for this course.</p>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $canEnterFinalExam ? 'Enter first-trial and eligible second-trial scores for this course.' : 'Correct mistaken published scores for this course.' }}</p>
         </div>
     </x-slot>
 
@@ -25,21 +25,24 @@
                 </div>
             </section>
 
-            <section class="grid gap-3 md:grid-cols-3">
-                <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                    <p class="text-sm text-blue-800 dark:text-blue-200">Waiting first trial</p>
-                    <p class="mt-2 text-2xl font-semibold text-blue-950 dark:text-blue-100">{{ $finalExamStats['waiting_first_trial'] }}</p>
-                </div>
-                <div class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                    <p class="text-sm text-red-800 dark:text-red-200">Eligible second trial</p>
-                    <p class="mt-2 text-2xl font-semibold text-red-950 dark:text-red-100">{{ $finalExamStats['waiting_second_trial'] }}</p>
-                </div>
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
-                    <p class="text-sm text-emerald-800 dark:text-emerald-200">Ready for review</p>
-                    <p class="mt-2 text-2xl font-semibold text-emerald-950 dark:text-emerald-100">{{ $finalExamStats['ready_for_review'] }}</p>
-                </div>
-            </section>
+            @if($canEnterFinalExam)
+                <section class="grid gap-3 md:grid-cols-3">
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                        <p class="text-sm text-blue-800 dark:text-blue-200">Waiting first trial</p>
+                        <p class="mt-2 text-2xl font-semibold text-blue-950 dark:text-blue-100">{{ $finalExamStats['waiting_first_trial'] }}</p>
+                    </div>
+                    <div class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                        <p class="text-sm text-red-800 dark:text-red-200">Eligible second trial</p>
+                        <p class="mt-2 text-2xl font-semibold text-red-950 dark:text-red-100">{{ $finalExamStats['waiting_second_trial'] }}</p>
+                    </div>
+                    <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                        <p class="text-sm text-emerald-800 dark:text-emerald-200">Ready for review</p>
+                        <p class="mt-2 text-2xl font-semibold text-emerald-950 dark:text-emerald-100">{{ $finalExamStats['ready_for_review'] }}</p>
+                    </div>
+                </section>
+            @endif
 
+            @if($canEnterFinalExam)
             <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="border-b border-gray-100 px-6 py-4 dark:border-gray-800">
                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -130,7 +133,9 @@
                     <div class="border-t px-4 py-3 dark:border-gray-800">{{ $finalExamDrafts->links() }}</div>
                 @endif
             </section>
+            @endif
 
+            @if($canCorrectFinalExam)
             <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="border-b border-gray-100 px-6 py-4 dark:border-gray-800">
                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -193,6 +198,7 @@
                     <div class="border-t px-4 py-3 dark:border-gray-800">{{ $publishedMarks->links() }}</div>
                 @endif
             </section>
+            @endif
         </div>
     </div>
 

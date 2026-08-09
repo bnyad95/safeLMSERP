@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AcademicYear;
 use App\Models\ActivityLog;
 use App\Models\AppNotification;
+use App\Models\Enrollment;
 use App\Models\FinanceTransaction;
 use App\Models\Semester;
 use App\Models\Student;
@@ -425,6 +426,13 @@ class FinanceController extends Controller
         $selectedPaymentStatus = $this->paymentStatusForBalances($selectedBalances);
         $nextDueInvoice = $this->nextDueInvoiceQuery($student);
         $paymentPlanSummary = $this->paymentPlanSummaryQuery($student);
+        $tuitionAgreements = $student->tuitionAgreements()
+            ->with('academicYear')
+            ->withCount('transactions')
+            ->latest('agreed_at')
+            ->limit(10)
+            ->get();
+        $installmentPlanOverflowWarning = $this->installmentPlanOverflowWarning($student, $tuitionAgreements);
 
         return view('finance.show', [
             'filters' => $filters,
@@ -441,12 +449,8 @@ class FinanceController extends Controller
             'selectedPaymentStatus' => $selectedPaymentStatus,
             'paymentPlanSummary' => $paymentPlanSummary,
             'filterOptions' => $this->financeFilterOptions($user),
-            'tuitionAgreements' => $student->tuitionAgreements()
-                ->with('academicYear')
-                ->withCount('transactions')
-                ->latest('agreed_at')
-                ->limit(10)
-                ->get(),
+            'tuitionAgreements' => $tuitionAgreements,
+            'installmentPlanOverflowWarning' => $installmentPlanOverflowWarning,
             'types' => [
                 'invoice' => 'Invoice / Tuition Charge',
                 'payment' => 'Payment',
@@ -511,6 +515,7 @@ class FinanceController extends Controller
                 ->whereIn('status', ['upcoming', 'active'])
                 ->orderByDesc('name')
                 ->get(),
+            'expectedInstallmentCount' => $student->university?->expectedProgramSemesterCount() ?? 1,
         ]);
     }
 
@@ -618,6 +623,7 @@ class FinanceController extends Controller
             'collect_now' => ['nullable', 'boolean'],
             'semester_ids' => ['nullable', 'array'],
             'semester_ids.*' => ['integer', 'distinct', 'exists:semesters,id'],
+            'installment_count' => ['nullable', 'integer', 'min:1', 'max:24'],
             'transaction_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:transaction_date'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -1099,8 +1105,11 @@ class FinanceController extends Controller
             if (! $studentId) {
                 if (! $this->hasGlobalFinanceScope($user)) {
                     OrganizationScope::apply($query, $user, 'student_record');
+
+                    if (OrganizationScope::isUnscoped($user)) {
+                        $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
+                    }
                 }
-                $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
             }
 
             $query->chunk(200, function ($transactions) use ($output) {
@@ -1511,6 +1520,33 @@ class FinanceController extends Controller
         ];
     }
 
+    private function installmentPlanOverflowWarning(Student $student, $tuitionAgreements): ?string
+    {
+        $completedPlan = $tuitionAgreements->first(
+            fn (TuitionAgreement $agreement) => $agreement->isInstallmentPlan() && $agreement->remainingInstallments() === 0
+        );
+
+        if (! $completedPlan) {
+            return null;
+        }
+
+        $invoicedSemesterIds = FinanceTransaction::where('tuition_agreement_id', $completedPlan->id)
+            ->where('type', 'invoice')
+            ->whereNotNull('semester_id')
+            ->pluck('semester_id');
+
+        $hasExtraEnrollment = Enrollment::where('student_id', $student->id)
+            ->where('status', 'enrolled')
+            ->whereHas('courseSection', fn ($query) => $query->whereNotIn('semester_id', $invoicedSemesterIds))
+            ->exists();
+
+        if (! $hasExtraEnrollment) {
+            return null;
+        }
+
+        return "This student's {$completedPlan->installment_count}-installment tuition plan is fully invoiced, but they have an active enrollment in a semester beyond that plan — likely a retake or extended duration. Use \"Generate Tuition Charge\" below to bill the additional semester.";
+    }
+
     private function paymentPlanSummaryQuery(Student $student): array
     {
         $row = $student->financeTransactions()
@@ -1545,9 +1581,23 @@ class FinanceController extends Controller
     private function createFinanceTransactions(array $validated, bool $canPostImmediately)
     {
         if ($validated['type'] === 'invoice') {
-            $semesters = ($validated['payment_plan'] ?? 'full') === 'semester'
+            $isSemesterPlan = ($validated['payment_plan'] ?? 'full') === 'semester';
+            $semesters = $isSemesterPlan
                 ? $this->selectedTuitionSemesters($validated)
                 : collect();
+            $installmentCount = null;
+            if ($isSemesterPlan) {
+                $installmentCount = (int) ($validated['installment_count'] ?? $semesters->count());
+
+                if ($installmentCount < $semesters->count()) {
+                    throw ValidationException::withMessages([
+                        'installment_count' => 'The number of installments cannot be fewer than the semesters selected now.',
+                    ]);
+                }
+            }
+            $installmentAmount = $installmentCount
+                ? round((float) $validated['amount'] / $installmentCount, 2)
+                : null;
             $academicYear = $this->tuitionAcademicYear($validated, $semesters);
             $agreementKey = app(FinanceLedgerService::class)->tuitionAgreementKey(
                 (int) $validated['student_id'],
@@ -1593,8 +1643,10 @@ class FinanceController extends Controller
                 'student_id' => $validated['student_id'],
                 'academic_year_id' => $academicYear?->id,
                 'created_by' => $validated['recorded_by'],
-                'payment_method' => ($validated['payment_plan'] ?? 'full') === 'semester' ? 'semester' : 'full',
+                'payment_method' => $isSemesterPlan ? 'semester' : 'full',
                 'total_amount' => $validated['amount'],
+                'installment_count' => $installmentCount,
+                'installment_amount' => $installmentAmount,
                 'currency' => $validated['currency'],
                 'status' => 'active',
                 'agreed_at' => $validated['transaction_date'],
@@ -1605,11 +1657,11 @@ class FinanceController extends Controller
             $validated['academic_year_id'] = $academicYear?->id;
             $validated['academic_year'] = $academicYear?->name ?? ($validated['academic_year'] ?? null);
 
-            if (($validated['payment_plan'] ?? 'full') === 'semester') {
-                return $this->createSemesterTuitionInvoices($validated, $semesters);
+            if ($isSemesterPlan) {
+                return $this->createSemesterTuitionInvoices($validated, $semesters, $agreement, $installmentAmount);
             }
 
-            $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now'])->all();
+            $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count'])->all();
             $invoice = FinanceTransaction::create($payload);
             $transactions = collect([$invoice]);
 
@@ -1648,7 +1700,7 @@ class FinanceController extends Controller
             return $transactions;
         }
 
-        $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now'])->all();
+        $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count'])->all();
 
         return collect([FinanceTransaction::create($payload)]);
     }
@@ -1666,20 +1718,22 @@ class FinanceController extends Controller
         return 'Finance record saved successfully.';
     }
 
-    private function createSemesterTuitionInvoices(array $validated, $semesters)
+    private function createSemesterTuitionInvoices(array $validated, $semesters, TuitionAgreement $agreement, float $installmentAmount)
     {
         $totalAmount = (float) $validated['amount'];
         $semesterCount = $semesters->count();
-        $baseAmount = round($totalAmount / $semesterCount, 2);
+        $isFinalBatch = $semesterCount === $agreement->installment_count;
         $allocated = 0.0;
 
-        return $semesters
+        $invoices = $semesters
             ->values()
-            ->map(function (Semester $semester, int $index) use ($validated, $semesterCount, $baseAmount, &$allocated) {
-                $amount = $index === $semesterCount - 1 ? round((float) $validated['amount'] - $allocated, 2) : $baseAmount;
+            ->map(function (Semester $semester, int $index) use ($validated, $semesterCount, $installmentAmount, $isFinalBatch, $totalAmount, &$allocated) {
+                $amount = ($isFinalBatch && $index === $semesterCount - 1)
+                    ? round($totalAmount - $allocated, 2)
+                    : $installmentAmount;
                 $allocated += $amount;
 
-                $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now'])->merge([
+                $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count'])->merge([
                     'amount' => $amount,
                     'semester_id' => $semester->id,
                     'invoice_number' => null,
@@ -1694,6 +1748,10 @@ class FinanceController extends Controller
 
                 return FinanceTransaction::create($payload);
             });
+
+        $agreement->update(['installments_generated' => $semesterCount]);
+
+        return $invoices;
     }
 
     private function selectedTuitionSemesters(array $validated)
@@ -1927,8 +1985,11 @@ class FinanceController extends Controller
             : Student::query();
         if (! $this->hasGlobalFinanceScope($user)) {
             OrganizationScope::apply($query, $user, 'student');
+
+            if (OrganizationScope::isUnscoped($user)) {
+                $this->applyFinanceOrganizationConstraint($query, $user, 'student');
+            }
         }
-        $this->applyFinanceOrganizationConstraint($query, $user, 'student');
 
         return $query;
     }
@@ -1940,8 +2001,11 @@ class FinanceController extends Controller
             : FinanceTransaction::query();
         if (! $this->hasGlobalFinanceScope($user)) {
             OrganizationScope::apply($query, $user, 'student_record');
+
+            if (OrganizationScope::isUnscoped($user)) {
+                $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
+            }
         }
-        $this->applyFinanceOrganizationConstraint($query, $user, 'student_record');
 
         return $query;
     }

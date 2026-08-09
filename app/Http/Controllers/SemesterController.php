@@ -6,6 +6,8 @@ use App\Models\AcademicYear;
 use App\Models\CourseSection;
 use App\Models\Semester;
 use App\Models\University;
+use App\Models\User;
+use App\Services\TuitionChargeService;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -166,7 +168,7 @@ class SemesterController extends Controller
 
         $created = 0;
         $skipped = 0;
-        DB::transaction(function () use ($validated, &$created, &$skipped) {
+        DB::transaction(function () use ($validated, $request, &$created, &$skipped) {
             foreach ($validated['university_ids'] as $universityId) {
                 $academicYear = AcademicYear::firstOrCreate(
                     [
@@ -183,7 +185,7 @@ class SemesterController extends Controller
                 if ($academicYear->wasRecentlyCreated) {
                     $created++;
                     if (! empty($validated['generate_semesters'])) {
-                        $this->generateRegularSemesters($academicYear);
+                        $this->generateRegularSemesters($academicYear, $request->user());
                     }
                 } else {
                     $skipped++;
@@ -274,7 +276,8 @@ class SemesterController extends Controller
         $this->ensureSemesterDatesDoNotOverlap($academicYear, $validated['start_date'], $validated['end_date']);
         $this->ensureSemesterStructureIsValid($academicYear, $validated['term_type'], (int) $validated['sequence']);
 
-        Semester::create($validated);
+        $semester = Semester::create($validated);
+        app(TuitionChargeService::class)->generateNextInstallmentsForSemester($semester, $request->user());
 
         return redirect()->route('semesters.index')->with('success', 'Semester created successfully.');
     }
@@ -575,7 +578,7 @@ class SemesterController extends Controller
         }
     }
 
-    private function generateRegularSemesters(AcademicYear $academicYear): void
+    private function generateRegularSemesters(AcademicYear $academicYear, User $actor): void
     {
         $academicYear->load('university');
         $count = $academicYear->university->expectedSemesterCount();
@@ -583,6 +586,7 @@ class SemesterController extends Controller
         $endsOn = Carbon::parse($academicYear->ends_on)->startOfDay();
         $totalDays = ((int) $startsOn->diffInDays($endsOn)) + 1;
         $daysPerSemester = max(1, intdiv($totalDays, $count));
+        $tuitionCharges = app(TuitionChargeService::class);
 
         for ($sequence = 1; $sequence <= $count; $sequence++) {
             $semesterStart = $startsOn->copy()->addDays(($sequence - 1) * $daysPerSemester);
@@ -590,7 +594,7 @@ class SemesterController extends Controller
                 ? $endsOn->copy()
                 : $semesterStart->copy()->addDays($daysPerSemester - 1);
 
-            Semester::create([
+            $semester = Semester::create([
                 'university_id' => $academicYear->university_id,
                 'academic_year_id' => $academicYear->id,
                 'academic_year' => $academicYear->name,
@@ -600,6 +604,7 @@ class SemesterController extends Controller
                 'start_date' => $semesterStart->toDateString(),
                 'end_date' => $semesterEnd->toDateString(),
             ]);
+            $tuitionCharges->generateNextInstallmentsForSemester($semester, $actor);
         }
     }
 

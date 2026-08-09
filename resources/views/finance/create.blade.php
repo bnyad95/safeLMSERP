@@ -27,6 +27,7 @@
                 paymentPlan: @js($initialPaymentPlan),
                 amount: @js(old('amount', '')),
                 selectedSemesters: @js($initialSemesterIds),
+                installmentCount: @js((string) old('installment_count', $expectedInstallmentCount)),
                 formattedAmount() {
                     const amount = Number.parseFloat(this.amount || 0);
 
@@ -34,7 +35,7 @@
                 },
                 perSemesterAmount() {
                     const amount = Number.parseFloat(this.amount || 0);
-                    const count = this.selectedSemesters.length;
+                    const count = Number.parseInt(this.installmentCount || 0, 10) || this.selectedSemesters.length;
 
                     return count > 0 ? (amount / count).toFixed(2) : '0.00';
                 }
@@ -130,12 +131,19 @@
                                 </div>
 
                                 <div x-show="paymentPlan === 'semester'" class="mt-4 space-y-3">
+                                    <div class="min-w-0">
+                                        <label class="block text-sm font-medium text-gray-700">Number of installments (full program length)</label>
+                                        <input type="number" min="1" max="24" name="installment_count" x-model="installmentCount" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="mt-1 text-xs text-gray-500">Defaults to {{ $expectedInstallmentCount }} for this student's program. The total tuition is divided across this many semesters, even ones that don't exist yet.</p>
+                                    </div>
+
                                     <div class="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-900">
-                                        The total tuition charge will be divided into
-                                        <span class="font-semibold" x-text="selectedSemesters.length"></span>
-                                        semester invoices:
-                                        <span class="font-semibold" x-text="perSemesterAmount()"></span>
-                                        each.
+                                        Each installment is
+                                        <span class="font-semibold" x-text="perSemesterAmount()"></span>.
+                                        <span x-show="selectedSemesters.length > 0">
+                                            <span class="font-semibold" x-text="selectedSemesters.length"></span> invoice(s) will be created now for the semesters checked below;
+                                        </span>
+                                        the remaining installments will be invoiced automatically as future semesters are created.
                                     </div>
 
                                     <div class="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">

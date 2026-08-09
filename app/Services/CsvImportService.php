@@ -218,6 +218,17 @@ class CsvImportService
                         throw new \Exception('section_code is required when a student has multiple sections for this course.');
                     }
 
+                    $existingMark = Mark::where('student_id', $student->id)
+                        ->where('course_id', $course->id)
+                        ->where('course_section_id', $sectionIds->first())
+                        ->first();
+
+                    if ($existingMark && ! in_array($existingMark->submission_status, ['draft', 'rejected'], true)) {
+                        throw ValidationException::withMessages([
+                            'csv' => 'This mark is already submitted, under review, approved, or published and cannot be overwritten by CSV import. Use the mark review or correction workflow instead.',
+                        ]);
+                    }
+
                     Mark::updateOrCreate(
                         ['student_id' => $student->id, 'course_id' => $course->id, 'course_section_id' => $sectionIds->first()],
                         [

@@ -157,7 +157,7 @@ class RolePermissionSeeder extends Seeder
                 'display_name' => 'Examination Administrator',
                 'description' => 'Manages examinations and results lifecycle.',
                 'permissions' => [
-                    'marks.view', 'marks.review', 'marks.approve', 'marks.publish', 'marks.manage_prefinal_window', 'reports.academic',
+                    'marks.view', 'marks.enter_final_exam', 'marks.review', 'marks.approve', 'marks.publish', 'marks.manage_prefinal_window', 'reports.academic',
                 ],
             ],
             'examination_committee' => [

@@ -25,6 +25,12 @@
                 @endforeach
             </div>
 
+            @if($installmentPlanOverflowWarning)
+                <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                    {{ $installmentPlanOverflowWarning }}
+                </div>
+            @endif
+
             <div class="space-y-6">
                 <section class="min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -129,7 +135,17 @@
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Schedule</p>
-                                    <p class="mt-1 text-gray-800 dark:text-gray-200">{{ $agreement->transactions_count }} record(s) / {{ ucfirst($agreement->status) }}</p>
+                                    <p class="mt-1 text-gray-800 dark:text-gray-200">
+                                        {{ $agreement->transactions_count }} record(s) / {{ ucfirst($agreement->status) }}
+                                        @if($agreement->isInstallmentPlan())
+                                            <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                                                {{ $agreement->installments_generated }} of {{ $agreement->installment_count }} installments invoiced
+                                                @if($agreement->remainingInstallments() > 0)
+                                                    &mdash; remaining installments are created automatically as future semesters are added
+                                                @endif
+                                            </span>
+                                        @endif
+                                    </p>
                                 </div>
                             </div>
                         @empty

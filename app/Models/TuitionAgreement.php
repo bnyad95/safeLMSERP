@@ -15,6 +15,9 @@ class TuitionAgreement extends Model
         'created_by',
         'payment_method',
         'total_amount',
+        'installment_count',
+        'installments_generated',
+        'installment_amount',
         'currency',
         'status',
         'agreed_at',
@@ -26,8 +29,23 @@ class TuitionAgreement extends Model
     {
         return [
             'total_amount' => 'decimal:2',
+            'installment_amount' => 'decimal:2',
             'agreed_at' => 'date',
         ];
+    }
+
+    public function isInstallmentPlan(): bool
+    {
+        return ! is_null($this->installment_count) && $this->installment_count > 1;
+    }
+
+    public function remainingInstallments(): int
+    {
+        if (! $this->isInstallmentPlan()) {
+            return 0;
+        }
+
+        return max(0, $this->installment_count - $this->installments_generated);
     }
 
     public function student()

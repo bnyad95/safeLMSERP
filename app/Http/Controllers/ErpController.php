@@ -118,7 +118,7 @@ class ErpController extends Controller
         $canPublish = $user->hasRole('super_administrator')
             || ($user->hasRole('examination_administrator') && $user->hasPermission('marks.publish'));
         $canEnterFinalExam = $user->hasRole('super_administrator')
-            || ($user->hasRole('examination_committee') && $user->hasPermission('marks.enter_final_exam'));
+            || ($user->hasAnyRole(['examination_administrator', 'examination_committee']) && $user->hasPermission('marks.enter_final_exam'));
         $submitted = Mark::where('submission_status', 'submitted')->count();
         $underReview = Mark::where('submission_status', 'under_review')->count();
         $approvedDraft = Mark::where('submission_status', 'approved')->where('visibility_status', 'draft')->count();

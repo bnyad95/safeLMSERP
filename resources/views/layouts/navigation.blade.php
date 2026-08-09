@@ -161,8 +161,10 @@
                             && ($isSuper || $navUser->hasAnyPermission(['marks.view', 'marks.review', 'marks.approve', 'marks.publish']));
                         $canMarkQueue = ($isSuper || $navUser->hasAnyRole(['examination_administrator', 'examination_committee']))
                             && ($isSuper || $navUser->hasAnyPermission(['marks.review', 'marks.approve', 'marks.publish']));
-                        $canFinalExamEntry = ($isSuper || $navUser->hasRole('examination_committee'))
-                            && ($isSuper || $navUser->hasPermission('marks.enter_final_exam'));
+                        $canReallyEnterFinalExam = $isSuper
+                            || ($navUser->hasAnyRole(['examination_administrator', 'examination_committee']) && $navUser->hasPermission('marks.enter_final_exam'));
+                        $canFinalExamEntry = $canReallyEnterFinalExam
+                            || ($navUser->hasAnyRole(['examination_administrator', 'examination_committee']) && $navUser->hasAnyPermission(['marks.request_change', 'marks.approve']));
                         $canAcademicArchive = $navUser->hasAnyRole(['super_administrator', 'administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'examination_administrator', 'examination_committee'])
                             || $navUser->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
                         $canClassrooms = $navUser->hasAnyRole(['teacher', 'teaching_assistant', 'administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'lms_administrator']);
@@ -208,7 +210,7 @@
                             @if($navUser->hasRole('teacher'))<x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>@endif
                             @if($canAssessments)<x-nav-link :href="route('assessments.index')" :active="request()->routeIs('assessments.*', 'assessment-items.*', 'assessment-submissions.*')">{{ $assessmentNavLabel }}</x-nav-link>@endif
                             @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
-                            @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ __('Final Exam Entry') }}</x-nav-link>@endif
+                            @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ $canReallyEnterFinalExam ? __('Final Exam Entry') : __('Final Exam Corrections') }}</x-nav-link>@endif
                             @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
                             @if($canAcademicArchive && ! $canStructure)<x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>@endif
                         </x-nav-group>

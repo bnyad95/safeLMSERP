@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\MarkSubmissionService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -85,24 +86,28 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->canEnterFinalExam($user)) {
+        if (! $this->canAccessFinalExamWorkflow($user)) {
             abort(403);
         }
 
+        $canEnterFinalExam = $this->canEnterFinalExam($user);
+        $canCorrectFinalExam = $this->canCorrectFinalExam($user);
         $filters = $this->queueFilterState($request);
         $filters['submission_status'] = '';
         $filterOptions = $this->finalExamFilterOptions();
         $courseCardFilters = $filters;
         $courseCardFilters['course_id'] = null;
 
-        $courseCards = $this->finalExamCourseCards($courseCardFilters);
-        $finalExamStats = $this->finalExamStats($filters);
+        $courseCards = $this->finalExamCourseCards($courseCardFilters, $canEnterFinalExam, $canCorrectFinalExam);
+        $finalExamStats = $this->finalExamStats($filters, $canEnterFinalExam);
 
         return view('marks.final-exam-entry', compact(
             'finalExamStats',
             'courseCards',
             'filters',
-            'filterOptions'
+            'filterOptions',
+            'canEnterFinalExam',
+            'canCorrectFinalExam'
         ));
     }
 
@@ -110,35 +115,43 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->canEnterFinalExam($user)) {
+        if (! $this->canAccessFinalExamWorkflow($user)) {
             abort(403);
         }
 
+        $canEnterFinalExam = $this->canEnterFinalExam($user);
+        $canCorrectFinalExam = $this->canCorrectFinalExam($user);
         $filters = $this->queueFilterState($request);
         $filters['submission_status'] = '';
         $filters['course_id'] = $course->id;
         $filterOptions = $this->finalExamFilterOptions();
 
-        $finalExamDrafts = $this->finalExamMarkQuery($filters)
-            ->whereNotNull('prefinal_mark')
-            ->paginate(20, ['*'], 'final_exam_page')
-            ->withQueryString();
-        $finalExamStats = $this->finalExamStats($filters);
+        $finalExamDrafts = $canEnterFinalExam
+            ? $this->finalExamMarkQuery($filters)
+                ->whereNotNull('prefinal_mark')
+                ->paginate(20, ['*'], 'final_exam_page')
+                ->withQueryString()
+            : $this->emptyPaginator('final_exam_page');
+        $finalExamStats = $this->finalExamStats($filters, $canEnterFinalExam);
 
-        $publishedMarks = Mark::with([
-                'student.department.college',
-                'course.department.college',
-                'courseSection.course.department.college',
-                'courseSection.semester',
-                'courseSection.teacher',
-            ])
+        $publishedQuery = Mark::with([
+            'student.department.college',
+            'course.department.college',
+            'courseSection.course.department.college',
+            'courseSection.semester',
+            'courseSection.teacher',
+        ])
             ->where('course_id', $course->id)
             ->where('visibility_status', 'published')
             ->where('submission_status', 'approved')
-            ->whereNotNull('prefinal_mark')
+            ->whereNotNull('prefinal_mark');
+        $this->applyQueueFilters($publishedQuery, $filters);
+
+        $publishedMarks = $canCorrectFinalExam ? $publishedQuery
             ->latest('published_at')
             ->paginate(20, ['*'], 'published_page')
-            ->withQueryString();
+            ->withQueryString()
+            : $this->emptyPaginator('published_page');
 
         return view('marks.final-exam-course', compact(
             'course',
@@ -146,7 +159,9 @@ class MarkSubmissionController extends Controller
             'publishedMarks',
             'finalExamStats',
             'filters',
-            'filterOptions'
+            'filterOptions',
+            'canEnterFinalExam',
+            'canCorrectFinalExam'
         ));
     }
 
@@ -192,7 +207,7 @@ class MarkSubmissionController extends Controller
     {
         $user = Auth::user();
 
-        if (! $this->canEnterFinalExam($user)) {
+        if (! $this->canAccessFinalExamWorkflow($user)) {
             abort(403);
         }
 
@@ -214,7 +229,14 @@ class MarkSubmissionController extends Controller
                 throw ValidationException::withMessages(['score' => 'Pre-final mark must be entered by the teacher before final exam scores.']);
             }
 
-            $isPublishedCorrection = $mark->visibility_status === 'published';
+            $isPublishedCorrection = $mark->visibility_status === 'published'
+                && $mark->submission_status === 'approved';
+
+            if ($isPublishedCorrection) {
+                abort_unless($this->canCorrectFinalExam($user), 403);
+            } else {
+                abort_unless($this->canEnterFinalExam($user), 403);
+            }
 
             if (! $isPublishedCorrection && ! in_array($mark->submission_status, ['draft', 'rejected'], true)) {
                 throw ValidationException::withMessages(['score' => 'Submitted, under-review, or approved marks must be rejected before their final exam score can be changed.']);
@@ -428,11 +450,7 @@ class MarkSubmissionController extends Controller
 
     private function prefinalWindowUniversity($user): ?University
     {
-        if ($user->university_id) {
-            return University::find($user->university_id);
-        }
-
-        return University::count() === 1 ? University::first() : null;
+        return $user->university_id ? University::find($user->university_id) : null;
     }
 
     private function normalizeMarkIds(Request $request): void
@@ -465,7 +483,27 @@ class MarkSubmissionController extends Controller
     private function canEnterFinalExam($user): bool
     {
         return $user->hasRole('super_administrator')
-            || ($user->hasRole('examination_committee') && $user->hasPermission('marks.enter_final_exam'));
+            || ($user->hasAnyRole(['examination_administrator', 'examination_committee']) && $user->hasPermission('marks.enter_final_exam'));
+    }
+
+    private function canCorrectFinalExam($user): bool
+    {
+        return $user->hasRole('super_administrator')
+            || ($user->hasAnyRole(['examination_administrator', 'examination_committee'])
+                && $user->hasAnyPermission(['marks.request_change', 'marks.approve']));
+    }
+
+    private function canAccessFinalExamWorkflow($user): bool
+    {
+        return $this->canEnterFinalExam($user) || $this->canCorrectFinalExam($user);
+    }
+
+    private function emptyPaginator(string $pageName): LengthAwarePaginator
+    {
+        return (new LengthAwarePaginator([], 0, 20, request()->integer($pageName) ?: 1, [
+            'path' => request()->url(),
+            'pageName' => $pageName,
+        ]))->withQueryString();
     }
 
     private function queueMarkQuery(array $filters)
@@ -576,9 +614,14 @@ class MarkSubmissionController extends Controller
     private function applyFinalExamOptionStatus($query): void
     {
         $query
-            ->whereIn('submission_status', ['draft', 'rejected'])
-            ->where('visibility_status', 'draft')
-            ->whereNotNull('prefinal_mark');
+            ->whereNotNull('prefinal_mark')
+            ->where(fn ($statusQuery) => $statusQuery
+                ->where(fn ($entryQuery) => $entryQuery
+                    ->whereIn('submission_status', ['draft', 'rejected'])
+                    ->where('visibility_status', 'draft'))
+                ->orWhere(fn ($publishedQuery) => $publishedQuery
+                    ->where('submission_status', 'approved')
+                    ->where('visibility_status', 'published')));
     }
 
     private function stageOptionsForMarks(callable $markConstraint)
@@ -677,33 +720,41 @@ class MarkSubmissionController extends Controller
         return $query->latest();
     }
 
-    private function finalExamCourseCards(array $filters)
+    private function finalExamCourseCards(array $filters, bool $includeDrafts = true, bool $includePublished = true)
     {
-        $rows = $this->finalExamMarkQuery($filters, false)
-            ->whereNotNull('prefinal_mark')
-            ->select('course_id')
-            ->selectRaw('COUNT(*) as marks_count')
-            ->selectRaw('COUNT(DISTINCT course_section_id) as section_count')
-            ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NULL THEN 1 ELSE 0 END) as waiting_first_trial')
-            ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NOT NULL AND second_trial_final_exam IS NULL AND (COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < ? THEN 1 ELSE 0 END) as waiting_second_trial', [config('academics.pass_mark', 50)])
-            ->groupBy('course_id')
-            ->get()
-            ->keyBy('course_id');
+        $rows = collect();
+
+        if ($includeDrafts) {
+            $rows = $this->finalExamMarkQuery($filters, false)
+                ->whereNotNull('prefinal_mark')
+                ->select('course_id')
+                ->selectRaw('COUNT(*) as marks_count')
+                ->selectRaw('COUNT(DISTINCT course_section_id) as section_count')
+                ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NULL THEN 1 ELSE 0 END) as waiting_first_trial')
+                ->selectRaw('SUM(CASE WHEN first_trial_final_exam IS NOT NULL AND second_trial_final_exam IS NULL AND (COALESCE(prefinal_mark, 0) + COALESCE(first_trial_final_exam, 0)) < ? THEN 1 ELSE 0 END) as waiting_second_trial', [config('academics.pass_mark', 50)])
+                ->groupBy('course_id')
+                ->get()
+                ->keyBy('course_id');
+        }
 
         // Courses with every mark already published (nothing left "waiting") still need
         // to be reachable so a mistake found after publishing can be corrected.
-        $publishedQuery = Mark::query()
-            ->where('visibility_status', 'published')
-            ->where('submission_status', 'approved')
-            ->whereNotNull('prefinal_mark');
-        $this->applyQueueFilters($publishedQuery, array_merge($filters, ['submission_status' => '']));
-        $publishedRows = $publishedQuery
-            ->select('course_id')
-            ->selectRaw('COUNT(*) as published_count')
-            ->selectRaw('COUNT(DISTINCT course_section_id) as published_section_count')
-            ->groupBy('course_id')
-            ->get()
-            ->keyBy('course_id');
+        $publishedRows = collect();
+
+        if ($includePublished) {
+            $publishedQuery = Mark::query()
+                ->where('visibility_status', 'published')
+                ->where('submission_status', 'approved')
+                ->whereNotNull('prefinal_mark');
+            $this->applyQueueFilters($publishedQuery, array_merge($filters, ['submission_status' => '']));
+            $publishedRows = $publishedQuery
+                ->select('course_id')
+                ->selectRaw('COUNT(*) as published_count')
+                ->selectRaw('COUNT(DISTINCT course_section_id) as published_section_count')
+                ->groupBy('course_id')
+                ->get()
+                ->keyBy('course_id');
+        }
 
         $courseIds = $rows->keys()->merge($publishedRows->keys())->unique()->filter()->values();
         $courses = Course::with('department.college')
@@ -740,8 +791,16 @@ class MarkSubmissionController extends Controller
             ->values();
     }
 
-    private function finalExamStats(array $filters): array
+    private function finalExamStats(array $filters, bool $includeDrafts = true): array
     {
+        if (! $includeDrafts) {
+            return [
+                'waiting_first_trial' => 0,
+                'waiting_second_trial' => 0,
+                'ready_for_review' => 0,
+            ];
+        }
+
         return [
             'waiting_first_trial' => $this->finalExamMarkQuery($filters)
                 ->whereNotNull('prefinal_mark')

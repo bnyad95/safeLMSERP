@@ -1238,6 +1238,30 @@ class FinanceTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_administrator_with_direct_finance_grant_and_no_assigned_organization_sees_no_students(): void
+    {
+        $role = Role::create(['name' => 'administrator', 'display_name' => 'Administrator']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($role);
+        $permission = Permission::firstOrCreate(['name' => 'finance.view'], ['display_name' => 'View finance']);
+        $admin->permissionOverrides()->attach($permission, ['effect' => 'grant']);
+
+        $studentA = $this->makeStudent();
+        $otherUniversity = University::create(['name' => 'Other University', 'code' => 'OTHER-ADM']);
+        $otherDepartment = Department::create(['university_id' => $otherUniversity->id, 'name' => 'Law']);
+        $studentB = Student::create([
+            'university_id' => $otherUniversity->id,
+            'department_id' => $otherDepartment->id,
+            'student_id' => 'OTHER-ADM-1',
+            'full_name' => 'Second University Student',
+            'email' => 'second.university.student@example.com',
+            'status' => 'Active',
+        ]);
+
+        $this->actingAs($admin)->get(route('finance.students.show', $studentA))->assertNotFound();
+        $this->actingAs($admin)->get(route('finance.students.show', $studentB))->assertNotFound();
+    }
+
     public function test_overall_payment_status_does_not_mix_currency_balances(): void
     {
         $admin = $this->makeSuperAdmin();

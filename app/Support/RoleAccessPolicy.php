@@ -30,7 +30,7 @@ final class RoleAccessPolicy
         ],
         'marks.review' => ['examination_administrator', 'examination_committee'],
         'marks.approve' => ['examination_administrator', 'examination_committee'],
-        'marks.enter_final_exam' => ['examination_committee'],
+        'marks.enter_final_exam' => ['examination_administrator', 'examination_committee'],
         'marks.publish' => ['examination_administrator'],
         'marks.request_change' => ['examination_administrator', 'examination_committee'],
     ];

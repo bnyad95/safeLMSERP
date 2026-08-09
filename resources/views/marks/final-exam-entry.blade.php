@@ -2,8 +2,8 @@
     <x-slot name="header">
         <div>
             <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Learning &amp; Results</p>
-            <h2 class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">Final Exam Entry</h2>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Enter final exam trials by academic year, college, department, stage, semester, and course.</p>
+            <h2 class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ $canEnterFinalExam ? 'Final Exam Entry' : 'Final Exam Corrections' }}</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $canEnterFinalExam ? 'Enter final exam trials by academic year, college, department, stage, semester, and course.' : 'Open published courses and correct mistaken final exam scores with an audit reason.' }}</p>
         </div>
     </x-slot>
 
@@ -80,26 +80,28 @@
                 </form>
             </section>
 
-            <section class="grid gap-3 md:grid-cols-3">
-                <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                    <p class="text-sm text-blue-800 dark:text-blue-200">Waiting first trial</p>
-                    <p class="mt-2 text-2xl font-semibold text-blue-950 dark:text-blue-100">{{ $finalExamStats['waiting_first_trial'] }}</p>
-                </div>
-                <div class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                    <p class="text-sm text-red-800 dark:text-red-200">Eligible second trial</p>
-                    <p class="mt-2 text-2xl font-semibold text-red-950 dark:text-red-100">{{ $finalExamStats['waiting_second_trial'] }}</p>
-                </div>
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
-                    <p class="text-sm text-emerald-800 dark:text-emerald-200">Ready for review</p>
-                    <p class="mt-2 text-2xl font-semibold text-emerald-950 dark:text-emerald-100">{{ $finalExamStats['ready_for_review'] }}</p>
-                </div>
-            </section>
+            @if($canEnterFinalExam)
+                <section class="grid gap-3 md:grid-cols-3">
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                        <p class="text-sm text-blue-800 dark:text-blue-200">Waiting first trial</p>
+                        <p class="mt-2 text-2xl font-semibold text-blue-950 dark:text-blue-100">{{ $finalExamStats['waiting_first_trial'] }}</p>
+                    </div>
+                    <div class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+                        <p class="text-sm text-red-800 dark:text-red-200">Eligible second trial</p>
+                        <p class="mt-2 text-2xl font-semibold text-red-950 dark:text-red-100">{{ $finalExamStats['waiting_second_trial'] }}</p>
+                    </div>
+                    <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+                        <p class="text-sm text-emerald-800 dark:text-emerald-200">Ready for review</p>
+                        <p class="mt-2 text-2xl font-semibold text-emerald-950 dark:text-emerald-100">{{ $finalExamStats['ready_for_review'] }}</p>
+                    </div>
+                </section>
+            @endif
 
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Courses &mdash; Final Exam Entry &amp; Corrections</h3>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open a course to enter final exam scores, or correct a mistake in an already-published mark.</p>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $canEnterFinalExam ? 'Courses - Final Exam Entry & Corrections' : 'Courses - Published Mark Corrections' }}</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $canEnterFinalExam ? 'Open a course to enter final exam scores, or correct a mistake in an already-published mark.' : 'Open a course to correct a mistake in an already-published mark.' }}</p>
                     </div>
                 </div>
 
