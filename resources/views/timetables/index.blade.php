@@ -124,28 +124,11 @@
                     @endif
                 </section>
             @else
-            <form method="GET" action="{{ route('timetables.index') }}" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
-                        <select name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All departments</option>
-                            @foreach($departments as $department)
-                                <option value="{{ $department->id }}" @selected($filters['department_id'] === $department->id)>{{ $department->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label>
-                        <select name="grade_level" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All stages</option>
-                            @foreach($gradeOptions as $grade)
-                                <option value="{{ $grade }}" @selected($filters['grade_level'] === $grade)>{{ $grade }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
+            @php
+                $hasAdvancedTimetableFilters = (bool) ($filters['department_id'] || $filters['grade_level'] !== '' || $filters['teacher_id'] || $filters['classroom_id'] || $filters['day_of_week'] !== '' || $filters['type'] !== '');
+            @endphp
+            <form method="GET" action="{{ route('timetables.index') }}" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900" x-data="{ showMore: {{ $hasAdvancedTimetableFilters ? 'true' : 'false' }} }">
+                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Semester</label>
                         <select name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
@@ -162,6 +145,54 @@
                             <option value="">All groups</option>
                             @foreach($groupOptions as $group)
                                 <option value="{{ $group }}" @selected($filters['group'] === $group)>{{ $group }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                        <select name="status" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                            <option value="">All statuses</option>
+                            @foreach(['scheduled' => 'Scheduled', 'cancelled' => 'Cancelled'] as $value => $label)
+                                <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="flex items-end gap-2">
+                        <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">
+                            Filter
+                        </button>
+                        <a href="{{ route('timetables.index') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                            Clear
+                        </a>
+                    </div>
+                </div>
+
+                <button type="button" x-on:click="showMore = ! showMore" class="mt-4 flex items-center gap-1 text-sm font-semibold text-indigo-700 hover:underline dark:text-indigo-400">
+                    <span x-text="showMore ? 'Fewer filters' : 'More filters'"></span>
+                    <svg class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': showMore }" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+
+                <div x-show="showMore" x-cloak class="mt-4 grid gap-4 border-t border-gray-100 pt-4 md:grid-cols-2 xl:grid-cols-5 dark:border-gray-800">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                        <select name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                            <option value="">All departments</option>
+                            @foreach($departments as $department)
+                                <option value="{{ $department->id }}" @selected($filters['department_id'] === $department->id)>{{ $department->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label>
+                        <select name="grade_level" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                            <option value="">All stages</option>
+                            @foreach($gradeOptions as $grade)
+                                <option value="{{ $grade }}" @selected($filters['grade_level'] === $grade)>{{ $grade }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -204,25 +235,6 @@
                                 <option value="{{ $type }}" @selected($filters['type'] === $type)>{{ ucfirst($type) }}</option>
                             @endforeach
                         </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                        <select name="status" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All statuses</option>
-                            @foreach(['scheduled' => 'Scheduled', 'cancelled' => 'Cancelled'] as $value => $label)
-                                <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="flex items-end gap-2">
-                        <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">
-                            Filter
-                        </button>
-                        <a href="{{ route('timetables.index') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
-                            Clear
-                        </a>
                     </div>
                 </div>
             </form>
@@ -391,8 +403,15 @@
                     </section>
                 @endif
 
-                <section class="space-y-4">
-                    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <section class="space-y-4" x-data="{ view: 'grid' }">
+                    <div class="rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button type="button" x-on:click="view = 'grid'" x-bind:class="view === 'grid' ? 'bg-gray-900 text-white dark:bg-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Weekly Grid</button>
+                            <button type="button" x-on:click="view = 'classified'" x-bind:class="view === 'classified' ? 'bg-gray-900 text-white dark:bg-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Classified Timetable</button>
+                        </div>
+                    </div>
+
+                    <div x-show="view === 'grid'" class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Weekly Grid</h3>
                         </div>
@@ -433,7 +452,7 @@
                         </div>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div x-show="view === 'classified'" x-cloak class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Classified Timetable</h3>
                         </div>

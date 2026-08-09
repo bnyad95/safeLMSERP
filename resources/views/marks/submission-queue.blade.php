@@ -45,74 +45,17 @@
                 </section>
             @endif
 
+            @php
+                $hasAdvancedMarkFilters = (bool) ($filters['college_id'] || $filters['department_id'] || $filters['stage'] !== '' || $filters['semester_id'] || $filters['course_id'] || $filters['teacher_id']);
+            @endphp
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <form method="GET" action="{{ route('marks.submission-queue') }}" class="grid gap-4 lg:grid-cols-6">
-                    <div class="lg:col-span-2">
+                <form method="GET" action="{{ route('marks.submission-queue') }}" class="grid gap-4 lg:grid-cols-6" x-data="{ showMore: {{ $hasAdvancedMarkFilters ? 'true' : 'false' }} }">
+                    <div class="lg:col-span-3">
                         <label for="mark-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
                         <input id="mark-search" name="q" value="{{ $filters['q'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" placeholder="Student, ID, course, teacher">
                     </div>
 
-                    <div>
-                        <label for="mark-college" class="block text-sm font-medium text-gray-700 dark:text-gray-300">College</label>
-                        <select id="mark-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All colleges</option>
-                            @foreach($filterOptions['colleges'] as $college)
-                                <option value="{{ $college->id }}" @selected($filters['college_id'] === $college->id)>{{ $college->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
-                        <label for="mark-department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
-                        <select id="mark-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All departments</option>
-                            @foreach($filterOptions['departments'] as $department)
-                                <option value="{{ $department->id }}" @selected($filters['department_id'] === $department->id)>{{ $department->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
-                        <label for="mark-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label>
-                        <select id="mark-stage" name="stage" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All stages</option>
-                            @foreach($filterOptions['stages'] as $stage)
-                                <option value="{{ $stage['key'] }}" @selected((string) $filters['stage'] === (string) $stage['key'])>{{ $stage['label'] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
-                        <label for="mark-semester" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Semester</label>
-                        <select id="mark-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All semesters</option>
-                            @foreach($filterOptions['semesters'] as $semester)
-                                <option value="{{ $semester->id }}" @selected($filters['semester_id'] === $semester->id)>{{ $semester->name }} {{ $semester->academic_year }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
-                        <label for="mark-course" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Course</label>
-                        <select id="mark-course" name="course_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All courses</option>
-                            @foreach($filterOptions['courses'] as $course)
-                                <option value="{{ $course->id }}" @selected($filters['course_id'] === $course->id)>{{ $course->code }} - {{ $course->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
-                        <label for="mark-teacher" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Teacher</label>
-                        <select id="mark-teacher" name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All teachers</option>
-                            @foreach($filterOptions['teachers'] as $teacher)
-                                <option value="{{ $teacher->id }}" @selected($filters['teacher_id'] === $teacher->id)>{{ $teacher->full_name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div>
+                    <div class="lg:col-span-2">
                         <label for="mark-status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Queue status</label>
                         <select id="mark-status" name="submission_status" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                             <option value="">All queue statuses</option>
@@ -122,9 +65,80 @@
                         </select>
                     </div>
 
-                    <div class="flex flex-wrap items-end gap-3 lg:col-span-3">
+                    <div class="flex flex-wrap items-end gap-3">
                         <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">Apply</button>
                         <a href="{{ route('marks.submission-queue') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Reset</a>
+                    </div>
+
+                    <div class="lg:col-span-6">
+                        <button type="button" x-on:click="showMore = ! showMore" class="flex items-center gap-1 text-sm font-semibold text-indigo-700 hover:underline dark:text-indigo-400">
+                            <span x-text="showMore ? 'Fewer filters' : 'More filters'"></span>
+                            <svg class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': showMore }" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div x-show="showMore" x-cloak class="grid gap-4 border-t border-gray-100 pt-4 md:grid-cols-2 lg:col-span-6 lg:grid-cols-6 dark:border-gray-800">
+                        <div>
+                            <label for="mark-college" class="block text-sm font-medium text-gray-700 dark:text-gray-300">College</label>
+                            <select id="mark-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                <option value="">All colleges</option>
+                                @foreach($filterOptions['colleges'] as $college)
+                                    <option value="{{ $college->id }}" @selected($filters['college_id'] === $college->id)>{{ $college->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="mark-department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                            <select id="mark-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                <option value="">All departments</option>
+                                @foreach($filterOptions['departments'] as $department)
+                                    <option value="{{ $department->id }}" @selected($filters['department_id'] === $department->id)>{{ $department->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="mark-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label>
+                            <select id="mark-stage" name="stage" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                <option value="">All stages</option>
+                                @foreach($filterOptions['stages'] as $stage)
+                                    <option value="{{ $stage['key'] }}" @selected((string) $filters['stage'] === (string) $stage['key'])>{{ $stage['label'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="mark-semester" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Semester</label>
+                            <select id="mark-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                <option value="">All semesters</option>
+                                @foreach($filterOptions['semesters'] as $semester)
+                                    <option value="{{ $semester->id }}" @selected($filters['semester_id'] === $semester->id)>{{ $semester->name }} {{ $semester->academic_year }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="mark-course" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Course</label>
+                            <select id="mark-course" name="course_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                <option value="">All courses</option>
+                                @foreach($filterOptions['courses'] as $course)
+                                    <option value="{{ $course->id }}" @selected($filters['course_id'] === $course->id)>{{ $course->code }} - {{ $course->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="mark-teacher" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Teacher</label>
+                            <select id="mark-teacher" name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                                <option value="">All teachers</option>
+                                @foreach($filterOptions['teachers'] as $teacher)
+                                    <option value="{{ $teacher->id }}" @selected($filters['teacher_id'] === $teacher->id)>{{ $teacher->full_name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     </div>
                 </form>
             </section>
@@ -162,7 +176,15 @@
                 </section>
             @endif
 
-            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div x-data="{ queueView: 'pending' }">
+                <div class="rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" x-on:click="queueView = 'pending'" x-bind:class="queueView === 'pending' ? 'bg-gray-900 text-white dark:bg-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Pending Review ({{ $pendingSubmissions->total() }})</button>
+                        <button type="button" x-on:click="queueView = 'approved'" x-bind:class="queueView === 'approved' ? 'bg-gray-900 text-white dark:bg-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Approved - Ready to Publish ({{ $approvedMarks->total() }})</button>
+                    </div>
+                </div>
+
+            <section x-show="queueView === 'pending'" class="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
                         Pending Review
@@ -294,7 +316,7 @@
                 @endif
             </section>
 
-            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <section x-show="queueView === 'approved'" x-cloak class="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
                         Approved - Ready to Publish
@@ -394,6 +416,7 @@
                     <div class="border-t px-4 py-3 dark:border-gray-800">{{ $approvedMarks->links() }}</div>
                 @endif
             </section>
+            </div>
         </div>
     </div>
 

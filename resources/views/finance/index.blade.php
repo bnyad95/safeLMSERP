@@ -30,7 +30,10 @@
                 @endforeach
             </div>
 
-            <form method="GET" action="{{ route('finance') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+            @php
+                $hasAdvancedFinanceFilters = (bool) ($filters['payment_status'] || $filters['currency'] || $filters['academic_year'] || $filters['date_from'] || $filters['date_to']);
+            @endphp
+            <form method="GET" action="{{ route('finance') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5" x-data="{ showMore: {{ $hasAdvancedFinanceFilters ? 'true' : 'false' }} }">
                 @if($selectedStudent)
                     <input type="hidden" name="student_id" value="{{ $selectedStudent->id }}">
                 @endif
@@ -57,6 +60,20 @@
                             @endforeach
                         </select>
                     </div>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">Apply</button>
+                        <a href="{{ route('finance', $selectedStudent ? ['student_id' => $selectedStudent->id] : []) }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">Reset</a>
+                    </div>
+                </div>
+
+                <button type="button" x-on:click="showMore = ! showMore" class="mt-4 flex items-center gap-1 text-sm font-semibold text-indigo-700 hover:underline">
+                    <span x-text="showMore ? 'Fewer filters' : 'More filters'"></span>
+                    <svg class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': showMore }" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+
+                <div x-show="showMore" x-cloak class="mt-4 grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-5">
                     <div class="min-w-0">
                         <label class="block text-sm font-medium text-gray-700">Payment Status</label>
                         <select name="payment_status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -92,31 +109,11 @@
                         <label class="block text-sm font-medium text-gray-700">Date To</label>
                         <input type="date" name="date_to" value="{{ $filters['date_to'] }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
-                    <div class="flex flex-col gap-3 sm:col-span-2 sm:flex-row sm:items-end lg:col-span-2">
-                        <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">Apply</button>
-                        <a href="{{ route('finance', $selectedStudent ? ['student_id' => $selectedStudent->id] : []) }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">Reset</a>
-                    </div>
                 </div>
             </form>
 
             <div class="grid min-w-0 gap-6 xl:grid-cols-[0.9fr_1.35fr]">
                 <section class="min-w-0 space-y-6">
-                    <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-                        <h3 class="text-base font-semibold text-gray-900">Student Search</h3>
-                        <form method="GET" action="{{ route('finance') }}" class="mt-4 flex flex-col gap-2 sm:flex-row">
-                            <input
-                                type="text"
-                                name="q"
-                                value="{{ $query }}"
-                                placeholder="Name, email, ID, phone..."
-                                class="min-w-0 flex-1 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                            >
-                            <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">
-                                Search
-                            </button>
-                        </form>
-                    </div>
-
                     <div class="min-w-0 rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-4 py-4 sm:px-5">
                             <h3 class="text-base font-semibold text-gray-900">Students</h3>

@@ -51,10 +51,15 @@
                 </div>
             </section>
 
-            <section data-finance-charts class="space-y-4">
+            <section data-finance-charts class="space-y-4" x-data="{ chartsOpen: true }">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Finance Charts</h3>
+                        <button type="button" x-on:click="chartsOpen = ! chartsOpen" class="flex items-center gap-1.5 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            <span>Finance Charts</span>
+                            <svg class="h-4 w-4 transition-transform" :class="{ '-rotate-90': ! chartsOpen }" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select a currency to keep every financial comparison consistent.</p>
                     </div>
                     <div class="inline-flex self-start rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900" role="group" aria-label="Chart currency">
@@ -66,7 +71,7 @@
                     </div>
                 </div>
 
-                <div class="grid min-w-0 gap-6 xl:grid-cols-2">
+                <div x-show="chartsOpen" class="grid min-w-0 gap-6 xl:grid-cols-2">
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Collections Trend</h4>
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Posted payments over the last 30 days.</p>
@@ -92,8 +97,15 @@
                 <script id="finance-dashboard-chart-data" type="application/json">@json($chartData)</script>
             </section>
 
-            <div class="grid min-w-0 gap-6 xl:grid-cols-2">
-                <section class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div x-data="{ dueView: 'overdue' }">
+                <div class="rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" x-on:click="dueView = 'overdue'" x-bind:class="dueView === 'overdue' ? 'bg-gray-900 text-white dark:bg-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Overdue Tuition ({{ $overdueInvoices->count() }})</button>
+                        <button type="button" x-on:click="dueView = 'upcoming'" x-bind:class="dueView === 'upcoming' ? 'bg-gray-900 text-white dark:bg-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Upcoming Due Dates ({{ $upcomingInvoices->count() }})</button>
+                    </div>
+                </div>
+
+                <section x-show="dueView === 'overdue'" class="mt-4 min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="flex items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <div>
                             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Overdue Tuition</h3>
@@ -121,7 +133,7 @@
                     </div>
                 </section>
 
-                <section class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <section x-show="dueView === 'upcoming'" x-cloak class="mt-4 min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Upcoming Due Dates</h3>
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open installments due in the next 30 days.</p>
