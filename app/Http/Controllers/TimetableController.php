@@ -40,7 +40,7 @@ class TimetableController extends Controller
                 'timeSlot',
             ])
                 ->whereIn('course_section_id', $sectionIds)
-                ->orderByRaw("case day_of_week when 'Monday' then 1 when 'Tuesday' then 2 when 'Wednesday' then 3 when 'Thursday' then 4 when 'Friday' then 5 when 'Saturday' then 6 else 7 end")
+                ->orderByRaw("case day_of_week when 'Sunday' then 1 when 'Monday' then 2 when 'Tuesday' then 3 when 'Wednesday' then 4 when 'Thursday' then 5 when 'Friday' then 6 when 'Saturday' then 7 else 8 end")
                 ->orderBy('start_time')
                 ->get();
 
@@ -66,7 +66,7 @@ class TimetableController extends Controller
                 ->when($teacher, fn ($query) => $query->where('teacher_id', $teacher->id))
                 ->when(! $teacher, fn ($query) => $query->whereRaw('1 = 0'))
                 ->whereHas('courseSection', fn ($query) => $query->whereIn('status', ['planned', 'active']))
-                ->orderByRaw("case day_of_week when 'Monday' then 1 when 'Tuesday' then 2 when 'Wednesday' then 3 when 'Thursday' then 4 when 'Friday' then 5 when 'Saturday' then 6 else 7 end")
+                ->orderByRaw("case day_of_week when 'Sunday' then 1 when 'Monday' then 2 when 'Tuesday' then 3 when 'Wednesday' then 4 when 'Thursday' then 5 when 'Friday' then 6 when 'Saturday' then 7 else 8 end")
                 ->orderBy('start_time')
                 ->get();
 
@@ -110,7 +110,7 @@ class TimetableController extends Controller
             ->when($filters['day_of_week'] !== '', fn ($query) => $query->where('day_of_week', $filters['day_of_week']))
             ->when($filters['type'] !== '', fn ($query) => $query->where('type', $filters['type']))
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
-            ->orderByRaw("case day_of_week when 'Monday' then 1 when 'Tuesday' then 2 when 'Wednesday' then 3 when 'Thursday' then 4 when 'Friday' then 5 when 'Saturday' then 6 else 7 end")
+            ->orderByRaw("case day_of_week when 'Sunday' then 1 when 'Monday' then 2 when 'Tuesday' then 3 when 'Wednesday' then 4 when 'Thursday' then 5 when 'Friday' then 6 when 'Saturday' then 7 else 8 end")
             ->orderBy('start_time')
             ->get();
 

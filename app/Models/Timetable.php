@@ -50,7 +50,7 @@ class Timetable extends Model
 
     public static function getDays(): array
     {
-        return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     }
 
     public static function types(): array
