@@ -23,9 +23,10 @@ class TuitionChargeService
         User $actor,
         string $transactionDate,
         ?string $dueDate = null,
-        ?string $notes = null
+        ?string $notes = null,
+        ?float $amountOverride = null
     ): array {
-        return DB::transaction(function () use ($student, $semester, $currency, $actor, $transactionDate, $dueDate, $notes) {
+        return DB::transaction(function () use ($student, $semester, $currency, $actor, $transactionDate, $dueDate, $notes, $amountOverride) {
             $student = Student::lockForUpdate()->findOrFail($student->id);
             $semester = Semester::with('academicYear')->lockForUpdate()->findOrFail($semester->id);
 
@@ -71,22 +72,44 @@ class TuitionChargeService
                 ->where('currency', $currency)
                 ->first();
 
-            if (! $rate) {
+            if (! $rate && $amountOverride === null) {
                 $departmentName = $student->department?->name ?? 'this student\'s department';
 
-                return $this->failure("No tuition rate configured for {$departmentName} in {$semester->academicYear->name} ({$currency}). Configure a tuition rate before generating charges.");
+                return $this->failure("No tuition rate configured for {$departmentName} in {$semester->academicYear->name} ({$currency}). Configure a tuition rate, or enter an amount manually.");
             }
 
-            $lineData = $billable->map(function (Enrollment $enrollment) use ($rate) {
-                $credits = (float) $enrollment->courseSection->course->credits;
+            if ($amountOverride !== null) {
+                $totalAmount = round($amountOverride, 2);
+                $totalCredits = $billable->sum(fn (Enrollment $enrollment) => (float) $enrollment->courseSection->course->credits);
+                $impliedRate = $totalCredits > 0 ? round($totalAmount / $totalCredits, 2) : 0.0;
+                $allocated = 0.0;
+                $billableList = $billable->values();
+                $lineData = $billableList->map(function (Enrollment $enrollment, int $index) use ($billableList, $impliedRate, $totalAmount, &$allocated) {
+                    $credits = (float) $enrollment->courseSection->course->credits;
+                    $isLast = $index === $billableList->count() - 1;
+                    $amount = $isLast ? round($totalAmount - $allocated, 2) : round($credits * $impliedRate, 2);
+                    $allocated += $amount;
 
-                return [
-                    'enrollment' => $enrollment,
-                    'credits' => $credits,
-                    'amount' => round($credits * (float) $rate->rate_per_credit, 2),
-                ];
-            });
-            $totalAmount = round($lineData->sum('amount'), 2);
+                    return [
+                        'enrollment' => $enrollment,
+                        'credits' => $credits,
+                        'amount' => $amount,
+                        'rate_per_credit' => $impliedRate,
+                    ];
+                });
+            } else {
+                $lineData = $billable->map(function (Enrollment $enrollment) use ($rate) {
+                    $credits = (float) $enrollment->courseSection->course->credits;
+
+                    return [
+                        'enrollment' => $enrollment,
+                        'credits' => $credits,
+                        'amount' => round($credits * (float) $rate->rate_per_credit, 2),
+                        'rate_per_credit' => $rate->rate_per_credit,
+                    ];
+                });
+                $totalAmount = round($lineData->sum('amount'), 2);
+            }
 
             $agreement = TuitionAgreement::where('student_id', $student->id)
                 ->where('academic_year_id', $semester->academic_year_id)
@@ -154,9 +177,9 @@ class TuitionChargeService
                 'enrollment_id' => $line['enrollment']->id,
                 'course_id' => $line['enrollment']->courseSection->course_id,
                 'course_section_id' => $line['enrollment']->course_section_id,
-                'tuition_rate_id' => $rate->id,
+                'tuition_rate_id' => $rate?->id,
                 'credits' => $line['credits'],
-                'rate_per_credit' => $rate->rate_per_credit,
+                'rate_per_credit' => $line['rate_per_credit'],
                 'amount' => $line['amount'],
                 'is_retake' => $line['enrollment']->is_retake,
             ]));

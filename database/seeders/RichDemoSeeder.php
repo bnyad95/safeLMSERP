@@ -138,7 +138,7 @@ class RichDemoSeeder extends Seeder
             $teachers = collect(range(1, 2))->map(function (int $n) use ($university, $department, $deptCode) {
                 $teacherUser = User::firstOrCreate(
                     ['email' => strtolower($deptCode).'.teacher'.$n.'@example.edu'],
-                    ['name' => "{$deptCode} Teacher {$n}", 'password' => 'Password123', 'university_id' => $university->id, 'department_id' => $department->id]
+                    ['name' => "{$deptCode} Teacher {$n}", 'password' => 'Password123', 'email_verified_at' => now(), 'university_id' => $university->id, 'department_id' => $department->id]
                 );
                 $this->attachRole($teacherUser, 'teacher');
 
@@ -214,7 +214,7 @@ class RichDemoSeeder extends Seeder
                 $studentSeq++;
                 $studentUser = User::firstOrCreate(
                     ['email' => "student{$university->code}{$studentSeq}@example.edu"],
-                    ['name' => "Student {$university->code}-{$studentSeq}", 'password' => 'Password123', 'university_id' => $university->id, 'department_id' => $department->id]
+                    ['name' => "Student {$university->code}-{$studentSeq}", 'password' => 'Password123', 'email_verified_at' => now(), 'university_id' => $university->id, 'department_id' => $department->id]
                 );
                 $this->attachRole($studentUser, 'student');
 
@@ -449,7 +449,7 @@ class RichDemoSeeder extends Seeder
             $email = str_replace('_', '.', $entry['role']).'@example.edu';
             $user = User::firstOrCreate(
                 ['email' => $email],
-                array_merge(['name' => ucwords(str_replace('_', ' ', $entry['role'])), 'password' => 'Password123'], $entry['scope'])
+                array_merge(['name' => ucwords(str_replace('_', ' ', $entry['role'])), 'password' => 'Password123', 'email_verified_at' => now()], $entry['scope'])
             );
             $this->attachRole($user, $entry['role']);
         }

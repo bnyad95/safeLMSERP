@@ -16,7 +16,7 @@
 
     @php
         $initialFinanceType = old('type', $allowedEntryTypes[0] ?? 'invoice');
-        $initialPaymentPlan = old('payment_plan', 'full');
+        $initialPaymentPlan = old('payment_plan', $selectedStudent->preferred_payment_method === 'semester' ? 'semester' : 'full');
         $initialSemesterIds = collect(old('semester_ids', []))->map(fn ($id) => (string) $id)->values();
     @endphp
 
@@ -112,9 +112,14 @@
                             <div x-show="recordType === 'invoice'" class="min-w-0 rounded-md border border-blue-100 bg-blue-50 p-4">
                                 <label class="block text-sm font-semibold text-gray-900">Student tuition agreement</label>
                                 <p class="mt-1 text-xs text-blue-900">Enter the agreed tuition charge, choose how the student wants to pay it, and the system will create the correct invoice schedule.</p>
+                                @if($selectedStudent->preferred_payment_method === 'per_credit')
+                                    <p class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">The registrar recorded this student for per-credit billing. Use "Generate Tuition Charge" on the student's ledger instead of this form so charges are computed automatically at the department's rate.</p>
+                                @elseif($selectedStudent->preferred_payment_method)
+                                    <p class="mt-2 text-xs text-blue-800">Registrar recorded plan: {{ $selectedStudent->preferred_payment_method === 'semester' ? 'divide tuition by semesters' : 'full tuition paid once' }}{{ $selectedStudent->preferred_installment_count ? ' ('.$selectedStudent->preferred_installment_count.' installments)' : '' }}.</p>
+                                @endif
                                 <select name="payment_plan" x-model="paymentPlan" class="mt-3 block w-full min-w-0 rounded-md border-blue-200 bg-white text-sm focus:border-blue-500 focus:ring-blue-500">
-                                    <option value="full" @selected(old('payment_plan', 'full') === 'full')>Full tuition paid once</option>
-                                    <option value="semester" @selected(old('payment_plan') === 'semester')>Divide tuition by semesters</option>
+                                    <option value="full" @selected($initialPaymentPlan === 'full')>Full tuition paid once</option>
+                                    <option value="semester" @selected($initialPaymentPlan === 'semester')>Divide tuition by semesters</option>
                                 </select>
 
                                 <div x-show="paymentPlan === 'full'" class="mt-4 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-900">

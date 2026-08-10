@@ -20,14 +20,16 @@
     </head>
     <body class="bg-gray-100 font-sans text-gray-900">
         <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-            <div class="print-actions mb-5 flex flex-wrap justify-between gap-3">
-                <a href="{{ route('finance.students.show', $student) }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                    Back to Finance
-                </a>
-                <button type="button" onclick="window.print()" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-                    Print Statement
-                </button>
-            </div>
+            @unless(request()->boolean('embed'))
+                <div class="print-actions mb-5 flex flex-wrap justify-between gap-3">
+                    <a href="{{ route('finance.students.show', $student) }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Back to Finance
+                    </a>
+                    <button type="button" onclick="window.print()" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                        Print Statement
+                    </button>
+                </div>
+            @endunless
 
             <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
                 <div class="flex flex-col gap-5 border-b border-gray-200 pb-6 md:flex-row md:items-start md:justify-between">

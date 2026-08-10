@@ -410,11 +410,17 @@ class StudentController extends Controller
 
         if (! $student) {
             $rules['password'] = ['required', 'string', 'min:8', 'confirmed'];
+            $rules['preferred_payment_method'] = ['nullable', Rule::in(['full', 'semester', 'per_credit'])];
+            $rules['preferred_installment_count'] = ['nullable', 'integer', 'min:1', 'max:24'];
         }
 
         $validated = $request->validate($rules);
 
         $validated['admission_status'] = $validated['admission_status'] ?? 'Admitted';
+
+        if (! $student && ($validated['preferred_payment_method'] ?? 'full') !== 'semester') {
+            $validated['preferred_installment_count'] = null;
+        }
 
         return $validated;
     }

@@ -274,6 +274,61 @@ class TuitionChargeGenerationTest extends TestCase
         $this->assertDatabaseCount('finance_transactions', 0);
     }
 
+    public function test_financer_can_enter_a_manual_amount_when_no_tuition_rate_is_configured(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('MANUAL');
+        $student = $this->makeStudent($university, $department);
+        $academicYear = $this->makeAcademicYear($university);
+        $semester = $this->makeSemester($university, $academicYear);
+        $this->enroll($student, $semester, 3.0);
+        $this->enroll($student, $semester, 4.0);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.students.tuition-charges.store', $student), [
+                'semester_id' => $semester->id,
+                'currency' => 'IQD',
+                'transaction_date' => '2026-09-05',
+                'amount' => '500000',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->firstOrFail();
+        $this->assertSame('500000.00', $invoice->amount);
+
+        $lines = TuitionChargeLine::where('finance_transaction_id', $invoice->id)->get();
+        $this->assertSame(2, $lines->count());
+        $this->assertSame('500000.00', number_format((float) $lines->sum('amount'), 2, '.', ''));
+        $this->assertNull($lines->first()->tuition_rate_id);
+    }
+
+    public function test_manual_amount_overrides_the_computed_rate_when_both_are_available(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('OVERRIDE');
+        $student = $this->makeStudent($university, $department);
+        $academicYear = $this->makeAcademicYear($university);
+        $semester = $this->makeSemester($university, $academicYear);
+        TuitionRate::create([
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'rate_per_credit' => 50000,
+        ]);
+        $this->enroll($student, $semester, 3.0);
+
+        $this->actingAs($admin)->post(route('finance.students.tuition-charges.store', $student), [
+            'semester_id' => $semester->id,
+            'currency' => 'IQD',
+            'transaction_date' => '2026-09-05',
+            'amount' => '999999.99',
+        ])->assertRedirect(route('finance.students.show', $student));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->firstOrFail();
+        $this->assertSame('999999.99', $invoice->amount);
+    }
+
     public function test_department_scoped_rate_is_selected_over_other_department_rate(): void
     {
         $admin = $this->makeSuperAdmin();

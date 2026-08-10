@@ -34,6 +34,7 @@
                 $hasAdvancedFinanceFilters = (bool) ($filters['payment_status'] || $filters['currency'] || $filters['academic_year'] || $filters['date_from'] || $filters['date_to']);
             @endphp
             <form method="GET" action="{{ route('finance') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5" x-data="{ showMore: {{ $hasAdvancedFinanceFilters ? 'true' : 'false' }} }">
+                <input type="hidden" name="applied" value="1">
                 @if($selectedStudent)
                     <input type="hidden" name="student_id" value="{{ $selectedStudent->id }}">
                 @endif
@@ -112,46 +113,43 @@
                 </div>
             </form>
 
-            <div class="grid min-w-0 gap-6 xl:grid-cols-[0.9fr_1.35fr]">
+            <div class="min-w-0 space-y-4">
+                @if($shouldLoadStudents)
                 <section class="min-w-0 space-y-6">
                     <div class="min-w-0 rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-4 py-4 sm:px-5">
                             <h3 class="text-base font-semibold text-gray-900">Students</h3>
                         </div>
                         <div class="divide-y divide-gray-100">
-                            @if(!($shouldLoadStudents ?? false))
-                                <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">Use search or organization filters to load students.</div>
-                            @else
-                                @forelse($students as $student)
-                                    <a href="{{ route('finance.students.show', $student) }}" class="block px-4 py-4 hover:bg-gray-50 sm:px-5">
-                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                            <div class="min-w-0">
-                                                <p class="font-medium text-gray-900">{{ $student->full_name }}</p>
-                                                <p class="mt-1 break-words text-sm text-gray-500">{{ $student->student_id }} / {{ $student->email }}</p>
-                                                <p class="mt-1 break-words text-xs text-gray-500">{{ $student->phone ?? 'No phone' }} / {{ $student->department->name ?? 'No department' }}</p>
-                                            </div>
-                                            @if($selectedStudent?->id === $student->id)
-                                                <span class="self-start rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">Selected</span>
-                                            @endif
+                            @forelse($students as $student)
+                                <a href="{{ route('finance.students.show', $student) }}" class="block px-4 py-4 hover:bg-gray-50 sm:px-5">
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div class="min-w-0">
+                                            <p class="font-medium text-gray-900">{{ $student->full_name }}</p>
+                                            <p class="mt-1 break-words text-sm text-gray-500">{{ $student->student_id }} / {{ $student->email }}</p>
+                                            <p class="mt-1 break-words text-xs text-gray-500">{{ $student->phone ?? 'No phone' }} / {{ $student->department->name ?? 'No department' }}</p>
                                         </div>
-                                    </a>
-                                @empty
-                                    <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">No students match this search.</div>
-                                @endforelse
-                            @endif
+                                        @if($selectedStudent?->id === $student->id)
+                                            <span class="self-start rounded-md bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">Selected</span>
+                                        @endif
+                                    </div>
+                                </a>
+                            @empty
+                                <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">No students match this search.</div>
+                            @endforelse
                         </div>
                     </div>
                 </section>
-
+                @else
                 <section class="min-w-0 space-y-6">
-                    <div class="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500 sm:p-8">
-                        Open a student from the search results to enter invoices, payments, and tuition records.
-                    </div>
 
                     <div class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-4 py-4 sm:px-5">
                             <h3 class="text-base font-semibold text-gray-900">Recent Finance Records</h3>
                         </div>
+                        @if(!request()->has('applied'))
+                            <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">Apply a filter to view finance records.</div>
+                        @else
                         <div class="divide-y divide-gray-100 md:hidden">
                             @forelse($transactions as $transaction)
                                 @php
@@ -238,19 +236,14 @@
                             @endforelse
                         </div>
                         <div class="hidden overflow-x-auto md:block">
-                            <table class="min-w-[920px] divide-y divide-gray-100">
+                            <table class="w-full min-w-0 table-fixed divide-y divide-gray-100">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Student</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Document</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Amount</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Balance</th>
-                                        <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Approval</th>
-                                        <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Actions</th>
+                                        <th class="w-[32%] px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Record</th>
+                                        <th class="w-[20%] px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Student</th>
+                                        <th class="w-[18%] px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Amount</th>
+                                        <th class="w-[18%] px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
+                                        <th class="w-[12%] px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
@@ -269,61 +262,47 @@
                                             $recordClass = $statusClasses[$transaction->status] ?? 'bg-gray-100 text-gray-700';
                                         @endphp
                                         <tr>
-                                            <td class="px-5 py-3 text-sm text-gray-600">{{ $transaction->transaction_date->format('Y-m-d') }}</td>
-                                            <td class="px-5 py-3 text-sm font-medium text-gray-900">{{ $transaction->student->full_name ?? '-' }}</td>
-                                            <td class="px-5 py-3 text-sm text-gray-600">
-                                                <div class="font-medium text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</div>
+                                            <td class="min-w-0 px-5 py-3 text-sm text-gray-600">
+                                                <div class="truncate font-medium text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</div>
+                                                <div class="text-xs text-gray-500">{{ $transaction->transaction_date->format('Y-m-d') }} / {{ ucfirst($transaction->type) }}</div>
                                                 @if($transaction->invoice)
-                                                    <div class="text-xs text-blue-700">Applied to {{ $transaction->invoice->documentNumber() }}</div>
+                                                    <div class="truncate text-xs text-blue-700">Applied to {{ $transaction->invoice->documentNumber() }}</div>
                                                 @endif
                                                 @if($transaction->originalTransaction)
-                                                    <div class="text-xs text-amber-700">Reversal for {{ $transaction->originalTransaction->documentNumber() }}</div>
-                                                @endif
-                                                @if($transaction->reference)
-                                                    <div class="text-xs text-gray-500">{{ $transaction->reference }}</div>
+                                                    <div class="truncate text-xs text-amber-700">Reversal for {{ $transaction->originalTransaction->documentNumber() }}</div>
                                                 @endif
                                             </td>
-                                            <td class="px-5 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
+                                            <td class="min-w-0 max-w-[10rem] truncate px-5 py-3 text-sm font-medium text-gray-900">{{ $transaction->student->full_name ?? '-' }}</td>
                                             <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</td>
                                             <td class="px-5 py-3">
-                                                <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>
-                                            </td>
-                                            <td class="px-5 py-3">
-                                                <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
-                                            </td>
-                                            <td class="px-5 py-3 text-sm font-semibold text-gray-900">
-                                                {{ $transaction->balance_after !== null ? number_format((float) $transaction->balance_after, 2).' '.$transaction->currency : '-' }}
-                                            </td>
-                                            <td class="px-5 py-3 text-sm text-gray-600">
-                                                <div>{{ $transaction->approver->name ?? '-' }}</div>
-                                                @if($transaction->approved_at)
-                                                    <div class="text-xs text-gray-500">{{ $transaction->approved_at->format('Y-m-d H:i') }}</div>
-                                                @endif
+                                                <div class="flex flex-col items-start gap-1">
+                                                    <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>
+                                                    <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
+                                                </div>
                                                 @if($transaction->voided_at)
-                                                    <div class="text-xs text-red-700">Voided {{ $transaction->voided_at->format('Y-m-d H:i') }}</div>
+                                                    <div class="mt-1 text-xs text-red-700">Voided {{ $transaction->voided_at->format('Y-m-d') }}</div>
                                                 @endif
                                             </td>
                                             <td class="px-5 py-3 text-right">
-                                                <div class="flex flex-col items-end gap-2">
+                                                <div class="flex flex-col items-end gap-1">
                                                     @if($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending')
                                                         <form method="POST" action="{{ route('finance.transactions.approve', $transaction) }}" data-submit-once>
                                                             @csrf
-                                                            <button type="submit" class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
+                                                            <button type="submit" class="whitespace-nowrap rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
                                                         </form>
                                                     @endif
                                                     @if($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id)
-                                                        <form method="POST" action="{{ route('finance.transactions.void', $transaction) }}" class="flex justify-end gap-2" onsubmit="return confirm('Void this finance record and create a reversal entry?')">
-                                                            @csrf
-                                                            <input type="text" name="notes" placeholder="Reason" class="w-28 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                                            <button type="submit" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Void</button>
-                                                        </form>
+                                                        <a href="{{ route('finance.students.show', $transaction->student_id) }}" class="text-xs font-semibold text-red-600 hover:text-red-800">Void&hellip;</a>
+                                                    @endif
+                                                    @if(! $canApproveFinance && ! $canVoidFinance)
+                                                        <a href="{{ route('finance.students.show', $transaction->student_id) }}" class="text-xs font-semibold text-blue-600 hover:text-blue-800">View</a>
                                                     @endif
                                                 </div>
                                             </td>
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="10" class="px-5 py-8 text-center text-sm text-gray-500">No finance records match the current filters.</td>
+                                            <td colspan="5" class="px-5 py-8 text-center text-sm text-gray-500">No finance records match the current filters.</td>
                                         </tr>
                                     @endforelse
                                 </tbody>
@@ -332,8 +311,10 @@
                         @if($transactions->hasPages())
                             <div class="border-t border-gray-200 px-4 py-4 sm:px-5">{{ $transactions->links() }}</div>
                         @endif
+                        @endif
                     </div>
                 </section>
+                @endif
             </div>
         </div>
     </div>

@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\AcademicYear;
 use App\Models\CourseSection;
+use App\Models\Department;
 use App\Models\Semester;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Models\User;
 use App\Services\TuitionChargeService;
@@ -184,6 +186,9 @@ class SemesterController extends Controller
 
                 if ($academicYear->wasRecentlyCreated) {
                     $created++;
+                    if ($validated['status'] === 'active') {
+                        $this->ensureTuitionRatesConfiguredForActivation($academicYear);
+                    }
                     if (! empty($validated['generate_semesters'])) {
                         $this->generateRegularSemesters($academicYear, $request->user());
                     }
@@ -543,6 +548,40 @@ class SemesterController extends Controller
 
             $previousSemester = $semester;
         }
+
+        $this->ensureTuitionRatesConfiguredForActivation($academicYear);
+    }
+
+    private function ensureTuitionRatesConfiguredForActivation(AcademicYear $academicYear): void
+    {
+        $departments = Department::where('university_id', $academicYear->university_id)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        if ($departments->isEmpty()) {
+            return;
+        }
+
+        $pricedDepartmentIds = TuitionRate::where('academic_year_id', $academicYear->id)
+            ->whereIn('department_id', $departments->pluck('id'))
+            ->distinct()
+            ->pluck('department_id');
+
+        $missingDepartments = $departments->reject(fn (Department $department) => $pricedDepartmentIds->contains($department->id));
+
+        if ($missingDepartments->isEmpty()) {
+            return;
+        }
+
+        $names = $missingDepartments->pluck('name');
+        $list = $names->take(5)->implode(', ');
+        if ($names->count() > 5) {
+            $list .= ', and '.($names->count() - 5).' more';
+        }
+
+        throw ValidationException::withMessages([
+            'status' => "Set a tuition rate for every department before activating this academic year. Missing a rate: {$list}.",
+        ]);
     }
 
     private function ensureExistingSemestersFitAcademicYear(AcademicYear $academicYear, string $startsOn, string $endsOn): void

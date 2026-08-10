@@ -1837,9 +1837,9 @@ class ErpController extends Controller
             ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
             ['title' => 'Stages', 'description' => 'Reusable study stages defined for each department.', 'route' => route('stages.index'), 'count' => $stageCount, 'enabled' => true],
             ['title' => 'Semester Credit Policy', 'description' => 'Review semester ECTS/credits and passing credits required.', 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => true],
-            ['title' => 'Tuition Rates', 'description' => 'Per-credit tuition rates by department, academic year, and currency.', 'route' => route('bologna-definition.tuition-rates'), 'count' => $tuitionRateCount, 'enabled' => true],
             ['title' => 'Course Catalog', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
             ['title' => 'Academic Years', 'description' => 'Manage upcoming, active, closed, and archived academic periods.', 'route' => route('academic-years.index'), 'count' => $academicYearCount, 'enabled' => true],
+            ['title' => 'Tuition Rates', 'description' => 'Set each department\'s per-credit rate for a new academic year before activating it.', 'route' => route('bologna-definition.tuition-rates'), 'count' => $tuitionRateCount, 'enabled' => true],
             ['title' => 'Semesters', 'description' => 'Define regular and optional summer periods inside each academic year.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
             ['title' => 'Module Offerings', 'description' => 'Open catalog courses by academic year, semester, stage, group, and teacher.', 'route' => route('module-offerings.index'), 'count' => $moduleCount, 'enabled' => $canViewModuleOfferings],
         ];
@@ -1956,7 +1956,7 @@ class ErpController extends Controller
     public function tuitionRates()
     {
         $user = auth()->user();
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.view', 'academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator', 'chief_accountant'], ['academic_setup.view', 'academic_setup.manage']);
 
         $departmentsQuery = Department::with(['university', 'college'])->orderBy('name');
         OrganizationScope::apply($departmentsQuery, $user, 'department');
@@ -1976,16 +1976,20 @@ class ErpController extends Controller
             ->groupBy('department_id');
 
         $currencies = ['IQD', 'USD'];
-        $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
+        $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator', 'chief_accountant'])
             || $user->hasDirectPermissionGrant('academic_setup.manage');
+        $canViewBolognaHub = $user->hasAnyRole(['super_administrator', 'administrator'])
+            || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
+        $backRoute = $canViewBolognaHub ? route('bologna-definition') : route('finance');
+        $backLabel = $canViewBolognaHub ? 'Back to Bologna Definition' : 'Back to Finance';
 
-        return view('erp.tuition-rates', compact('departments', 'academicYears', 'rates', 'currencies', 'canManageAcademicSetup'));
+        return view('erp.tuition-rates', compact('departments', 'academicYears', 'rates', 'currencies', 'canManageAcademicSetup', 'backRoute', 'backLabel'));
     }
 
     public function storeTuitionRates(Request $request)
     {
         $user = auth()->user();
-        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator'], ['academic_setup.manage']);
+        $this->requireAnyRoleOrDirectPermission(['super_administrator', 'administrator', 'chief_accountant'], ['academic_setup.manage']);
 
         $departmentsQuery = Department::query();
         OrganizationScope::apply($departmentsQuery, $user, 'department');

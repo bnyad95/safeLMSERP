@@ -60,6 +60,8 @@ class Student extends Model
         'emergency_contact_name',
         'emergency_contact_relationship',
         'emergency_contact_phone',
+        'preferred_payment_method',
+        'preferred_installment_count',
     ];
 
     protected $casts = [

@@ -365,10 +365,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
         ->name('bologna-definition.semester-credit-policy.store');
     Route::get('/bologna-definition/tuition-rates', [ErpController::class, 'tuitionRates'])
-        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')
+        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,permission:academic_setup.view,permission:academic_setup.manage')
         ->name('bologna-definition.tuition-rates');
     Route::post('/bologna-definition/tuition-rates', [ErpController::class, 'storeTuitionRates'])
-        ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.manage')
+        ->middleware('access.any:role:super_administrator,role:administrator,role:chief_accountant,permission:academic_setup.manage')
         ->name('bologna-definition.tuition-rates.store');
     Route::get('/academic-year-closing', [AcademicYearClosureController::class, 'index'])
         ->middleware('access.any:role:super_administrator,role:administrator,permission:academic_setup.view,permission:academic_setup.manage')

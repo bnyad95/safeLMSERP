@@ -45,6 +45,16 @@ class TuitionRateManagementTest extends TestCase
         return $user;
     }
 
+    private function makeChiefAccountant(University $university): User
+    {
+        $role = Role::firstOrCreate(['name' => 'chief_accountant'], ['display_name' => 'Finance Administrator']);
+
+        $user = User::factory()->create(['university_id' => $university->id]);
+        $user->roles()->attach($role);
+
+        return $user;
+    }
+
     private function organization(string $suffix): array
     {
         $university = University::create(['name' => "University {$suffix}", 'code' => "U{$suffix}"]);
@@ -128,6 +138,58 @@ class TuitionRateManagementTest extends TestCase
             ->assertSessionHasErrors();
 
         $this->assertDatabaseCount('tuition_rates', 0);
+    }
+
+    public function test_chief_accountant_can_view_and_save_department_tuition_rates(): void
+    {
+        [$university, $department] = $this->organization('CHIEF');
+        $academicYear = AcademicYear::create(['university_id' => $university->id, 'name' => '2026/2027', 'status' => 'active']);
+        $chiefAccountant = $this->makeChiefAccountant($university);
+
+        $this->actingAs($chiefAccountant)
+            ->get(route('bologna-definition.tuition-rates'))
+            ->assertOk()
+            ->assertSee($department->name);
+
+        $this->actingAs($chiefAccountant)
+            ->post(route('bologna-definition.tuition-rates.store'), [
+                'rates' => [
+                    $department->id => [
+                        $academicYear->id => ['IQD' => '80000'],
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('bologna-definition.tuition-rates'));
+
+        $this->assertDatabaseHas('tuition_rates', [
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'rate_per_credit' => '80000.00',
+        ]);
+    }
+
+    public function test_plain_accountant_cannot_manage_tuition_rates(): void
+    {
+        [$university, $department] = $this->organization('PLAIN');
+        $academicYear = AcademicYear::create(['university_id' => $university->id, 'name' => '2026/2027', 'status' => 'active']);
+        $role = Role::firstOrCreate(['name' => 'accountant'], ['display_name' => 'Finance Officer']);
+        $accountant = User::factory()->create(['university_id' => $university->id]);
+        $accountant->roles()->attach($role);
+
+        $this->actingAs($accountant)
+            ->get(route('bologna-definition.tuition-rates'))
+            ->assertForbidden();
+
+        $this->actingAs($accountant)
+            ->post(route('bologna-definition.tuition-rates.store'), [
+                'rates' => [
+                    $department->id => [
+                        $academicYear->id => ['IQD' => '80000'],
+                    ],
+                ],
+            ])
+            ->assertForbidden();
     }
 
     public function test_department_scoped_admin_cannot_set_rate_for_another_department(): void

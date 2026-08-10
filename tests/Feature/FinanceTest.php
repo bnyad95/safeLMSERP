@@ -741,10 +741,40 @@ class FinanceTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->get(route('finance'))
+            ->get(route('finance', ['applied' => 1]))
             ->assertOk()
             ->assertDontSee(route('finance.transactions.approve', $postedInvoice), false)
             ->assertSee(route('finance.transactions.approve', $pendingPayment), false);
+    }
+
+    public function test_finance_index_hides_records_until_filters_are_applied(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '500',
+            'currency' => 'USD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-TEST02',
+            'transaction_date' => '2026-07-10',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('finance'))
+            ->assertOk()
+            ->assertSee('Apply a filter to view finance records.')
+            ->assertDontSee('INV-2026-TEST02');
+
+        $this->actingAs($admin)
+            ->get(route('finance', ['applied' => 1]))
+            ->assertOk()
+            ->assertDontSee('Apply a filter to view finance records.')
+            ->assertSee('INV-2026-TEST02');
     }
 
     public function test_finance_rejects_over_allocated_invoice_payment(): void
@@ -1822,7 +1852,7 @@ class FinanceTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_add_finance_record_opens_on_a_dedicated_student_subpage(): void
+    public function test_add_finance_record_opens_in_a_modal_on_the_student_page(): void
     {
         $admin = $this->makeSuperAdmin();
         $student = $this->makeStudent();
@@ -1830,8 +1860,9 @@ class FinanceTest extends TestCase
         $this->actingAs($admin)
             ->get(route('finance.students.show', $student))
             ->assertOk()
-            ->assertSee(route('finance.students.records.create', $student))
-            ->assertDontSee(route('finance.transactions.store'));
+            ->assertSee('Add Finance Record')
+            ->assertSee('Save Finance Record')
+            ->assertSee(route('finance.transactions.store'));
 
         $this->actingAs($admin)
             ->get(route('finance.students.records.create', $student))

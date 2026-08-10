@@ -40,6 +40,10 @@
                             <p class="mt-1 break-words text-sm text-gray-500">{{ $selectedStudent->department->name ?? 'No department' }} / {{ $selectedStudent->status }}</p>
                             @if($paymentPlanSummary['total'] > 0)
                                 <p class="mt-2 text-sm font-medium text-blue-700">{{ $paymentPlanSummary['total'] }} semester installments: {{ $paymentPlanSummary['label'] }}</p>
+                            @elseif($selectedStudent->preferred_payment_method && $tuitionAgreements->isEmpty())
+                                <p class="mt-2 text-sm font-medium text-blue-700">
+                                    Registrar recorded plan: {{ ['full' => 'full tuition paid once', 'semester' => 'divide tuition by semesters', 'per_credit' => 'per-credit, billed automatically'][$selectedStudent->preferred_payment_method] ?? $selectedStudent->preferred_payment_method }}{{ $selectedStudent->preferred_installment_count ? ' ('.$selectedStudent->preferred_installment_count.' installments)' : '' }} — no tuition agreement created yet.
+                                </p>
                             @endif
                         </div>
                         <div class="flex flex-wrap gap-2">
@@ -56,52 +60,60 @@
                         </div>
                     </div>
                     <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <a href="{{ route('finance.statement', $selectedStudent) }}" class="inline-flex w-full justify-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">
-                            Print Statement
-                        </a>
-                        <a href="{{ route('finance.export', ['student_id' => $selectedStudent->id]) }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">
+                        <div x-data="{ statementLoaded: false }" class="contents">
+                            <button type="button" x-on:click="statementLoaded = true; $dispatch('open-modal', 'print-statement')" class="inline-flex w-full justify-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">
+                                Print Statement
+                            </button>
+                            @include('finance.partials.print-statement')
+                        </div>
+                        <button type="button" x-data x-on:click="$dispatch('open-modal', 'export-student-csv')" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                             Export Student CSV
-                        </a>
+                        </button>
                         @if($canCreateInvoice || $canRecordPayment)
-                            <a href="{{ route('finance.students.records.create', $selectedStudent) }}" class="inline-flex w-full justify-center rounded-md border border-gray-900 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 sm:w-auto">
+                            <button type="button" x-data x-on:click="$dispatch('open-modal', 'add-finance-record')" class="inline-flex w-full justify-center rounded-md border border-gray-900 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 sm:w-auto dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800">
                                 Add Finance Record
-                            </a>
+                            </button>
+                        @endif
+                        @if($canCreateInvoice)
+                            <button type="button" x-data x-on:click="$dispatch('open-modal', 'generate-tuition-charge')" class="inline-flex w-full justify-center rounded-md border border-gray-900 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 sm:w-auto dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800">
+                                Generate Tuition Charge
+                            </button>
                         @endif
                     </div>
                     @if($canManageAccountBlock)
-                        <div class="mt-4 rounded-md border {{ $selectedStudent->user?->account_blocked_at ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50' }} p-4">
-                            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="mt-4 rounded-md border {{ $selectedStudent->user?->account_blocked_at ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50' }} p-3">
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <div class="min-w-0">
                                     <p class="text-sm font-semibold {{ $selectedStudent->user?->account_blocked_at ? 'text-red-900' : 'text-amber-900' }}">Student login access</p>
                                     @if($selectedStudent->user?->account_blocked_at)
-                                        <p class="mt-1 text-sm text-red-700">
+                                        <p class="mt-0.5 text-xs text-red-700">
                                             Blocked {{ $selectedStudent->user->account_blocked_at->format('Y-m-d H:i') }}
                                             @if($selectedStudent->user->accountBlocker)
                                                 by {{ $selectedStudent->user->accountBlocker->name }}
                                             @endif
                                         </p>
                                         @if($selectedStudent->user->account_block_reason)
-                                            <p class="mt-1 break-words text-sm text-red-700">{{ $selectedStudent->user->account_block_reason }}</p>
+                                            <p class="mt-0.5 break-words text-xs text-red-700">{{ $selectedStudent->user->account_block_reason }}</p>
                                         @endif
                                     @else
-                                        <p class="mt-1 text-sm text-amber-800">Block login only when the student has unpaid tuition. Use unblock after the balance is resolved or finance approves access.</p>
+                                        <p class="mt-0.5 text-xs text-amber-800">Block only when tuition is unpaid; unblock once resolved.</p>
                                     @endif
                                 </div>
 
                                 @if($selectedStudent->user?->account_blocked_at)
-                                    <form method="POST" action="{{ route('finance.students.account-block.destroy', $selectedStudent) }}" onsubmit="return confirm('Unblock this student login account?')">
+                                    <form method="POST" action="{{ route('finance.students.account-block.destroy', $selectedStudent) }}" onsubmit="return confirm('Unblock this student login account?')" class="shrink-0">
                                         @csrf
                                         @method('DELETE')
-                                        <button type="submit" class="w-full rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 sm:w-auto">Unblock Account</button>
+                                        <button type="submit" class="w-full rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 sm:w-auto">Unblock Account</button>
                                     </form>
                                 @elseif($selectedStudent->user)
-                                    <form method="POST" action="{{ route('finance.students.account-block.store', $selectedStudent) }}" class="flex w-full flex-col gap-2 lg:max-w-lg">
+                                    <form method="POST" action="{{ route('finance.students.account-block.store', $selectedStudent) }}" class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center lg:max-w-md">
                                         @csrf
-                                        <input type="text" name="reason" required placeholder="Reason for overdue tuition hold" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                        <button type="submit" class="w-full rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto" onclick="return confirm('Block this student login because tuition is overdue?')">Block Account</button>
+                                        <input type="text" name="reason" required placeholder="Reason for hold" class="w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:w-48">
+                                        <button type="submit" class="w-full shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto" onclick="return confirm('Block this student login because tuition is overdue?')">Block Account</button>
                                     </form>
                                 @else
-                                    <span class="rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-600">No linked login account</span>
+                                    <span class="shrink-0 rounded-md bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-600">No linked login account</span>
                                 @endif
                             </div>
                         </div>
@@ -109,6 +121,8 @@
                 </section>
 
                 @include('finance.partials.generate-tuition-charge')
+                @include('finance.partials.export-student-csv')
+                @include('finance.partials.add-finance-record')
 
                 <section class="min-w-0 overflow-hidden border-y border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
                     <div class="flex items-center justify-between gap-3 px-4 py-4 sm:px-5">

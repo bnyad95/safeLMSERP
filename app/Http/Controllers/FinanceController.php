@@ -221,27 +221,26 @@ class FinanceController extends Controller
                 'amount' => (float) $row->amount,
             ]);
 
-        $collegeRows = (clone $financeQuery)
+        $departmentRows = (clone $financeQuery)
             ->withoutEagerLoads()
             ->reorder()
             ->leftJoin('students as dashboard_students', 'finance_transactions.student_id', '=', 'dashboard_students.id')
             ->leftJoin('departments as dashboard_departments', 'dashboard_students.department_id', '=', 'dashboard_departments.id')
-            ->leftJoin('colleges as dashboard_colleges', 'dashboard_departments.college_id', '=', 'dashboard_colleges.id')
             ->where('finance_transactions.posting_status', 'posted')
-            ->selectRaw('COALESCE(dashboard_colleges.id, 0) as college_id')
-            ->selectRaw("COALESCE(dashboard_colleges.name, 'Unassigned college') as college")
+            ->selectRaw('COALESCE(dashboard_departments.id, 0) as department_id')
+            ->selectRaw("COALESCE(dashboard_departments.name, 'Unassigned department') as department")
             ->addSelect('finance_transactions.currency')
             ->selectRaw(
                 'SUM(CASE WHEN finance_transactions.type IN (?, ?) THEN finance_transactions.amount ELSE 0 END) - SUM(CASE WHEN finance_transactions.type IN (?, ?, ?) THEN finance_transactions.amount ELSE 0 END) as balance',
                 [...FinanceTransaction::chargeTypes(), ...FinanceTransaction::creditTypes()]
             )
-            ->groupBy('dashboard_colleges.id', 'dashboard_colleges.name', 'finance_transactions.currency')
+            ->groupBy('dashboard_departments.id', 'dashboard_departments.name', 'finance_transactions.currency')
             ->orderByDesc('balance')
             ->get()
             ->filter(fn ($row) => (float) $row->balance > 0)
             ->map(fn ($row) => [
-                'college_id' => (int) $row->college_id,
-                'college' => $row->college,
+                'department_id' => (int) $row->department_id,
+                'department' => $row->department,
                 'currency' => $row->currency ?: 'IQD',
                 'balance' => (float) $row->balance,
             ])
@@ -298,7 +297,7 @@ class FinanceController extends Controller
             'dates' => collect(range(0, 29))
                 ->map(fn (int $offset) => $collectionStart->copy()->addDays($offset)->format('Y-m-d')),
             'collections' => $collectionRows,
-            'outstandingByCollege' => $collegeRows,
+            'outstandingByDepartment' => $departmentRows,
             'invoiceStatuses' => $invoiceStatusRows,
             'overdueAging' => $agingRows,
             'financeUrl' => route('finance'),
@@ -433,8 +432,22 @@ class FinanceController extends Controller
             ->limit(10)
             ->get();
         $installmentPlanOverflowWarning = $this->installmentPlanOverflowWarning($student, $tuitionAgreements);
+        $canCreateInvoice = $user->hasRole('super_administrator') || $user->hasPermission('finance.create_invoice');
+        $canRecordPayment = $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.record_payment', 'finance.record_expense', 'finance.refund']);
+        $recordFormContext = ($canCreateInvoice || $canRecordPayment)
+            ? $this->financeRecordFormContext($student, $user)
+            : [
+                'allowedEntryTypes' => [],
+                'creationStatuses' => ['pending' => 'Pending approval'],
+                'canCollectPayment' => false,
+                'canPostImmediately' => false,
+                'invoiceOptions' => collect(),
+                'semesterOptions' => collect(),
+                'academicYearOptions' => collect(),
+                'expectedInstallmentCount' => 1,
+            ];
 
-        return view('finance.show', [
+        return view('finance.show', array_merge($recordFormContext, [
             'filters' => $filters,
             'selectedStudent' => $student,
             'transactions' => $transactions,
@@ -451,17 +464,11 @@ class FinanceController extends Controller
             'filterOptions' => $this->financeFilterOptions($user),
             'tuitionAgreements' => $tuitionAgreements,
             'installmentPlanOverflowWarning' => $installmentPlanOverflowWarning,
-            'types' => [
-                'invoice' => 'Invoice / Tuition Charge',
-                'payment' => 'Payment',
-                'discount' => 'Discount',
-                'scholarship' => 'Scholarship',
-                'refund' => 'Refund',
-            ],
+            'types' => $this->financeEntryTypeLabels(),
             'statuses' => ['pending' => 'Pending', 'paid' => 'Paid', 'partial' => 'Partial', 'approved' => 'Approved', 'cancelled' => 'Cancelled'],
             'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'paid' => 'Paid', 'overdue' => 'Overdue', 'cancelled' => 'Cancelled'],
-            'canCreateInvoice' => $user->hasRole('super_administrator') || $user->hasPermission('finance.create_invoice'),
-            'canRecordPayment' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.record_payment', 'finance.record_expense', 'finance.refund']),
+            'canCreateInvoice' => $canCreateInvoice,
+            'canRecordPayment' => $canRecordPayment,
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
             'canVoidFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.refund', 'finance.approve_payment', 'finance.approve_expense']),
             'canManageAccountBlock' => $this->canManageStudentAccountBlock($user),
@@ -472,7 +479,7 @@ class FinanceController extends Controller
                 ->orderBy('start_date')
                 ->orderBy('name')
                 ->get(),
-        ]);
+        ]));
     }
 
     public function createStudentRecord(Request $request, Student $student)
@@ -481,26 +488,39 @@ class FinanceController extends Controller
         $this->authorizeStudentScope($request->user(), $student);
 
         $user = $request->user();
-        $allowedEntryTypes = $this->allowedFinanceEntryTypes($user);
-        abort_if($allowedEntryTypes === [], 403);
+        $formContext = $this->financeRecordFormContext($student, $user);
+        abort_if($formContext['allowedEntryTypes'] === [], 403);
 
         $student->load(['department.college', 'university']);
+
+        return view('finance.create', array_merge($formContext, [
+            'selectedStudent' => $student,
+            'types' => $this->financeEntryTypeLabels(),
+            'canCreateInvoice' => in_array('invoice', $formContext['allowedEntryTypes'], true),
+        ]));
+    }
+
+    private function financeEntryTypeLabels(): array
+    {
+        return [
+            'invoice' => 'Invoice / Tuition Charge',
+            'payment' => 'Payment',
+            'discount' => 'Discount',
+            'scholarship' => 'Scholarship',
+            'refund' => 'Refund',
+        ];
+    }
+
+    private function financeRecordFormContext(Student $student, User $user): array
+    {
+        $allowedEntryTypes = $this->allowedFinanceEntryTypes($user);
         $canPostImmediately = $user->hasAnyRole(['super_administrator', 'chief_accountant']);
 
-        return view('finance.create', [
-            'selectedStudent' => $student,
-            'types' => [
-                'invoice' => 'Invoice / Tuition Charge',
-                'payment' => 'Payment',
-                'discount' => 'Discount',
-                'scholarship' => 'Scholarship',
-                'refund' => 'Refund',
-            ],
+        return [
+            'allowedEntryTypes' => $allowedEntryTypes,
             'creationStatuses' => $canPostImmediately
                 ? ['pending' => 'Pending approval', 'paid' => 'Post immediately']
                 : ['pending' => 'Pending approval'],
-            'allowedEntryTypes' => $allowedEntryTypes,
-            'canCreateInvoice' => in_array('invoice', $allowedEntryTypes, true),
             'canCollectPayment' => $canPostImmediately || $user->hasPermission('finance.record_payment'),
             'canPostImmediately' => $canPostImmediately,
             'invoiceOptions' => $this->invoiceOptions($student),
@@ -515,8 +535,8 @@ class FinanceController extends Controller
                 ->whereIn('status', ['upcoming', 'active'])
                 ->orderByDesc('name')
                 ->get(),
-            'expectedInstallmentCount' => $student->university?->expectedProgramSemesterCount() ?? 1,
-        ]);
+            'expectedInstallmentCount' => $student->preferred_installment_count ?? $student->university?->expectedProgramSemesterCount() ?? 1,
+        ];
     }
 
     public function generateTuitionCharge(Request $request, Student $student)
@@ -534,6 +554,7 @@ class FinanceController extends Controller
             'transaction_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:transaction_date'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'amount' => ['nullable', 'numeric', 'min:0.01', 'max:999999999.99'],
         ]);
 
         $semester = Semester::where('university_id', $student->university_id)->findOrFail($validated['semester_id']);
@@ -545,7 +566,8 @@ class FinanceController extends Controller
             $request->user(),
             $validated['transaction_date'],
             $validated['due_date'] ?? null,
-            $validated['notes'] ?? null
+            $validated['notes'] ?? null,
+            isset($validated['amount']) ? (float) $validated['amount'] : null
         );
 
         if (! $result['ok']) {

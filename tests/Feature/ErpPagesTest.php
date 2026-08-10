@@ -16,6 +16,7 @@ use App\Models\SemesterCreditPolicy;
 use App\Models\Stage;
 use App\Models\Student;
 use App\Models\Teacher;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -847,6 +848,106 @@ class ErpPagesTest extends TestCase
         $this->assertSame('active', $academicYear->status);
         $this->assertSame([1, 2], $academicYear->semesters()->orderBy('sequence')->pluck('sequence')->all());
         $this->assertSame(2, $academicYear->semesters()->where('term_type', 'regular')->count());
+    }
+
+    public function test_activating_an_academic_year_is_blocked_until_every_department_has_a_tuition_rate(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Priced Calendar University', 'code' => 'PCU', 'expected_semesters_per_year' => 2]);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Priced College', 'code' => 'PC']);
+        $pricedDepartment = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Priced Department']);
+        $unpricedDepartment = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Unpriced Department']);
+
+        $this->actingAs($admin)
+            ->post(route('academic-years.store'), [
+                'academic_year' => '2028/2029',
+                'university_ids' => [$university->id],
+                'starts_on' => '2028-09-01',
+                'ends_on' => '2029-06-30',
+                'status' => 'active',
+                'generate_semesters' => 1,
+            ])
+            ->assertSessionHasErrors('status');
+
+        $this->assertDatabaseMissing('academic_years', ['university_id' => $university->id, 'name' => '2028/2029']);
+
+        $this->actingAs($admin)
+            ->post(route('academic-years.store'), [
+                'academic_year' => '2028/2029',
+                'university_ids' => [$university->id],
+                'starts_on' => '2028-09-01',
+                'ends_on' => '2029-06-30',
+                'status' => 'upcoming',
+            ])
+            ->assertRedirect(route('academic-years.index'));
+
+        $academicYear = AcademicYear::where('university_id', $university->id)->where('name', '2028/2029')->firstOrFail();
+        TuitionRate::create(['department_id' => $pricedDepartment->id, 'academic_year_id' => $academicYear->id, 'currency' => 'IQD', 'rate_per_credit' => 50000]);
+
+        $this->actingAs($admin)
+            ->post(route('semesters.store'), [
+                'university_id' => $university->id,
+                'academic_year_id' => $academicYear->id,
+                'name' => 'Semester 1',
+                'term_type' => 'regular',
+                'sequence' => 1,
+                'start_date' => '2028-09-01',
+                'end_date' => '2029-01-15',
+            ])->assertRedirect(route('semesters.index'));
+        $this->actingAs($admin)
+            ->post(route('semesters.store'), [
+                'university_id' => $university->id,
+                'academic_year_id' => $academicYear->id,
+                'name' => 'Semester 2',
+                'term_type' => 'regular',
+                'sequence' => 2,
+                'start_date' => '2029-01-16',
+                'end_date' => '2029-06-30',
+            ])->assertRedirect(route('semesters.index'));
+
+        $this->actingAs($admin)
+            ->put(route('academic-years.update', $academicYear), [
+                'name' => '2028/2029',
+                'starts_on' => '2028-09-01',
+                'ends_on' => '2029-06-30',
+                'status' => 'active',
+            ])
+            ->assertSessionHasErrors(['status' => 'Set a tuition rate for every department before activating this academic year. Missing a rate: '.$unpricedDepartment->name.'.']);
+
+        $this->assertSame('upcoming', $academicYear->fresh()->status);
+
+        TuitionRate::create(['department_id' => $unpricedDepartment->id, 'academic_year_id' => $academicYear->id, 'currency' => 'USD', 'rate_per_credit' => 40]);
+
+        $this->actingAs($admin)
+            ->put(route('academic-years.update', $academicYear), [
+                'name' => '2028/2029',
+                'starts_on' => '2028-09-01',
+                'ends_on' => '2029-06-30',
+                'status' => 'active',
+            ])
+            ->assertRedirect(route('academic-years.index'));
+
+        $this->assertSame('active', $academicYear->fresh()->status);
+    }
+
+    public function test_activating_an_academic_year_with_no_departments_is_unaffected_by_tuition_rates(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'Deptless Calendar University', 'code' => 'DCU', 'expected_semesters_per_year' => 2]);
+
+        $this->actingAs($admin)
+            ->post(route('academic-years.store'), [
+                'academic_year' => '2028/2029',
+                'university_ids' => [$university->id],
+                'starts_on' => '2028-09-01',
+                'ends_on' => '2029-06-30',
+                'status' => 'active',
+                'generate_semesters' => 1,
+            ])
+            ->assertRedirect(route('academic-years.index'));
+
+        $academicYear = AcademicYear::where('university_id', $university->id)->where('name', '2028/2029')->firstOrFail();
+        $this->assertSame('active', $academicYear->status);
     }
 
     public function test_semester_dates_cannot_overlap_and_closed_years_are_read_only(): void

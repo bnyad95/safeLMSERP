@@ -177,6 +177,7 @@
                         $canTuitionReminders = $canFinance && ($isSuper
                             || ($navUser->hasPermission('finance.view') && $navUser->hasAnyPermission(['finance.create_invoice', 'finance.record_payment'])));
                         $canFinanceApprovals = $canFinance && ($isSuper || $navUser->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']));
+                        $canManageTuitionRates = $navUser->hasRole('chief_accountant');
                         $canAnalytics = $navUser->hasAnyRole(['super_administrator', 'administrator', 'university_president']);
                         $canDataExchange = $navUser->hasAnyRole(['administrator', 'super_administrator', 'university_administrator', 'college_administrator', 'department_administrator', 'examination_administrator', 'lms_administrator'])
                             && ($isSuper || $navUser->hasAnyPermission(['students.view', 'students.create', 'students.update', 'courses.view', 'courses.create', 'courses.update', 'marks.view', 'marks.enter', 'marks.review', 'marks.approve', 'marks.publish']));
@@ -188,7 +189,7 @@
                         $academicSectionActive = request()->routeIs('students.*', 'teachers.*', 'enrollments.*', 'course-sections.show', 'timetables.*', 'timetable-time-slots.*', 'attendance', 'attendance.*');
                         $learningSectionActive = request()->routeIs('teacher-dashboard', 'classrooms.*', 'archived-classes.*', 'assessments.*', 'assessment-items.*', 'assessment-submissions.*', 'exams', 'marks.final-exam.*', 'marks.submission-queue', 'academic-year-closures.archive', 'academic-year-closures.archive.show');
                         $reportsSectionActive = request()->routeIs('analytics.*');
-                        $financeSectionActive = request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export', 'finance.approvals.*', 'finance.tuition-reminders.*');
+                        $financeSectionActive = request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export', 'finance.approvals.*', 'finance.tuition-reminders.*', 'bologna-definition.tuition-rates*');
                         $operationsSectionActive = request()->routeIs('integrations.*');
                         $setupSectionActive = request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore', 'academic-year-closures.index', 'academic-year-closures.archive', 'academic-year-closures.archive.show');
                         $systemSectionActive = request()->routeIs('users.*', 'access-matrix', 'activity-log');
@@ -227,6 +228,7 @@
                             <x-nav-link :href="route('finance')" :active="request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export')">{{ __('Student Finance') }}</x-nav-link>
                             @if($canFinanceApprovals)<x-nav-link :href="route('finance.approvals.index')" :active="request()->routeIs('finance.approvals.*')">{{ __('Finance Approvals') }}</x-nav-link>@endif
                             @if($canTuitionReminders)<x-nav-link :href="route('finance.tuition-reminders.index')" :active="request()->routeIs('finance.tuition-reminders.*')">{{ __('Tuition Reminders') }}</x-nav-link>@endif
+                            @if($canManageTuitionRates)<x-nav-link :href="route('bologna-definition.tuition-rates')" :active="request()->routeIs('bologna-definition.tuition-rates*')">{{ __('Tuition Rates') }}</x-nav-link>@endif
                         </x-nav-group>
                     @endif
 

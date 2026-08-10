@@ -78,9 +78,9 @@
                         <div class="mt-5 h-72 min-w-0"><canvas id="finance-collections-chart"></canvas></div>
                     </article>
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Outstanding Balance by College</h4>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Top colleges by unpaid posted balance.</p>
-                        <div class="mt-5 h-72 min-w-0"><canvas id="finance-college-chart"></canvas></div>
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Outstanding Balance by Department</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Top departments by unpaid posted balance.</p>
+                        <div class="mt-5 h-72 min-w-0"><canvas id="finance-department-chart"></canvas></div>
                     </article>
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Invoice Status</h4>

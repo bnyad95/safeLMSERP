@@ -33,6 +33,7 @@ const initializeFinanceDashboardCharts = async () => {
 		amber: '#d97706',
 		red: '#dc2626',
 	};
+	const departmentPalette = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#4f46e5'];
 
 	const valueFor = (rows, matcher, field) => Number(rows.find(matcher)?.[field] || 0);
 	const money = (value) => new Intl.NumberFormat('en-US', {
@@ -112,17 +113,25 @@ const initializeFinanceDashboardCharts = async () => {
 			options: collectionOptions,
 		});
 
-		const collegeRows = source.outstandingByCollege.filter((row) => row.currency === currency).slice(0, 10);
-		const collegeOptions = baseOptions(compactNumber, money, currency);
-		collegeOptions.indexAxis = 'y';
-		collegeOptions.onClick = (_event, elements) => {
+		const departmentRows = source.outstandingByDepartment.filter((row) => row.currency === currency).slice(0, 10);
+		const departmentOptions = baseOptions(compactNumber, money, currency);
+		departmentOptions.onClick = (_event, elements) => {
 			if (!elements.length) return;
-			openFiltered(source.financeUrl, { college_id: collegeRows[elements[0].index]?.college_id || '', currency });
+			openFiltered(source.financeUrl, { department_id: departmentRows[elements[0].index]?.department_id || '', currency });
 		};
-		createChart('finance-college-chart', {
+		createChart('finance-department-chart', {
 			type: 'bar',
-			data: { labels: collegeRows.map((row) => row.college), datasets: [{ label: 'Outstanding', data: collegeRows.map((row) => row.balance), backgroundColor: colors.blue, borderRadius: 3 }] },
-			options: collegeOptions,
+			data: {
+				labels: departmentRows.map((row) => row.department),
+				datasets: [{
+					label: 'Outstanding',
+					data: departmentRows.map((row) => row.balance),
+					backgroundColor: departmentRows.map((_, index) => departmentPalette[index % departmentPalette.length]),
+					borderRadius: 3,
+					maxBarThickness: 48,
+				}],
+			},
+			options: departmentOptions,
 		});
 
 		const statusRows = source.invoiceStatuses.filter((row) => row.currency === currency);
