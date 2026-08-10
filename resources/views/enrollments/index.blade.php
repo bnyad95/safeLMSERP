@@ -166,7 +166,7 @@
                                 <div class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ $section->semester->name }} {{ $section->semester->academic_year }} / {{ $section->programSemesterLabel() }} / Group {{ $section->section_code }}</div>
                                 <div class="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">{{ $section->course->code }} - {{ $section->course->name }}</div>
                             </div>
-                            <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $section->status === 'active' ? 'bg-green-100 text-green-700' : ($section->status === 'closed' ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-700') }}">{{ ucfirst($section->status) }}</span>
+                            <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $section->status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-200' : ($section->status === 'closed' ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200') }}">{{ ucfirst($section->status) }}</span>
                         </div>
                         <dl class="mt-5 grid grid-cols-2 gap-3 text-sm">
                             <div>

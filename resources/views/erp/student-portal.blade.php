@@ -121,7 +121,7 @@
                         <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <h3 class="text-lg font-semibold text-gray-900">Latest Results</h3>
                             <a href="{{ route('transcripts.show', $student->id) }}"
-                               class="inline-flex justify-center rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">View Transcript</a>
+                               class="inline-flex justify-center rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50">View Transcript</a>
                         </div>
                         <div class="mt-4 divide-y divide-gray-100">
                             @forelse ($marks as $mark)

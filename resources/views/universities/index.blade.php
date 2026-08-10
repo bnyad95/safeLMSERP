@@ -17,6 +17,7 @@
     <div class="py-10">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-800">
+                <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-gray-900">
                     <thead class="bg-gray-50 dark:bg-gray-950/60">
                         <tr>
@@ -56,6 +57,7 @@
                         @endforelse
                     </tbody>
                 </table>
+                </div>
             </div>
 
             <div class="mt-6">{{ $universities->links() }}</div>

@@ -131,7 +131,7 @@
                     <div class="flex flex-wrap items-end gap-3 lg:col-span-4">
                         <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Apply</button>
                         <a href="{{ route('exams') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Reset</a>
-                        <a href="{{ route('exams.export', request()->query()) }}" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">Export CSV</a>
+                        <a href="{{ route('exams.export', request()->query()) }}" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50">Export CSV</a>
                     </div>
                 </form>
             </section>

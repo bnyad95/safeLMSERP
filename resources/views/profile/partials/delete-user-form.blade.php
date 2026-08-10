@@ -5,14 +5,30 @@
         </h2>
 
         <p class="mt-1 text-sm text-gray-600">
-            {{ __('Once your account is deleted, all of its resources and data will be permanently deleted. Before deleting your account, please download any data or information that you wish to retain.') }}
+            {{ __('Deleting your account is not immediate: it submits a request that an administrator must review and approve before the account is actually removed.') }}
         </p>
     </header>
 
-    <x-danger-button
-        x-data=""
-        x-on:click.prevent="$dispatch('open-modal', 'confirm-user-deletion')"
-    >{{ __('Delete Account') }}</x-danger-button>
+    @if (session('status') === 'account-deletion-requested')
+        <div class="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+            {{ __('Your account deletion request has been submitted for administrator approval.') }}
+        </div>
+    @elseif (session('status') === 'account-deletion-already-requested')
+        <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            {{ __('A deletion request for this account is already pending.') }}
+        </div>
+    @endif
+
+    @if($user->hasPendingDeletionRequest())
+        <div class="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            {{ __('A deletion request for this account was submitted on :date and is waiting for an administrator to approve or reject it.', ['date' => $user->deletion_requested_at->format('Y-m-d H:i')]) }}
+        </div>
+    @else
+        <x-danger-button
+            x-data=""
+            x-on:click.prevent="$dispatch('open-modal', 'confirm-user-deletion')"
+        >{{ __('Delete Account') }}</x-danger-button>
+    @endif
 
     <x-modal name="confirm-user-deletion" :show="$errors->userDeletion->isNotEmpty()" focusable>
         <form method="post" action="{{ route('profile.destroy') }}" class="p-6">
@@ -20,11 +36,11 @@
             @method('delete')
 
             <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
-                {{ __('Are you sure you want to delete your account?') }}
+                {{ __('Request account deletion?') }}
             </h2>
 
             <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                {{ __('Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.') }}
+                {{ __('This submits a deletion request for administrator approval; your account stays active until it is approved. Please enter your password to confirm.') }}
             </p>
 
             <div class="mt-6">
@@ -47,7 +63,7 @@
                 </x-secondary-button>
 
                 <x-danger-button class="ms-3">
-                    {{ __('Delete Account') }}
+                    {{ __('Request Deletion') }}
                 </x-danger-button>
             </div>
         </form>

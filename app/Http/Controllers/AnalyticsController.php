@@ -57,7 +57,7 @@ class AnalyticsController extends Controller
                 ],
             ])->reject(fn ($stat) => ($stat['finance'] ?? false) && ! $canViewFinanceAnalytics)->values(),
             'filters' => $filters,
-            'filterOptions' => $this->filterOptions($canViewFinanceAnalytics),
+            'filterOptions' => $this->filterOptions($canViewFinanceAnalytics, $filters['university_id']),
             'activeTab' => $activeTab,
             'canViewFinanceAnalytics' => $canViewFinanceAnalytics,
             'attendanceRisk' => $attendanceRisk,
@@ -75,16 +75,33 @@ class AnalyticsController extends Controller
             'stage' => trim((string) ($request->query('stage') ?? '')),
             'semester_id' => $request->integer('semester_id') ?: null,
             'academic_year' => trim((string) $request->query('academic_year', '')),
+            'university_id' => $this->scopeUniversityId(),
         ];
     }
 
-    private function filterOptions(bool $includeFinance = false): array
+    private function scopeUniversityId(): ?int
+    {
+        $user = auth()->user();
+
+        if (! $user || $user->hasRole('super_administrator') || $user->hasRole('administrator')) {
+            return null;
+        }
+
+        return $user->university_id;
+    }
+
+    private function filterOptions(bool $includeFinance = false, ?int $universityId = null): array
     {
         $academicYears = Semester::query()
+            ->when($universityId, fn ($query) => $query->where('university_id', $universityId))
             ->pluck('academic_year');
 
         if ($includeFinance) {
-            $academicYears = $academicYears->merge(FinanceTransaction::whereNotNull('academic_year')->pluck('academic_year'));
+            $academicYears = $academicYears->merge(
+                FinanceTransaction::whereNotNull('academic_year')
+                    ->when($universityId, fn ($query) => $query->whereHas('student', fn ($student) => $student->where('university_id', $universityId)))
+                    ->pluck('academic_year')
+            );
         }
 
         $academicYears = $academicYears->filter()
@@ -93,10 +110,12 @@ class AnalyticsController extends Controller
             ->values();
 
         return [
-            'colleges' => College::orderBy('name')->get(['id', 'name']),
-            'departments' => Department::with('college')->orderBy('name')->get(['id', 'name', 'college_id']),
-            'stages' => CourseSection::whereNotNull('grade_level')->distinct()->orderBy('grade_level')->pluck('grade_level'),
-            'semesters' => Semester::orderByDesc('academic_year')->orderBy('name')->get(['id', 'name', 'academic_year']),
+            'colleges' => College::when($universityId, fn ($query) => $query->where('university_id', $universityId))->orderBy('name')->get(['id', 'name']),
+            'departments' => Department::with('college')->when($universityId, fn ($query) => $query->where('university_id', $universityId))->orderBy('name')->get(['id', 'name', 'college_id']),
+            'stages' => CourseSection::whereNotNull('grade_level')
+                ->when($universityId, fn ($query) => $query->whereHas('course', fn ($course) => $course->where('university_id', $universityId)))
+                ->distinct()->orderBy('grade_level')->pluck('grade_level'),
+            'semesters' => Semester::when($universityId, fn ($query) => $query->where('university_id', $universityId))->orderByDesc('academic_year')->orderBy('name')->get(['id', 'name', 'academic_year']),
             'academicYears' => $academicYears,
         ];
     }
@@ -104,6 +123,7 @@ class AnalyticsController extends Controller
     private function applyStudentFilters($query, array $filters): void
     {
         $query
+            ->when($filters['university_id'], fn ($builder) => $builder->where('university_id', $filters['university_id']))
             ->when($filters['college_id'], fn ($builder) => $builder->whereHas('department', fn ($department) => $department->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($builder) => $builder->where('department_id', $filters['department_id']))
             ->when($filters['stage'] !== '', fn ($builder) => $builder->whereHas('enrollments.courseSection', fn ($section) => $section->where('grade_level', $filters['stage'])))
@@ -114,6 +134,7 @@ class AnalyticsController extends Controller
     private function applyMarkFilters($query, array $filters): void
     {
         $query
+            ->when($filters['university_id'], fn ($builder) => $builder->whereHas('course', fn ($course) => $course->where('university_id', $filters['university_id'])))
             ->when($filters['college_id'], fn ($builder) => $builder->whereHas('course.department', fn ($department) => $department->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($builder) => $builder->whereHas('course', fn ($course) => $course->where('department_id', $filters['department_id'])))
             ->when($filters['stage'] !== '', fn ($builder) => $builder->whereHas('courseSection', fn ($section) => $section->where('grade_level', $filters['stage'])))
@@ -124,6 +145,7 @@ class AnalyticsController extends Controller
     private function applyAttendanceFilters($query, array $filters): void
     {
         $query
+            ->when($filters['university_id'], fn ($builder) => $builder->whereHas('course', fn ($course) => $course->where('university_id', $filters['university_id'])))
             ->when($filters['college_id'], fn ($builder) => $builder->whereHas('course.department', fn ($department) => $department->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($builder) => $builder->whereHas('course', fn ($course) => $course->where('department_id', $filters['department_id'])))
             ->when($filters['stage'] !== '', fn ($builder) => $builder->whereHas('courseSection', fn ($section) => $section->where('grade_level', $filters['stage'])))
@@ -134,6 +156,7 @@ class AnalyticsController extends Controller
     private function applyFinanceFilters($query, array $filters): void
     {
         $query
+            ->when($filters['university_id'], fn ($builder) => $builder->whereHas('student', fn ($student) => $student->where('university_id', $filters['university_id'])))
             ->when($filters['college_id'], fn ($builder) => $builder->whereHas('student.department', fn ($department) => $department->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($builder) => $builder->whereHas('student', fn ($student) => $student->where('department_id', $filters['department_id'])))
             ->when($filters['academic_year'] !== '', fn ($builder) => $builder->where('academic_year', $filters['academic_year']));
@@ -214,17 +237,18 @@ class AnalyticsController extends Controller
         return $this->publishedMarkQuery($filters)
             ->leftJoin('course_sections', 'marks.course_section_id', '=', 'course_sections.id')
             ->leftJoin('semesters', 'course_sections.semester_id', '=', 'semesters.id')
-            ->select('course_sections.semester_id', 'semesters.name as semester_name', 'semesters.academic_year')
+            ->leftJoin('universities', 'semesters.university_id', '=', 'universities.id')
+            ->select('course_sections.semester_id', 'semesters.name as semester_name', 'semesters.academic_year', 'universities.name as university_name')
             ->selectRaw('COUNT(*) as marks_count')
             ->selectRaw('AVG(final_mark) as average_mark')
             ->selectRaw('AVG('.$this->gradePointSql().') as gpa')
-            ->groupBy('course_sections.semester_id', 'semesters.name', 'semesters.academic_year')
+            ->groupBy('course_sections.semester_id', 'semesters.name', 'semesters.academic_year', 'universities.name')
             ->orderBy('semesters.academic_year')
             ->orderBy('semesters.name')
             ->get()
             ->map(function ($row) {
                 $semester = $row->semester_id
-                    ? trim($row->semester_name.' '.$row->academic_year)
+                    ? trim($row->semester_name.' '.$row->academic_year).($row->university_name ? ' / '.$row->university_name : '')
                     : 'Unassigned';
 
                 return [

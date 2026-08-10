@@ -36,7 +36,7 @@
                 <div class="p-5">
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex min-w-0 items-center gap-3">
-                            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full {{ $authorIsTeacher ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800' }} text-sm font-semibold">
+                            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full {{ $authorIsTeacher ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' }} text-sm font-semibold">
                                 {{ strtoupper(substr($post->user->name ?? 'U', 0, 1)) }}
                             </div>
                             <div class="min-w-0">
@@ -87,7 +87,7 @@
                             @foreach($post->comments as $comment)
                                 @php $commenterIsTeacher = $comment->user?->roles?->contains('name', 'teacher') || $comment->user?->roles?->contains('name', 'super_administrator'); @endphp
                                 <div class="flex gap-3">
-                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {{ $commenterIsTeacher ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800' }} text-xs font-semibold">{{ strtoupper(substr($comment->user->name ?? 'U', 0, 1)) }}</div>
+                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full {{ $commenterIsTeacher ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' }} text-xs font-semibold">{{ strtoupper(substr($comment->user->name ?? 'U', 0, 1)) }}</div>
                                     <div class="min-w-0 rounded-lg bg-white px-3 py-2">
                                         <div class="flex flex-wrap items-baseline gap-x-2">
                                             <p class="text-xs font-semibold text-gray-900">{{ $comment->user->name ?? 'User' }}</p>

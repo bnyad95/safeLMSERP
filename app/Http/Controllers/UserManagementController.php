@@ -32,7 +32,7 @@ class UserManagementController extends Controller
             'university_id' => $request->integer('university_id') ?: null,
             'college_id' => $request->integer('college_id') ?: null,
             'department_id' => $request->integer('department_id') ?: null,
-            'status' => in_array($request->query('status'), ['active', 'blocked', 'archived', 'all'], true) ? $request->query('status') : 'active',
+            'status' => in_array($request->query('status'), ['active', 'blocked', 'archived', 'pending_deletion', 'all'], true) ? $request->query('status') : 'active',
             'verification' => in_array($request->query('verification'), ['verified', 'unverified'], true) ? $request->query('verification') : '',
         ];
 
@@ -41,6 +41,7 @@ class UserManagementController extends Controller
             ->when($filters['status'] === 'all', fn ($query) => $query->withTrashed())
             ->when($filters['status'] === 'active', fn ($query) => $query->whereNull('account_blocked_at'))
             ->when($filters['status'] === 'blocked', fn ($query) => $query->whereNotNull('account_blocked_at'))
+            ->when($filters['status'] === 'pending_deletion', fn ($query) => $query->whereNotNull('deletion_requested_at'))
             ->when($filters['q'] !== '', fn ($query) => $query->where(function ($search) use ($filters) {
                 $search->where('name', 'like', "%{$filters['q']}%")
                     ->orWhere('email', 'like', "%{$filters['q']}%");
@@ -77,20 +78,23 @@ class UserManagementController extends Controller
         $archivedAccounts = User::onlyTrashed();
         $superAdmins = User::query();
         $unverifiedAccounts = User::query();
-        foreach ([$availableAccounts, $blockedAccounts, $archivedAccounts, $superAdmins, $unverifiedAccounts] as $statsQuery) {
+        $pendingDeletionQuery = User::with('roles')->whereNotNull('deletion_requested_at');
+        foreach ([$availableAccounts, $blockedAccounts, $archivedAccounts, $superAdmins, $unverifiedAccounts, $pendingDeletionQuery] as $statsQuery) {
             $this->applyManagedUserScope($statsQuery, $request->user());
         }
+        $pendingDeletionAccounts = $pendingDeletionQuery->latest('deletion_requested_at')->get();
         $stats = [
             ['label' => 'Available Accounts', 'value' => number_format($availableAccounts->whereNull('account_blocked_at')->count()), 'detail' => 'Not archived or blocked'],
             ['label' => 'Blocked Accounts', 'value' => number_format($blockedAccounts->whereNotNull('account_blocked_at')->count()), 'detail' => 'Login currently blocked'],
             ['label' => 'Archived Users', 'value' => number_format($archivedAccounts->count()), 'detail' => 'Soft-deleted accounts'],
             ['label' => 'Super Admins', 'value' => number_format($superAdmins->whereHas('roles', fn ($role) => $role->where('name', 'super_administrator'))->count()), 'detail' => 'Highest access accounts'],
             ['label' => 'Unverified Email', 'value' => number_format($unverifiedAccounts->whereNull('email_verified_at')->count()), 'detail' => 'Email not verified'],
+            ['label' => 'Pending Deletions', 'value' => number_format($pendingDeletionAccounts->count()), 'detail' => 'Self-requested, awaiting approval'],
         ];
         $abilities = $this->userManagementAbilities();
         $organizationRoleScopes = UserRolePolicy::organizationRoleScopes();
 
-        return view('users.index', compact('users', 'filters', 'roles', 'universities', 'colleges', 'departments', 'stats', 'abilities', 'tracksLastActivity', 'organizationRoleScopes'));
+        return view('users.index', compact('users', 'filters', 'roles', 'universities', 'colleges', 'departments', 'stats', 'abilities', 'tracksLastActivity', 'organizationRoleScopes', 'pendingDeletionAccounts'));
     }
 
     public function create()
@@ -191,6 +195,7 @@ class UserManagementController extends Controller
         $this->validateRoleCombination($roleIds, $user);
         unset($validated['roles']);
         $this->protectOwnSuperAdminRole($user, $roleIds);
+        $this->protectLastSuperAdminRole($user, $roleIds);
 
         $validated = array_merge($validated, $this->normalizedOrganization($roleIds, $validated));
         $this->authorizeOrganizationAssignment($validated);
@@ -342,7 +347,11 @@ class UserManagementController extends Controller
         $this->authorizeSuperAdmin();
         abort_if($user->is(auth()->user()), 403, 'You cannot archive your own account.');
         abort_if($this->isProfileManagedUser($user), 403, 'Archive Student and Teacher accounts from their profile workspace.');
+        $this->ensureNotLastSuperAdmin($user, 'archive');
 
+        if ($user->deletion_requested_at) {
+            $user->forceFill(['deletion_requested_at' => null])->save();
+        }
         $user->delete();
 
         return redirect()->route('users.index')->with('success', 'User archived successfully.');
@@ -363,6 +372,31 @@ class UserManagementController extends Controller
         $user->restore();
 
         return redirect()->route('users.archived')->with('success', 'User restored successfully.');
+    }
+
+    public function approveDeletion(User $user)
+    {
+        $this->authorizeSuperAdmin();
+        abort_if(is_null($user->deletion_requested_at), 404);
+        $this->ensureNotLastSuperAdmin($user, 'delete');
+
+        $user->forceFill(['deletion_requested_at' => null])->save();
+        $user->delete();
+        if (config('session.driver') === 'database') {
+            DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
+        }
+
+        return redirect()->route('users.index')->with('success', 'Account deletion approved. The account has been archived.');
+    }
+
+    public function rejectDeletion(User $user)
+    {
+        $this->authorizeSuperAdmin();
+        abort_if(is_null($user->deletion_requested_at), 404);
+
+        $user->forceFill(['deletion_requested_at' => null])->save();
+
+        return redirect()->route('users.index')->with('success', 'Deletion request rejected. The account remains active.');
     }
 
     private function authorizeSuperAdmin(): void
@@ -581,6 +615,26 @@ class UserManagementController extends Controller
 
         if (! $hasSuperAdmin) {
             throw ValidationException::withMessages(['roles' => 'You cannot remove your own super administrator role.']);
+        }
+    }
+
+    private function protectLastSuperAdminRole(User $user, array $roleIds): void
+    {
+        if (! $user->hasRole('super_administrator')) {
+            return;
+        }
+
+        $stillSuperAdmin = Role::whereIn('id', $roleIds)->where('name', 'super_administrator')->exists();
+
+        if (! $stillSuperAdmin && $user->isLastSuperAdministrator()) {
+            throw ValidationException::withMessages(['roles' => 'This is the last super administrator account. Promote another account to super administrator before removing this one.']);
+        }
+    }
+
+    private function ensureNotLastSuperAdmin(User $user, string $action): void
+    {
+        if ($user->isLastSuperAdministrator()) {
+            abort(403, "You cannot {$action} the last super administrator account.");
         }
     }
 

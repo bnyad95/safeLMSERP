@@ -91,7 +91,7 @@
                     <section class="mx-auto max-w-3xl overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-5 py-4"><h4 class="font-semibold text-gray-900">Teacher</h4></div>
                         <div class="flex items-center gap-4 px-5 py-5">
-                            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-base font-semibold text-blue-800">{{ strtoupper(substr($section->teacher->full_name ?? 'T', 0, 1)) }}</div>
+                            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-base font-semibold text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">{{ strtoupper(substr($section->teacher->full_name ?? 'T', 0, 1)) }}</div>
                             <div class="min-w-0">
                                 <p class="truncate font-semibold text-gray-900">{{ $section->teacher->full_name ?? 'Teacher not assigned' }}</p>
                                 <p class="mt-1 text-sm text-gray-500">{{ $section->teacher->title ?? 'Course teacher' }}</p>

@@ -30,10 +30,9 @@ class CsvImportController extends Controller
             ? $request->query('tab')
             : 'imports';
 
-        $recentImports = ImportLog::with('importedBy')
-            ->orderBy('created_at', 'desc')
-            ->limit(20)
-            ->get();
+        $recentImportsQuery = ImportLog::with('importedBy')->orderBy('created_at', 'desc');
+        $this->applyImportLogOrgScope($recentImportsQuery);
+        $recentImports = $recentImportsQuery->limit(20)->get();
 
         return view('integrations.index', [
             'recentImports' => $recentImports,
@@ -576,6 +575,21 @@ class CsvImportController extends Controller
             ->when($filters['stage'] !== '', fn ($builder) => $builder->whereHas('student.enrollments.courseSection', fn ($section) => $section->where('grade_level', $filters['stage'])))
             ->when($filters['semester_id'], fn ($builder) => $builder->whereHas('student.enrollments.courseSection', fn ($section) => $section->where('semester_id', $filters['semester_id'])))
             ->when($filters['academic_year'] !== '', fn ($builder) => $builder->where('academic_year', $filters['academic_year']));
+    }
+
+    private function applyImportLogOrgScope($query): void
+    {
+        $user = auth()->user();
+        if ($user?->hasRole('super_administrator')) {
+            return;
+        }
+        if ($user?->department_id) {
+            $query->whereHas('importedBy', fn ($importer) => $importer->where('department_id', $user->department_id));
+        } elseif ($user?->college_id) {
+            $query->whereHas('importedBy', fn ($importer) => $importer->where('college_id', $user->college_id));
+        } elseif ($user?->university_id) {
+            $query->whereHas('importedBy', fn ($importer) => $importer->where('university_id', $user->university_id));
+        }
     }
 
     private function applyStudentOrgScope($query): void

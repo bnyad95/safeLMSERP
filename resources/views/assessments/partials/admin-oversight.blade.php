@@ -119,7 +119,7 @@
         <div class="flex flex-wrap items-end gap-3 lg:col-span-3">
             <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Apply</button>
             <a href="{{ $resetUrl }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Reset</a>
-            <a href="{{ $exportUrl }}" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">Export CSV</a>
+            <a href="{{ $exportUrl }}" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50">Export CSV</a>
             @if($hasAdminFilters)
                 <span class="text-sm text-gray-500">Filters applied</span>
             @endif
@@ -140,10 +140,10 @@
             <p class="mt-2 text-2xl font-semibold text-gray-900">{{ $oversightStats['total'] }}</p>
             <p class="mt-1 text-xs text-gray-500">Across the current academic scope</p>
         </div>
-        <div class="rounded-lg border border-cyan-200 bg-cyan-50 p-4">
-            <p class="text-sm text-cyan-800">Submission rate</p>
-            <p class="mt-2 text-2xl font-semibold text-cyan-950">{{ is_null($submissionRate) ? 'N/A' : number_format($submissionRate, 1).'%' }}</p>
-            <p class="mt-1 text-xs text-cyan-800">{{ $oversightStats['submitted'] }} submissions received</p>
+        <div class="rounded-lg border border-cyan-200 bg-cyan-50 p-4 dark:border-cyan-800 dark:bg-cyan-950/30">
+            <p class="text-sm text-cyan-800 dark:text-cyan-300">Submission rate</p>
+            <p class="mt-2 text-2xl font-semibold text-cyan-950 dark:text-cyan-100">{{ is_null($submissionRate) ? 'N/A' : number_format($submissionRate, 1).'%' }}</p>
+            <p class="mt-1 text-xs text-cyan-800 dark:text-cyan-300">{{ $oversightStats['submitted'] }} submissions received</p>
         </div>
         <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <p class="text-sm text-emerald-800">Grading rate</p>

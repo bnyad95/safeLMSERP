@@ -61,7 +61,7 @@
                             <div class="flex items-center justify-between gap-3">
                                 <p class="font-medium text-gray-900">{{ $guardian->full_name }}</p>
                                 @if($guardian->is_primary)
-                                    <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Primary</span>
+                                    <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">Primary</span>
                                 @endif
                             </div>
                             <p class="text-gray-500">{{ $guardian->relationship }}{{ $guardian->phone ? ' / '.$guardian->phone : '' }}</p>

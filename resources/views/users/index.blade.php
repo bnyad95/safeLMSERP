@@ -20,13 +20,28 @@
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 @foreach($stats as $stat)
-                    <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $stat['label'] }}</p>
-                        <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $stat['value'] }}</p>
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $stat['detail'] }}</p>
-                    </div>
+                    @if($stat['label'] === 'Pending Deletions')
+                        <button
+                            type="button"
+                            x-data
+                            x-on:click="$dispatch('open-modal', 'pending-deletions')"
+                            class="rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm hover:border-blue-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700"
+                        >
+                            <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $stat['label'] }}</p>
+                            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $stat['value'] }}</p>
+                            <p class="mt-1 text-xs text-blue-700 dark:text-blue-300">{{ $stat['detail'] }} &middot; View &amp; review</p>
+                        </button>
+                    @else
+                        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                            <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $stat['label'] }}</p>
+                            <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $stat['value'] }}</p>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $stat['detail'] }}</p>
+                        </div>
+                    @endif
                 @endforeach
             </section>
+
+            @include('users.partials.pending-deletions-modal')
 
             <form method="GET" action="{{ route('users.index') }}" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="grid gap-4 lg:grid-cols-6">
@@ -48,6 +63,7 @@
                         <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                             <option value="active" @selected($filters['status'] === 'active')>Active</option>
                             <option value="blocked" @selected($filters['status'] === 'blocked')>Blocked</option>
+                            <option value="pending_deletion" @selected($filters['status'] === 'pending_deletion')>Pending Deletion</option>
                             <option value="archived" @selected($filters['status'] === 'archived')>Archived</option>
                             <option value="all" @selected($filters['status'] === 'all')>All</option>
                         </select>
@@ -119,6 +135,9 @@
                                         @if($account->trashed())
                                             <span class="mt-2 inline-flex rounded-md bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700">Archived</span>
                                         @endif
+                                        @if($account->deletion_requested_at)
+                                            <span class="mt-2 inline-flex rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">Deletion pending</span>
+                                        @endif
                                     </td>
                                     <td class="px-5 py-4">
                                         <div class="flex max-w-sm flex-wrap gap-1.5">
@@ -169,8 +188,18 @@
                                                 <button type="submit" class="text-blue-700 hover:underline">Restore</button>
                                             </form>@endif
                                         @else
+                                            @if($account->deletion_requested_at && $abilities['archive'])
+                                                <form action="{{ route('users.deletion.approve', $account) }}" method="POST" class="inline-block">
+                                                    @csrf
+                                                    <button type="submit" class="text-red-700 hover:underline" onclick="return confirm('Approve this deletion request? The account will be archived.')">Approve deletion</button>
+                                                </form>
+                                                <form action="{{ route('users.deletion.reject', $account) }}" method="POST" class="ml-3 inline-block">
+                                                    @csrf
+                                                    <button type="submit" class="text-gray-700 hover:underline dark:text-gray-300">Reject</button>
+                                                </form>
+                                            @endif
                                             @if($account->can_be_managed && ($abilities['update'] || $abilities['reset_password']))
-                                                <a href="{{ route('users.edit', $account) }}" class="text-blue-700 hover:underline dark:text-blue-300">Manage</a>
+                                                <a href="{{ route('users.edit', $account) }}" class="{{ $account->deletion_requested_at && $abilities['archive'] ? 'ml-3 ' : '' }}text-blue-700 hover:underline dark:text-blue-300">Manage</a>
                                             @endif
                                             @if($account->can_be_managed && $abilities['permissions'] && ! $account->hasRole('super_administrator'))
                                                 <a href="{{ route('users.permissions.edit', $account) }}" class="ml-3 text-indigo-700 hover:underline">Permissions</a>

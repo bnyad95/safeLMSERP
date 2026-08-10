@@ -100,7 +100,7 @@ class ProfileTest extends TestCase
         $this->assertNotNull($user->refresh()->email_verified_at);
     }
 
-    public function test_user_can_delete_their_account(): void
+    public function test_deleting_an_account_submits_a_pending_request_instead_of_deleting_immediately(): void
     {
         $user = User::factory()->create();
 
@@ -112,11 +112,25 @@ class ProfileTest extends TestCase
 
         $response
             ->assertSessionHasNoErrors()
-            ->assertRedirect('/');
+            ->assertRedirect('/profile');
 
-        $this->assertGuest();
-        // User should be soft deleted, not completely removed
-        $this->assertTrue(User::withTrashed()->find($user->id)->trashed());
+        // The account stays active and the requester stays logged in until an admin approves.
+        $this->assertAuthenticatedAs($user);
+        $this->assertFalse($user->fresh()->trashed());
+        $this->assertNotNull($user->fresh()->deletion_requested_at);
+    }
+
+    public function test_deleting_an_account_twice_does_not_duplicate_the_pending_request(): void
+    {
+        $user = User::factory()->create(['deletion_requested_at' => now()->subDay()]);
+        $originalRequestedAt = $user->deletion_requested_at;
+
+        $this->actingAs($user)
+            ->delete('/profile', ['password' => 'password'])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect('/profile');
+
+        $this->assertTrue($user->fresh()->deletion_requested_at->equalTo($originalRequestedAt));
     }
 
     public function test_correct_password_must_be_provided_to_delete_account(): void
@@ -135,5 +149,71 @@ class ProfileTest extends TestCase
             ->assertRedirect('/profile');
 
         $this->assertNotNull($user->fresh());
+    }
+
+    public function test_the_last_super_administrator_cannot_delete_their_own_account(): void
+    {
+        $superAdminRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $user = User::factory()->create();
+        $user->roles()->attach($superAdminRole->id);
+
+        $response = $this
+            ->actingAs($user)
+            ->from('/profile')
+            ->delete('/profile', [
+                'password' => 'password',
+            ]);
+
+        $response
+            ->assertSessionHasErrorsIn('userDeletion', 'password')
+            ->assertRedirect('/profile');
+
+        $this->assertAuthenticatedAs($user);
+        $this->assertFalse($user->fresh()->trashed());
+    }
+
+    public function test_a_super_administrator_can_request_deletion_when_another_remains(): void
+    {
+        $superAdminRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $user = User::factory()->create();
+        $user->roles()->attach($superAdminRole->id);
+        $otherAdmin = User::factory()->create();
+        $otherAdmin->roles()->attach($superAdminRole->id);
+
+        $response = $this
+            ->actingAs($user)
+            ->delete('/profile', [
+                'password' => 'password',
+            ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertRedirect('/profile');
+
+        $this->assertAuthenticatedAs($user);
+        $this->assertFalse($user->fresh()->trashed());
+        $this->assertNotNull($user->fresh()->deletion_requested_at);
+    }
+
+    public function test_student_and_teacher_cannot_request_account_deletion(): void
+    {
+        $studentRole = Role::create(['name' => 'student', 'display_name' => 'Student']);
+        $teacherRole = Role::create(['name' => 'teacher', 'display_name' => 'Instructor']);
+        $student = User::factory()->create();
+        $student->roles()->attach($studentRole->id);
+        $teacher = User::factory()->create();
+        $teacher->roles()->attach($teacherRole->id);
+
+        foreach ([$student, $teacher] as $account) {
+            $this->actingAs($account)
+                ->from('/profile')
+                ->delete('/profile', ['password' => 'password'])
+                ->assertSessionHasErrorsIn('userDeletion', 'password')
+                ->assertRedirect('/profile');
+
+            $this->assertAuthenticatedAs($account);
+            $this->assertNull($account->fresh()->deletion_requested_at);
+            $this->assertFalse($account->fresh()->trashed());
+        }
     }
 }

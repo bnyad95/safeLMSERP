@@ -57,7 +57,7 @@
                                 <td class="px-6 py-3 text-sm font-medium">{{ $record->student->full_name ?? '-' }}</td>
                                 <td class="px-6 py-3">
                                     @php
-                                        $colors = ['present'=>'bg-green-100 text-green-700','absent'=>'bg-red-100 text-red-700','late'=>'bg-yellow-100 text-yellow-700','excused'=>'bg-blue-100 text-blue-700'];
+                                        $colors = ['present'=>'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-200','absent'=>'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-200','late'=>'bg-yellow-100 text-yellow-700','excused'=>'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200'];
                                     @endphp
                                     <span class="rounded-full px-2 py-0.5 text-xs {{ $colors[$record->status] ?? 'bg-gray-100 text-gray-700' }}">
                                         {{ ucfirst($record->status) }}

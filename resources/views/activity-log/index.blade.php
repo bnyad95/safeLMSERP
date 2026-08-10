@@ -29,7 +29,7 @@
                         <select id="log_name" name="log_name" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                             <option value="">All types</option>
                             @foreach($logNames as $logName)
-                                <option value="{{ $logName }}" @selected($filters['log_name'] === $logName)>{{ str($logName)->replace('_', ' ')->title() }}</option>
+                                <option value="{{ $logName }}" @selected($filters['log_name'] === $logName)>{{ str(class_basename($logName))->replace('_', ' ')->title() }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -90,7 +90,7 @@
                                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $log->causer?->email ?? '-' }}</p>
                                     </td>
                                     <td class="px-4 py-4">
-                                        <span class="rounded-md bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">{{ str($log->log_name ?? 'event')->replace('_', ' ')->title() }}</span>
+                                        <span class="rounded-md bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">{{ str(class_basename($log->log_name ?? 'event'))->replace('_', ' ')->title() }}</span>
                                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ str($log->description ?? '')->replace('_', ' ')->ucfirst() }}</p>
                                     </td>
                                     <td class="px-4 py-4 text-sm text-gray-700 dark:text-gray-300">

@@ -23,7 +23,7 @@
                 <section class="flex min-w-0 flex-col">
                     @if($selectedUser)
                         <div class="flex items-center gap-3 border-b border-gray-200 px-5 py-4">
-                            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-800">{{ strtoupper(substr($selectedUser->name ?? 'U', 0, 1)) }}</div>
+                            <div class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">{{ strtoupper(substr($selectedUser->name ?? 'U', 0, 1)) }}</div>
                             <div><h3 class="text-sm font-semibold text-gray-900">{{ $selectedUser->name }}</h3><p class="text-xs text-gray-500">Private class conversation</p></div>
                         </div>
 

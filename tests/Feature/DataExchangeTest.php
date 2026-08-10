@@ -7,6 +7,7 @@ use App\Models\Course;
 use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Enrollment;
+use App\Models\ImportLog;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
@@ -185,6 +186,45 @@ class DataExchangeTest extends TestCase
         $this->assertStringContainsString('Stage 2', $filteredEnrollments);
     }
 
+    public function test_import_history_is_scoped_to_own_department(): void
+    {
+        [$university, $department] = $this->makeStructure();
+        $admin = $this->makeDepartmentAdmin($university, $department);
+
+        $otherDepartment = Department::create([
+            'university_id' => $university->id,
+            'college_id' => $department->college_id,
+            'name' => 'Electrical Engineering',
+            'code' => 'EE',
+        ]);
+        $otherAdmin = $this->makeDepartmentAdmin($university, $otherDepartment);
+
+        ImportLog::create([
+            'type' => 'students',
+            'filename' => 'own-import.csv',
+            'total_rows' => 1,
+            'successful' => 1,
+            'failed' => 0,
+            'errors' => [],
+            'imported_by' => $admin->id,
+        ]);
+        ImportLog::create([
+            'type' => 'students',
+            'filename' => 'other-import.csv',
+            'total_rows' => 1,
+            'successful' => 1,
+            'failed' => 0,
+            'errors' => [],
+            'imported_by' => $otherAdmin->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('integrations.index', ['tab' => 'history']))
+            ->assertOk()
+            ->assertSee('own-import.csv')
+            ->assertDontSee('other-import.csv');
+    }
+
     public function test_authenticated_api_returns_students_for_authorized_user(): void
     {
         $admin = $this->makeAdmin();
@@ -266,14 +306,13 @@ class DataExchangeTest extends TestCase
 
     private function makeDepartmentAdmin(University $university, Department $department): User
     {
-        $role = Role::create([
-            'name' => 'department_administrator',
-            'display_name' => 'Department Administrator',
-            'description' => 'Department-scoped user',
-        ]);
+        $role = Role::firstOrCreate(
+            ['name' => 'department_administrator'],
+            ['display_name' => 'Department Administrator', 'description' => 'Department-scoped user']
+        );
         foreach (['students.view', 'courses.view', 'enrollments.view', 'marks.view'] as $permissionName) {
-            $permission = Permission::create(['name' => $permissionName, 'display_name' => $permissionName]);
-            $role->permissions()->attach($permission);
+            $permission = Permission::firstOrCreate(['name' => $permissionName], ['display_name' => $permissionName]);
+            $role->permissions()->syncWithoutDetaching($permission);
         }
 
         $user = User::factory()->create([

@@ -32,9 +32,9 @@
             <div class="px-6 py-3 bg-gray-50 border-b flex items-center gap-4 flex-wrap">
                 <span class="text-sm font-medium text-gray-600">Mark all as:</span>
                 <button type="button" onclick="markAll('present')"
-                        class="text-xs bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200">All Present</button>
+                        class="text-xs bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/50">All Present</button>
                 <button type="button" onclick="markAll('absent')"
-                        class="text-xs bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200">All Absent</button>
+                        class="text-xs bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200 dark:bg-red-900/30 dark:text-red-200 dark:hover:bg-red-900/50">All Absent</button>
                 <button type="button" onclick="markAll('late')"
                         class="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded hover:bg-yellow-200">All Late</button>
             </div>

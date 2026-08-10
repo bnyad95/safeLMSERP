@@ -189,4 +189,70 @@ class AnalyticsTest extends TestCase
             ->get(route('analytics.index'))
             ->assertForbidden();
     }
+
+    public function test_university_president_only_sees_data_scoped_to_their_own_university(): void
+    {
+        $role = Role::create([
+            'name' => 'university_president',
+            'display_name' => 'President of University',
+            'description' => 'Views institution-level academic analytics for university leadership.',
+        ]);
+        $reportPermission = Permission::firstOrCreate(
+            ['name' => 'reports.academic'],
+            ['display_name' => 'View academic reports']
+        );
+        $role->permissions()->attach($reportPermission);
+
+        $universityA = University::create(['name' => 'Alpha University', 'code' => 'ALP']);
+        $collegeA = College::create(['university_id' => $universityA->id, 'name' => 'Alpha College', 'code' => 'ALC']);
+        $departmentA = Department::create(['university_id' => $universityA->id, 'college_id' => $collegeA->id, 'name' => 'Alpha Computer Science']);
+        $studentA = Student::create([
+            'university_id' => $universityA->id,
+            'department_id' => $departmentA->id,
+            'student_id' => 'ALP-1001',
+            'full_name' => 'Alpha Student',
+            'email' => 'alpha.student@example.com',
+            'status' => 'Active',
+        ]);
+        $courseA = Course::create(['department_id' => $departmentA->id, 'code' => 'ALP101', 'name' => 'Alpha Course', 'credits' => 3]);
+        $semesterA = Semester::create(['university_id' => $universityA->id, 'name' => 'Fall', 'academic_year' => '2026']);
+        $sectionA = CourseSection::create(['course_id' => $courseA->id, 'semester_id' => $semesterA->id, 'section_code' => 'A', 'grade_level' => 'Stage 1']);
+        Enrollment::create(['student_id' => $studentA->id, 'course_section_id' => $sectionA->id, 'status' => 'enrolled', 'enrolled_at' => now()]);
+        Mark::create(['student_id' => $studentA->id, 'course_id' => $courseA->id, 'course_section_id' => $sectionA->id, 'final_mark' => 90, 'status' => 'Published', 'visibility_status' => 'published']);
+
+        $universityB = University::create(['name' => 'Beta University', 'code' => 'BET']);
+        $collegeB = College::create(['university_id' => $universityB->id, 'name' => 'Beta College', 'code' => 'BEC']);
+        $departmentB = Department::create(['university_id' => $universityB->id, 'college_id' => $collegeB->id, 'name' => 'Beta Computer Science']);
+        $studentB = Student::create([
+            'university_id' => $universityB->id,
+            'department_id' => $departmentB->id,
+            'student_id' => 'BET-1001',
+            'full_name' => 'Beta Student',
+            'email' => 'beta.student@example.com',
+            'status' => 'Active',
+        ]);
+        $courseB = Course::create(['department_id' => $departmentB->id, 'code' => 'BET101', 'name' => 'Beta Course', 'credits' => 3]);
+        $semesterB = Semester::create(['university_id' => $universityB->id, 'name' => 'Fall', 'academic_year' => '2026']);
+        $sectionB = CourseSection::create(['course_id' => $courseB->id, 'semester_id' => $semesterB->id, 'section_code' => 'A', 'grade_level' => 'Stage 1']);
+        Enrollment::create(['student_id' => $studentB->id, 'course_section_id' => $sectionB->id, 'status' => 'enrolled', 'enrolled_at' => now()]);
+        Mark::create(['student_id' => $studentB->id, 'course_id' => $courseB->id, 'course_section_id' => $sectionB->id, 'final_mark' => 40, 'status' => 'Published', 'visibility_status' => 'published']);
+
+        $president = User::factory()->create(['university_id' => $universityA->id]);
+        $president->roles()->attach($role->id);
+
+        $response = $this->actingAs($president)
+            ->get(route('analytics.index'))
+            ->assertOk()
+            ->assertSee('Alpha College')
+            ->assertDontSee('Beta College')
+            ->assertDontSee('Beta Computer Science');
+
+        $response->assertSee('100.0%');
+
+        $this->actingAs($president)
+            ->get(route('analytics.index', ['tab' => 'courses']))
+            ->assertOk()
+            ->assertSee('Alpha Course')
+            ->assertDontSee('Beta Course');
+    }
 }

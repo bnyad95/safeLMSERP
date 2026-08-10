@@ -6,8 +6,8 @@ use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\Student;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ProfileController extends Controller
@@ -61,13 +61,24 @@ class ProfileController extends Controller
 
         $user = $request->user();
 
-        Auth::logout();
+        if ($user->hasAnyRole(['student', 'teacher'])) {
+            throw ValidationException::withMessages([
+                'password' => 'Student and teacher accounts cannot be deleted here. Ask an administrator to archive this account.',
+            ])->errorBag('userDeletion');
+        }
 
-        $user->delete();
+        if ($user->isLastSuperAdministrator()) {
+            throw ValidationException::withMessages([
+                'password' => 'You are the last super administrator. Promote another account to super administrator before deleting this one.',
+            ])->errorBag('userDeletion');
+        }
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($user->hasPendingDeletionRequest()) {
+            return Redirect::route('profile.edit')->with('status', 'account-deletion-already-requested');
+        }
 
-        return Redirect::to('/');
+        $user->forceFill(['deletion_requested_at' => now()])->save();
+
+        return Redirect::route('profile.edit')->with('status', 'account-deletion-requested');
     }
 }

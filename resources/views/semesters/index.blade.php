@@ -24,6 +24,7 @@
                 <div class="flex gap-2 md:col-span-3 md:justify-end"><a href="{{ route('semesters.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">Reset</a><button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white dark:bg-indigo-600">Apply</button></div>
             </form>
             <div class="overflow-hidden rounded-lg border border-gray-200 shadow-sm dark:border-gray-800">
+                <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200 bg-white dark:divide-gray-800 dark:bg-gray-900">
                     <thead class="bg-gray-50 dark:bg-gray-950/60">
                         <tr>
@@ -66,6 +67,7 @@
                         @endforelse
                     </tbody>
                 </table>
+                </div>
             </div>
 
             <div class="mt-6">{{ $semesters->links() }}</div>

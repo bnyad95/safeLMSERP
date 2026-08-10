@@ -31,7 +31,7 @@
                         <div class="flex items-center space-x-2 mt-1">
                             <span class="text-xs text-gray-400">{{ strtoupper($material->file_type) }}</span>
                             @if(auth()->user()->hasAnyRole(['teacher', 'super_administrator']))
-                                <span class="text-xs px-2 py-0.5 rounded-full {{ $material->visibility === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700' }}">
+                                <span class="text-xs px-2 py-0.5 rounded-full {{ $material->visibility === 'published' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-200' : 'bg-yellow-100 text-yellow-700' }}">
                                     {{ ucfirst($material->visibility) }}
                                 </span>
                             @endif

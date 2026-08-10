@@ -259,6 +259,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])
         ->middleware('role.any:super_administrator')
         ->name('users.destroy');
+    Route::post('/users/{user}/deletion/approve', [UserManagementController::class, 'approveDeletion'])
+        ->middleware('role.any:super_administrator')
+        ->name('users.deletion.approve');
+    Route::post('/users/{user}/deletion/reject', [UserManagementController::class, 'rejectDeletion'])
+        ->middleware('role.any:super_administrator')
+        ->name('users.deletion.reject');
     Route::resource('users', UserManagementController::class)
         ->only(['index', 'create', 'store', 'edit', 'update'])
         ->middleware('role.any:super_administrator,it_support');

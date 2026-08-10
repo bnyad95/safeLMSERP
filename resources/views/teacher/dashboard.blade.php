@@ -216,7 +216,7 @@
                                             <a href="{{ $attendanceUrl() }}" class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Take attendance</a>
                                             <form method="POST" action="{{ route('class-stream.student-posting.toggle', $selectedSection) }}">
                                                 @csrf @method('PATCH')
-                                                <button type="submit" class="rounded-md border px-3 py-2 text-sm font-semibold {{ $selectedSection->students_can_post_stream ? 'border-green-300 bg-green-50 text-green-800 hover:bg-green-100' : 'border-gray-300 text-gray-700 hover:bg-gray-50' }}">
+                                                <button type="submit" class="rounded-md border px-3 py-2 text-sm font-semibold {{ $selectedSection->students_can_post_stream ? 'border-green-300 bg-green-50 text-green-800 hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-200 dark:hover:bg-green-900/50' : 'border-gray-300 text-gray-700 hover:bg-gray-50' }}">
                                                     Student posts: {{ $selectedSection->students_can_post_stream ? 'On' : 'Off' }}
                                                 </button>
                                             </form>
@@ -255,7 +255,7 @@
                                         </div>
                                         <div class="flex items-center gap-2">
                                             <a href="{{ $assessmentUrl($assessment) }}" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Open</a>
-                                            @if($canManageAssessments)<a href="{{ route('assessment-items.edit', $assessment) }}" class="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">Edit</a>@endif
+                                            @if($canManageAssessments)<a href="{{ route('assessment-items.edit', $assessment) }}" class="rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50">Edit</a>@endif
                                         </div>
                                     </div>
                                 @empty
@@ -296,7 +296,7 @@
                                 <h4 class="text-lg font-semibold text-blue-800">Teacher</h4>
                             </div>
                             <div class="flex items-center gap-3 px-5 py-4">
-                                <div class="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 font-semibold text-green-800">{{ strtoupper(substr($classTeacher->full_name ?? 'T', 0, 1)) }}</div>
+                                <div class="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 font-semibold text-green-800 dark:bg-green-900/30 dark:text-green-200">{{ strtoupper(substr($classTeacher->full_name ?? 'T', 0, 1)) }}</div>
                                 <p class="text-sm font-semibold text-gray-900">{{ $classTeacher->full_name ?? 'Teacher not assigned' }}</p>
                             </div>
                         </section>

@@ -30,6 +30,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'account_blocked_by',
         'account_block_reason',
         'account_block_type',
+        'deletion_requested_at',
         'university_id',
         'college_id',
         'department_id',
@@ -56,6 +57,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'must_change_password' => 'boolean',
             'account_blocked_at' => 'datetime',
+            'deletion_requested_at' => 'datetime',
             'password' => 'hashed',
         ];
     }
@@ -133,6 +135,23 @@ class User extends Authenticatable implements MustVerifyEmail
     public function hasAnyRole(array $roles): bool
     {
         return $this->roles()->whereIn('name', $roles)->exists();
+    }
+
+    public function hasPendingDeletionRequest(): bool
+    {
+        return ! is_null($this->deletion_requested_at);
+    }
+
+    public function isLastSuperAdministrator(): bool
+    {
+        if (! $this->hasRole('super_administrator')) {
+            return false;
+        }
+
+        return ! static::query()
+            ->whereKeyNot($this->id)
+            ->whereHas('roles', fn ($query) => $query->where('name', 'super_administrator'))
+            ->exists();
     }
 
     public function hasPermission(string $permission): bool

@@ -447,6 +447,85 @@ class UserManagementTest extends TestCase
         $this->assertTrue($admin->fresh()->hasRole('super_administrator'));
     }
 
+    public function test_super_admin_can_archive_or_demote_a_fellow_super_admin_leaving_one_remaining(): void
+    {
+        $superAdminRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $administratorRole = Role::create(['name' => 'administrator', 'display_name' => 'Administrator']);
+        $actingAdmin = User::factory()->create(['email' => 'acting-admin@example.com']);
+        $actingAdmin->roles()->attach($superAdminRole->id);
+        $otherAdmin = User::factory()->create(['email' => 'other-admin@example.com']);
+        $otherAdmin->roles()->attach($superAdminRole->id);
+
+        $this->actingAs($actingAdmin)
+            ->patch(route('users.update', $otherAdmin), [
+                'name' => $otherAdmin->name,
+                'email' => 'other-admin@example.com',
+                'roles' => [$administratorRole->id],
+            ])
+            ->assertRedirect(route('users.index'));
+
+        $this->assertFalse($otherAdmin->fresh()->hasRole('super_administrator'));
+        $this->assertTrue($actingAdmin->fresh()->hasRole('super_administrator'));
+
+        $thirdAdmin = User::factory()->create(['email' => 'third-admin@example.com']);
+        $thirdAdmin->roles()->attach($superAdminRole->id);
+
+        $this->actingAs($actingAdmin)
+            ->delete(route('users.destroy', $thirdAdmin))
+            ->assertRedirect(route('users.index'));
+
+        $this->assertNotNull($thirdAdmin->fresh()->deleted_at);
+        $this->assertTrue($actingAdmin->fresh()->hasRole('super_administrator'));
+    }
+
+    public function test_super_admin_can_approve_a_pending_account_deletion_request(): void
+    {
+        $superAdminRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdminRole->id);
+        $requester = User::factory()->create(['deletion_requested_at' => now()]);
+
+        $this->actingAs($admin)
+            ->post(route('users.deletion.approve', $requester))
+            ->assertRedirect(route('users.index'));
+
+        $requester->refresh();
+        $this->assertTrue($requester->trashed());
+        $this->assertNull($requester->deletion_requested_at);
+    }
+
+    public function test_super_admin_can_reject_a_pending_account_deletion_request(): void
+    {
+        $superAdminRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdminRole->id);
+        $requester = User::factory()->create(['deletion_requested_at' => now()]);
+
+        $this->actingAs($admin)
+            ->post(route('users.deletion.reject', $requester))
+            ->assertRedirect(route('users.index'));
+
+        $requester->refresh();
+        $this->assertFalse($requester->trashed());
+        $this->assertNull($requester->deletion_requested_at);
+    }
+
+    public function test_deletion_approval_endpoints_404_when_no_request_is_pending(): void
+    {
+        $superAdminRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
+        $admin = User::factory()->create();
+        $admin->roles()->attach($superAdminRole->id);
+        $noRequest = User::factory()->create();
+
+        $this->actingAs($admin)
+            ->post(route('users.deletion.approve', $noRequest))
+            ->assertNotFound();
+
+        $this->actingAs($admin)
+            ->post(route('users.deletion.reject', $noRequest))
+            ->assertNotFound();
+    }
+
     public function test_permission_update_rejects_a_stale_access_form(): void
     {
         $superRole = Role::create(['name' => 'super_administrator', 'display_name' => 'Super Administrator']);
