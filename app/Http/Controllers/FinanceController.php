@@ -372,7 +372,7 @@ class FinanceController extends Controller
             'stats' => [
                 ['label' => 'Total Charges', 'value' => $this->formatCurrencyTotals($scopeBalances, 'charges'), 'detail' => 'Invoices and refunds by currency'],
                 ['label' => 'Total Credits', 'value' => $this->formatCurrencyTotals($scopeBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships by currency'],
-                ['label' => 'Open Balance', 'value' => $this->formatCurrencyTotals($scopeBalances, 'balance'), 'detail' => 'Scoped balances by currency'],
+                ['label' => 'Outstanding Balance', 'value' => $this->formatCurrencyTotals($scopeBalances, 'balance'), 'detail' => 'Scoped balances by currency'],
                 ['label' => 'Filtered Balance', 'value' => $this->formatCurrencyTotals($filteredBalances, 'balance'), 'detail' => $selectedStudent ? 'Selected filters for this student' : 'Current filters'],
             ],
             'selectedBalances' => $selectedBalances,

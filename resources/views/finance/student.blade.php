@@ -22,7 +22,7 @@
                             <p class="mt-1 break-words text-sm text-gray-500">{{ $student->department->name ?? 'No department' }} / {{ $student->university->name ?? 'No university' }}</p>
                         </div>
                         <span class="self-start rounded-md {{ $paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }} px-2.5 py-1 text-xs font-semibold">
-                            {{ ucfirst($paymentStatus) }} account
+                            Balance: {{ ucfirst($paymentStatus) }}
                         </span>
                     </div>
                 </section>

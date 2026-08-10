@@ -50,7 +50,7 @@
                             @if($selectedStudent->user?->account_blocked_at)
                                 <span class="rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">Login blocked</span>
                             @else
-                                <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{{ ucfirst($selectedPaymentStatus) }} account</span>
+                                <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Balance: {{ ucfirst($selectedPaymentStatus) }}</span>
                             @endif
                             @forelse($selectedBalances as $balance)
                                 <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">Balance {{ number_format((float) $balance['balance'], 2) }} {{ $balance['currency'] }}</span>
