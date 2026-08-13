@@ -258,7 +258,6 @@
                                 'open' => 'bg-blue-50 text-blue-700',
                                 'pending' => 'bg-blue-50 text-blue-700',
                             ];
-                            $paymentClass = $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700';
                             $recordClass = $statusClasses[$transaction->status] ?? 'bg-gray-100 text-gray-700';
                             $isSemesterTuitionInstallment = $transaction->type === 'invoice' && $transaction->reference && str_contains($transaction->reference, ' - ');
                         @endphp
@@ -293,16 +292,16 @@
                                     <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>
                                 </div>
                                 <div>
-                                    <p class="text-xs font-medium uppercase text-gray-500">Payment</p>
-                                    <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
-                                </div>
-                                <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
                                     <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Approval</p>
                                     <p class="mt-1 break-words text-gray-700">{{ $transaction->approver->name ?? '-' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs font-medium uppercase text-gray-500">Reason</p>
+                                    <p class="mt-1 break-words text-gray-700">{{ $transaction->notes ?: '-' }}</p>
                                 </div>
                             </div>
                             @if(($canApproveFinance && $transaction->status === 'pending' && $transaction->posting_status === 'pending') || ($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id))
@@ -336,9 +335,9 @@
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Type</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Amount</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Remaining Due</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Approval</th>
+                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Reason</th>
                                 <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Actions</th>
                             </tr>
                         </thead>
@@ -354,7 +353,6 @@
                                         'open' => 'bg-blue-50 text-blue-700',
                                         'pending' => 'bg-blue-50 text-blue-700',
                                     ];
-                                    $paymentClass = $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700';
                                     $recordClass = $statusClasses[$transaction->status] ?? 'bg-gray-100 text-gray-700';
                                     $isSemesterTuitionInstallment = $transaction->type === 'invoice' && $transaction->reference && str_contains($transaction->reference, ' - ');
                                 @endphp
@@ -386,7 +384,6 @@
                                     <td class="px-5 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
                                     <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
                                     <td class="px-5 py-3"><span class="rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span></td>
-                                    <td class="px-5 py-3"><span class="rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span></td>
                                     <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                     <td class="px-5 py-3 text-sm text-gray-600">
                                         <div>{{ $transaction->approver->name ?? '-' }}</div>
@@ -395,6 +392,18 @@
                                         @endif
                                         @if($transaction->voided_at)
                                             <div class="text-xs text-red-700">Voided {{ $transaction->voided_at->format('Y-m-d H:i') }}</div>
+                                        @endif
+                                    </td>
+                                    <td class="px-5 py-3">
+                                        @if($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id)
+                                            <form id="void-form-{{ $transaction->id }}" method="POST" action="{{ route('finance.transactions.void', $transaction) }}" onsubmit="return confirm('Void this finance record and create a reversal entry?')">
+                                                @csrf
+                                                <input type="text" name="notes" required placeholder="Reason" class="w-36 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                            </form>
+                                        @elseif($transaction->notes)
+                                            <span class="text-xs text-gray-600">{{ $transaction->notes }}</span>
+                                        @else
+                                            <span class="text-xs text-gray-400">-</span>
                                         @endif
                                     </td>
                                     <td class="px-5 py-3 text-right">
@@ -406,11 +415,7 @@
                                                 </form>
                                             @endif
                                             @if($canVoidFinance && $transaction->status !== 'cancelled' && ! $transaction->original_transaction_id)
-                                                <form method="POST" action="{{ route('finance.transactions.void', $transaction) }}" class="flex justify-end gap-2" onsubmit="return confirm('Void this finance record and create a reversal entry?')">
-                                                    @csrf
-                                                    <input type="text" name="notes" required placeholder="Reason" class="w-28 rounded-md border-gray-300 text-xs shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                                    <button type="submit" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Void</button>
-                                                </form>
+                                                <button type="submit" form="void-form-{{ $transaction->id }}" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Void</button>
                                             @endif
                                         </div>
                                     </td>
