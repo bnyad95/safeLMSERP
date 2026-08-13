@@ -282,7 +282,10 @@ class SemesterController extends Controller
         $this->ensureSemesterStructureIsValid($academicYear, $validated['term_type'], (int) $validated['sequence']);
 
         $semester = Semester::create($validated);
-        app(TuitionChargeService::class)->generateNextInstallmentsForSemester($semester, $request->user());
+        $tuitionCharges = app(TuitionChargeService::class);
+        $tuitionCharges->generateNextInstallmentsForSemester($semester, $request->user());
+        $tuitionCharges->autoGenerateFlatChargesForNewSemester($semester, $request->user());
+        $tuitionCharges->autoGenerateFullChargesForNewSemester($semester, $request->user());
 
         return redirect()->route('semesters.index')->with('success', 'Semester created successfully.');
     }
@@ -644,6 +647,8 @@ class SemesterController extends Controller
                 'end_date' => $semesterEnd->toDateString(),
             ]);
             $tuitionCharges->generateNextInstallmentsForSemester($semester, $actor);
+            $tuitionCharges->autoGenerateFlatChargesForNewSemester($semester, $actor);
+            $tuitionCharges->autoGenerateFullChargesForNewSemester($semester, $actor);
         }
     }
 

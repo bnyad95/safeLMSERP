@@ -123,7 +123,7 @@
                                     <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ $invoice->student?->student_id }} / {{ $invoice->invoice_number ?? 'Invoice' }}</p>
                                 </div>
                                 <div class="shrink-0 sm:text-right">
-                                    <p class="text-sm font-semibold text-red-700 dark:text-red-300">{{ number_format((float) $invoice->remaining_amount, 2) }} {{ $invoice->currency }}</p>
+                                    <p class="text-sm font-semibold text-red-700 dark:text-red-300">{{ money($invoice->remaining_amount, $invoice->currency) }} {{ $invoice->currency }}</p>
                                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Due {{ $invoice->due_date?->format('Y-m-d') ?? 'not set' }}</p>
                                 </div>
                             </a>
@@ -146,7 +146,7 @@
                                     <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ $invoice->invoice_number ?? 'Invoice' }}</p>
                                 </div>
                                 <div class="shrink-0 sm:text-right">
-                                    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $invoice->remaining_amount, 2) }} {{ $invoice->currency }}</p>
+                                    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ money($invoice->remaining_amount, $invoice->currency) }} {{ $invoice->currency }}</p>
                                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $invoice->due_date?->format('Y-m-d') }}</p>
                                 </div>
                             </a>
@@ -178,7 +178,7 @@
                                     <tr>
                                         <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-900 dark:text-gray-100">{{ $transaction->student?->full_name ?? 'Unknown student' }}</td>
                                         <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{{ ucfirst($transaction->type) }}<span class="block text-xs text-gray-500 dark:text-gray-400">{{ $transaction->documentNumber() ?? $transaction->reference ?? $transaction->transaction_date?->format('Y-m-d') }}</span></td>
-                                        <td class="whitespace-nowrap px-5 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</td>
+                                        <td class="whitespace-nowrap px-5 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
                                         <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{{ ucfirst($transaction->posting_status) }}</td>
                                     </tr>
                                 @empty

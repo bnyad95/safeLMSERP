@@ -31,13 +31,13 @@
                     @forelse($balances as $row)
                         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                             <p class="text-sm font-medium text-gray-500">{{ $row['currency'] }} Balance</p>
-                            <p class="mt-2 text-2xl font-semibold text-gray-900">{{ number_format((float) $row['balance'], 2) }} {{ $row['currency'] }}</p>
-                            <p class="mt-2 text-xs text-gray-500">Charges {{ number_format((float) $row['charges'], 2) }} / Credits {{ number_format((float) $row['credits'], 2) }}</p>
+                            <p class="mt-2 text-2xl font-semibold text-gray-900">{{ money($row['balance'], $row['currency']) }} {{ $row['currency'] }}</p>
+                            <p class="mt-2 text-xs text-gray-500">Charges {{ money($row['charges'], $row['currency']) }} / Credits {{ money($row['credits'], $row['currency']) }}</p>
                         </div>
                     @empty
                         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                             <p class="text-sm font-medium text-gray-500">Balance</p>
-                            <p class="mt-2 text-2xl font-semibold text-gray-900">0.00 IQD</p>
+                            <p class="mt-2 text-2xl font-semibold text-gray-900">0 IQD</p>
                             <p class="mt-2 text-xs text-gray-500">No finance records yet.</p>
                         </div>
                     @endforelse
@@ -72,7 +72,7 @@
                                         @endif
                                     </div>
                                     <div class="shrink-0 text-right">
-                                        <p class="text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }}</p>
+                                        <p class="text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }}</p>
                                         <p class="text-xs text-gray-500">{{ $transaction->currency }}</p>
                                     </div>
                                 </div>
@@ -86,7 +86,7 @@
                                     </div>
                                     <div>
                                         <p class="text-xs font-medium uppercase text-gray-500">Balance</p>
-                                        <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? number_format((float) $transaction->balance_after, 2).' '.$transaction->currency : '-' }}</p>
+                                        <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                     </div>
                                 </div>
                             </article>
@@ -132,12 +132,12 @@
                                             @endif
                                         </td>
                                         <td class="px-5 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
-                                        <td class="px-5 py-3 text-right text-sm text-gray-900">{{ $signedAmount > 0 ? number_format($signedAmount, 2).' '.$transaction->currency : '-' }}</td>
-                                        <td class="px-5 py-3 text-right text-sm text-gray-900">{{ $signedAmount < 0 ? number_format(abs($signedAmount), 2).' '.$transaction->currency : '-' }}</td>
+                                        <td class="px-5 py-3 text-right text-sm text-gray-900">{{ $signedAmount > 0 ? money($signedAmount, $transaction->currency).' '.$transaction->currency : '-' }}</td>
+                                        <td class="px-5 py-3 text-right text-sm text-gray-900">{{ $signedAmount < 0 ? money(abs($signedAmount), $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                         <td class="px-5 py-3">
                                             <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ ucfirst($transaction->payment_status) }}</span>
                                         </td>
-                                        <td class="px-5 py-3 text-right text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? number_format((float) $transaction->balance_after, 2).' '.$transaction->currency : '-' }}</td>
+                                        <td class="px-5 py-3 text-right text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                     </tr>
                                 @empty
                                     <tr>

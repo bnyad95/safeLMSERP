@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AcademicYear;
 use App\Models\ActivityLog;
 use App\Models\Enrollment;
 use App\Models\FinanceTransaction;
@@ -38,6 +39,18 @@ class TuitionChargeService
             }
             if ($student->university_id !== $semester->university_id) {
                 return $this->failure('The student and semester must belong to the same university.');
+            }
+
+            if ($amountOverride === null) {
+                $flatRate = TuitionRate::where('department_id', $student->department_id)
+                    ->where('academic_year_id', $semester->academic_year_id)
+                    ->where('currency', $currency)
+                    ->where('pricing_type', TuitionRate::PRICING_FLAT)
+                    ->first();
+
+                if ($flatRate) {
+                    return $this->generateFlatSemesterCharge($student, $semester, $flatRate, $actor, $transactionDate, $dueDate, $notes);
+                }
             }
 
             $enrollments = Enrollment::with('courseSection.course')
@@ -186,6 +199,7 @@ class TuitionChargeService
 
             $ledger->recalculateStudentBalances($student->id, $currency);
             $ledger->refreshAllocatedInvoice($invoice->fresh());
+            $ledger->applyAutomaticScholarship($invoice->fresh(), $actor);
             $agreement->increment('total_amount', $totalAmount);
             $ledger->synchronizeFinanceHold($student);
 
@@ -214,6 +228,308 @@ class TuitionChargeService
                 'skipped_enrollment_ids' => $chargedEnrollmentIds,
             ];
         });
+    }
+
+    private function generateFlatSemesterCharge(
+        Student $student,
+        Semester $semester,
+        TuitionRate $rate,
+        User $actor,
+        string $transactionDate,
+        ?string $dueDate,
+        ?string $notes
+    ): array {
+        if ($student->status !== 'Active') {
+            return $this->failure('Only active students can be charged the flat tuition rate.');
+        }
+
+        $agreement = TuitionAgreement::where('student_id', $student->id)
+            ->where('academic_year_id', $semester->academic_year_id)
+            ->where('status', '!=', 'cancelled')
+            ->lockForUpdate()
+            ->first();
+
+        if ($agreement && $agreement->payment_method !== 'per_credit') {
+            return $this->failure('A manually created tuition agreement already exists for this student and academic year. Cancel it or use the manual finance entry flow instead of automatic generation.');
+        }
+        if ($agreement && $agreement->currency !== $rate->currency) {
+            return $this->failure("This tuition agreement is denominated in {$agreement->currency}; generate charges using the same currency.");
+        }
+
+        $alreadyCharged = FinanceTransaction::where('student_id', $student->id)
+            ->where('semester_id', $semester->id)
+            ->where('type', 'invoice')
+            ->where('status', '!=', 'cancelled')
+            ->when($agreement, fn ($query) => $query->where('tuition_agreement_id', $agreement->id))
+            ->exists();
+
+        if ($alreadyCharged) {
+            return [
+                'ok' => true,
+                'created' => false,
+                'message' => 'This student has already been charged the flat tuition rate for this semester. No new tuition charge was generated.',
+            ];
+        }
+
+        $ledger = app(FinanceLedgerService::class);
+        $programSemesterCount = max(1, $student->university->expectedProgramSemesterCount());
+        $totalAmount = round((float) $rate->flat_amount / $programSemesterCount, 2);
+
+        if (! $agreement) {
+            $agreement = TuitionAgreement::create([
+                'student_id' => $student->id,
+                'academic_year_id' => $semester->academic_year_id,
+                'created_by' => $actor->id,
+                'payment_method' => 'per_credit',
+                'total_amount' => round((float) $rate->flat_amount, 2),
+                'currency' => $rate->currency,
+                'status' => 'active',
+                'agreed_at' => $transactionDate,
+                'agreement_key' => $ledger->tuitionAgreementKey($student->id, $semester->academic_year_id, $semester->academicYear->name),
+            ]);
+        }
+
+        $invoicePayload = [
+            'type' => 'invoice',
+            'transaction_date' => $transactionDate,
+            'due_date' => $dueDate ?? ($semester->end_date?->toDateString()),
+        ];
+
+        $invoice = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'tuition_agreement_id' => $agreement->id,
+            'semester_id' => $semester->id,
+            'recorded_by' => $actor->id,
+            'approved_by' => $actor->id,
+            'approved_at' => now(),
+            'type' => 'invoice',
+            'amount' => $totalAmount,
+            'currency' => $rate->currency,
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'invoice_number' => $ledger->documentNumber($invoicePayload, 'invoice_number'),
+            'reference' => substr("Flat tuition - {$semester->name} {$semester->academicYear->name}", 0, 100),
+            'academic_year' => $semester->academicYear->name,
+            'transaction_date' => $transactionDate,
+            'due_date' => $invoicePayload['due_date'],
+            'notes' => $notes,
+            'balance_after' => $ledger->balanceAfter($student->id, 'invoice', $totalAmount, $rate->currency),
+            'payment_status' => $ledger->paymentStatusForTransaction([
+                'type' => 'invoice',
+                'status' => 'approved',
+                'due_date' => $invoicePayload['due_date'],
+            ]),
+        ]);
+
+        $ledger->recalculateStudentBalances($student->id, $rate->currency);
+        $ledger->refreshAllocatedInvoice($invoice->fresh());
+        $ledger->applyAutomaticScholarship($invoice->fresh(), $actor);
+        $ledger->synchronizeFinanceHold($student);
+
+        ActivityLog::create([
+            'log_name' => 'finance_transaction',
+            'description' => 'tuition_charge_generated',
+            'subject_type' => FinanceTransaction::class,
+            'subject_id' => $invoice->id,
+            'causer_type' => User::class,
+            'causer_id' => $actor->id,
+            'properties' => [
+                'student_id' => $student->id,
+                'semester_id' => $semester->id,
+                'currency' => $rate->currency,
+                'amount' => $totalAmount,
+                'pricing_type' => 'flat',
+            ],
+        ]);
+
+        return [
+            'ok' => true,
+            'created' => true,
+            'transaction' => $invoice,
+            'lines' => collect(),
+            'agreement' => $agreement,
+        ];
+    }
+
+    public function autoGenerateForSemesterPlanEnrollment(Student $student, Semester $semester, User $actor): void
+    {
+        if ($student->preferred_payment_method !== 'semester' || ! $semester->academic_year_id) {
+            return;
+        }
+
+        $currencies = TuitionRate::where('department_id', $student->department_id)
+            ->where('academic_year_id', $semester->academic_year_id)
+            ->pluck('currency');
+
+        foreach ($currencies as $currency) {
+            $this->generateForStudentSemester(
+                $student,
+                $semester,
+                $currency,
+                $actor,
+                now()->toDateString(),
+                $semester->end_date?->toDateString()
+            );
+        }
+    }
+
+    public function autoGenerateFlatChargesForNewStudent(Student $student, User $actor): void
+    {
+        if ($student->preferred_payment_method !== 'semester') {
+            return;
+        }
+
+        Semester::where('university_id', $student->university_id)
+            ->whereHas('academicYear', fn ($query) => $query->where('status', 'active'))
+            ->get()
+            ->each(fn (Semester $semester) => $this->autoGenerateForSemesterPlanEnrollment($student, $semester, $actor));
+    }
+
+    public function autoGenerateFlatChargesForNewSemester(Semester $semester, User $actor): void
+    {
+        if (! $semester->academic_year_id) {
+            return;
+        }
+
+        Student::where('university_id', $semester->university_id)
+            ->where('status', 'Active')
+            ->where('preferred_payment_method', 'semester')
+            ->get()
+            ->each(fn (Student $student) => $this->autoGenerateForSemesterPlanEnrollment($student, $semester, $actor));
+    }
+
+    public function autoGenerateFullChargeForStudent(Student $student, User $actor): void
+    {
+        if ($student->preferred_payment_method !== 'full' || $student->status !== 'Active') {
+            return;
+        }
+
+        $activeYear = AcademicYear::where('university_id', $student->university_id)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $activeYear) {
+            return;
+        }
+
+        $rate = TuitionRate::where('department_id', $student->department_id)
+            ->where('academic_year_id', $activeYear->id)
+            ->where('pricing_type', TuitionRate::PRICING_FLAT)
+            ->first();
+
+        if (! $rate) {
+            return;
+        }
+
+        $latestSemester = Semester::where('academic_year_id', $activeYear->id)->orderByDesc('end_date')->first();
+
+        $agreement = TuitionAgreement::where('student_id', $student->id)
+            ->where('academic_year_id', $activeYear->id)
+            ->where('status', '!=', 'cancelled')
+            ->lockForUpdate()
+            ->first();
+
+        if ($agreement && $agreement->payment_method !== 'per_credit') {
+            return;
+        }
+        if ($agreement && $agreement->currency !== $rate->currency) {
+            return;
+        }
+
+        $alreadyCharged = FinanceTransaction::where('student_id', $student->id)
+            ->where('type', 'invoice')
+            ->where('status', '!=', 'cancelled')
+            ->whereNull('semester_id')
+            ->when($agreement, fn ($query) => $query->where('tuition_agreement_id', $agreement->id))
+            ->exists();
+
+        if ($alreadyCharged) {
+            return;
+        }
+
+        $ledger = app(FinanceLedgerService::class);
+        $totalAmount = round((float) $rate->flat_amount, 2);
+
+        if (! $agreement) {
+            $agreement = TuitionAgreement::create([
+                'student_id' => $student->id,
+                'academic_year_id' => $activeYear->id,
+                'created_by' => $actor->id,
+                'payment_method' => 'per_credit',
+                'total_amount' => $totalAmount,
+                'currency' => $rate->currency,
+                'status' => 'active',
+                'agreed_at' => now()->toDateString(),
+                'agreement_key' => $ledger->tuitionAgreementKey($student->id, $activeYear->id, $activeYear->name),
+            ]);
+        }
+
+        $invoicePayload = [
+            'type' => 'invoice',
+            'transaction_date' => now()->toDateString(),
+            'due_date' => $latestSemester?->end_date?->toDateString() ?? $activeYear->ends_on?->toDateString(),
+        ];
+
+        $invoice = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'tuition_agreement_id' => $agreement->id,
+            'semester_id' => null,
+            'recorded_by' => $actor->id,
+            'approved_by' => $actor->id,
+            'approved_at' => now(),
+            'type' => 'invoice',
+            'amount' => $totalAmount,
+            'currency' => $rate->currency,
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'invoice_number' => $ledger->documentNumber($invoicePayload, 'invoice_number'),
+            'reference' => substr("Full tuition - {$activeYear->name}", 0, 100),
+            'academic_year' => $activeYear->name,
+            'transaction_date' => $invoicePayload['transaction_date'],
+            'due_date' => $invoicePayload['due_date'],
+            'notes' => null,
+            'balance_after' => $ledger->balanceAfter($student->id, 'invoice', $totalAmount, $rate->currency),
+            'payment_status' => $ledger->paymentStatusForTransaction([
+                'type' => 'invoice',
+                'status' => 'approved',
+                'due_date' => $invoicePayload['due_date'],
+            ]),
+        ]);
+
+        $ledger->recalculateStudentBalances($student->id, $rate->currency);
+        $ledger->refreshAllocatedInvoice($invoice->fresh());
+        $ledger->applyAutomaticScholarship($invoice->fresh(), $actor);
+        $ledger->synchronizeFinanceHold($student);
+
+        ActivityLog::create([
+            'log_name' => 'finance_transaction',
+            'description' => 'tuition_charge_generated',
+            'subject_type' => FinanceTransaction::class,
+            'subject_id' => $invoice->id,
+            'causer_type' => User::class,
+            'causer_id' => $actor->id,
+            'properties' => [
+                'student_id' => $student->id,
+                'academic_year_id' => $activeYear->id,
+                'currency' => $rate->currency,
+                'amount' => $totalAmount,
+                'pricing_type' => 'flat',
+                'plan' => 'full',
+            ],
+        ]);
+    }
+
+    public function autoGenerateFullChargesForNewSemester(Semester $semester, User $actor): void
+    {
+        if (! $semester->academic_year_id) {
+            return;
+        }
+
+        Student::where('university_id', $semester->university_id)
+            ->where('status', 'Active')
+            ->where('preferred_payment_method', 'full')
+            ->get()
+            ->each(fn (Student $student) => $this->autoGenerateFullChargeForStudent($student, $actor));
     }
 
     public function generateForSemesterRoster(
@@ -314,6 +630,7 @@ class TuitionChargeService
 
                 $ledger->recalculateStudentBalances($agreement->student_id, $agreement->currency);
                 $ledger->refreshAllocatedInvoice($invoice->fresh());
+                $ledger->applyAutomaticScholarship($invoice->fresh(), $actor);
                 $ledger->synchronizeFinanceHold($agreement->student()->with('user')->first());
 
                 ActivityLog::create([

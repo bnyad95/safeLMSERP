@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\FinanceTransaction;
 use App\Models\Student;
 use App\Models\TuitionAgreement;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class FinanceLedgerService
@@ -58,35 +59,57 @@ class FinanceLedgerService
         return $number;
     }
 
+    private function agreedTuitionTotal(int $studentId, string $currency): float
+    {
+        return (float) TuitionAgreement::where('student_id', $studentId)
+            ->where('currency', $currency)
+            ->where('status', '!=', 'cancelled')
+            ->sum('total_amount');
+    }
+
     public function balanceAfter(int $studentId, string $type, float $amount, string $currency): float
     {
-        $charges = FinanceTransaction::where('student_id', $studentId)
+        $agreedTotal = $this->agreedTuitionTotal($studentId, $currency);
+
+        $chargesQuery = FinanceTransaction::where('student_id', $studentId)
             ->where('currency', $currency)
-            ->where('posting_status', 'posted')
-            ->whereIn('type', FinanceTransaction::chargeTypes())
-            ->sum('amount');
+            ->where('posting_status', 'posted');
+        $charges = $agreedTotal > 0
+            ? $agreedTotal
+            : (clone $chargesQuery)->whereIn('type', FinanceTransaction::chargeTypes())->sum('amount');
+        if ($agreedTotal > 0) {
+            $charges += (clone $chargesQuery)->where('type', 'refund')->sum('amount');
+        }
         $credits = FinanceTransaction::where('student_id', $studentId)
             ->where('currency', $currency)
             ->where('posting_status', 'posted')
             ->whereIn('type', FinanceTransaction::creditTypes())
             ->sum('amount');
-        $signedAmount = in_array($type, FinanceTransaction::creditTypes(), true) ? -$amount : $amount;
+        $isNewInvoice = $agreedTotal > 0 && $type === 'invoice';
+        $signedAmount = match (true) {
+            $isNewInvoice => 0.0,
+            in_array($type, FinanceTransaction::creditTypes(), true) => -$amount,
+            default => $amount,
+        };
 
         return round($charges - $credits + $signedAmount, 2);
     }
 
     public function recalculateStudentBalances(int $studentId, string $currency): void
     {
-        $balance = 0.0;
+        $agreedTotal = $this->agreedTuitionTotal($studentId, $currency);
+        $balance = $agreedTotal;
+
         FinanceTransaction::where('student_id', $studentId)
             ->where('currency', $currency)
             ->oldest('transaction_date')
             ->oldest()
             ->lazy(500)
-            ->each(function (FinanceTransaction $transaction) use (&$balance) {
+            ->each(function (FinanceTransaction $transaction) use (&$balance, $agreedTotal) {
                 $transaction->timestamps = false;
                 if ($transaction->isPosted()) {
-                    $balance += $transaction->signedAmount();
+                    $skipsAgreedCharge = $agreedTotal > 0 && $transaction->type === 'invoice';
+                    $balance += $skipsAgreedCharge ? 0.0 : $transaction->signedAmount();
                     $transaction->balance_after = round($balance, 2);
                 } else {
                     $transaction->balance_after = null;
@@ -126,6 +149,66 @@ class FinanceLedgerService
         $this->refreshTuitionAgreementStatus($invoice->tuition_agreement_id);
     }
 
+    public function applyAutomaticScholarship(FinanceTransaction $invoice, User $actor): ?FinanceTransaction
+    {
+        if ($invoice->type !== 'invoice' || $invoice->status === 'cancelled' || ! $invoice->posting_status || $invoice->posting_status !== 'posted') {
+            return null;
+        }
+
+        $percentage = (float) ($invoice->student?->scholarship_percentage ?? 0);
+
+        if ($percentage <= 0) {
+            return null;
+        }
+
+        $alreadyApplied = FinanceTransaction::where('invoice_transaction_id', $invoice->id)
+            ->where('type', 'scholarship')
+            ->where('reference', 'AUTO-SCHOLARSHIP')
+            ->exists();
+
+        if ($alreadyApplied) {
+            return null;
+        }
+
+        $amount = round((float) $invoice->amount * min($percentage, 100) / 100, 2);
+
+        if ($amount <= 0) {
+            return null;
+        }
+
+        $transactionDate = $invoice->transaction_date?->toDateString() ?? now()->toDateString();
+
+        $scholarship = FinanceTransaction::create([
+            'student_id' => $invoice->student_id,
+            'tuition_agreement_id' => $invoice->tuition_agreement_id,
+            'semester_id' => $invoice->semester_id,
+            'invoice_transaction_id' => $invoice->id,
+            'recorded_by' => $actor->id,
+            'approved_by' => $actor->id,
+            'approved_at' => now(),
+            'type' => 'scholarship',
+            'amount' => $amount,
+            'currency' => $invoice->currency,
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'paid',
+            'receipt_number' => $this->documentNumber([
+                'type' => 'scholarship',
+                'transaction_date' => $transactionDate,
+                'receipt_number' => null,
+            ], 'receipt_number'),
+            'reference' => 'AUTO-SCHOLARSHIP',
+            'academic_year' => $invoice->academic_year,
+            'transaction_date' => $transactionDate,
+            'notes' => "Automatic {$percentage}% scholarship applied to ".$invoice->documentNumber(),
+        ]);
+
+        $this->recalculateStudentBalances((int) $invoice->student_id, $invoice->currency);
+        $this->refreshAllocatedInvoice($invoice->fresh());
+
+        return $scholarship;
+    }
+
     public function paymentStatusForTransaction(array $transaction): string
     {
         if ($transaction['status'] === 'cancelled') {
@@ -160,6 +243,14 @@ class FinanceLedgerService
             ->whereIn('payment_status', ['open', 'partial', 'overdue'])
             ->lazyById(200)
             ->each(fn (FinanceTransaction $invoice) => $this->refreshAllocatedInvoice($invoice));
+    }
+
+    public function refreshStudentLedgerBalances(Student $student): void
+    {
+        $student->financeTransactions()
+            ->distinct()
+            ->pluck('currency')
+            ->each(fn (string $currency) => $this->recalculateStudentBalances($student->id, $currency));
     }
 
     public function overdueInvoiceQuery(Student $student)

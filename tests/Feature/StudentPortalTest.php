@@ -383,7 +383,7 @@ class StudentPortalTest extends TestCase
             ->assertOk()
             ->assertSee('My Finance')
             ->assertSee('INV-STUDENT-001')
-            ->assertSee('500,000.00 IQD')
+            ->assertSee('500,000 IQD')
             ->assertDontSee('INV-OTHER-001')
             ->assertDontSee('Other Finance');
 

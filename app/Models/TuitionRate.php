@@ -9,19 +9,33 @@ class TuitionRate extends Model
 {
     use HasFactory;
 
+    public const PRICING_PER_CREDIT = 'per_credit';
+
+    public const PRICING_FLAT = 'flat';
+
     protected $fillable = [
         'university_id',
         'department_id',
         'academic_year_id',
         'currency',
+        'pricing_type',
         'rate_per_credit',
+        'flat_amount',
         'created_by',
         'notes',
     ];
 
     protected function casts(): array
     {
-        return ['rate_per_credit' => 'decimal:2'];
+        return [
+            'rate_per_credit' => 'decimal:2',
+            'flat_amount' => 'decimal:2',
+        ];
+    }
+
+    public function isFlat(): bool
+    {
+        return $this->pricing_type === self::PRICING_FLAT;
     }
 
     protected static function booted(): void

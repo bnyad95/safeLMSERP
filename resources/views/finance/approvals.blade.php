@@ -90,7 +90,7 @@
                             </div>
                             <dl class="grid grid-cols-2 gap-3 text-sm">
                                 <div><dt class="text-xs text-gray-500 dark:text-gray-400">Type</dt><dd class="mt-1 font-medium text-gray-900 dark:text-gray-100">{{ ucfirst($transaction->type) }}</dd></div>
-                                <div><dt class="text-xs text-gray-500 dark:text-gray-400">Amount</dt><dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</dd></div>
+                                <div><dt class="text-xs text-gray-500 dark:text-gray-400">Amount</dt><dd class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</dd></div>
                                 <div><dt class="text-xs text-gray-500 dark:text-gray-400">Recorded by</dt><dd class="mt-1 text-gray-700 dark:text-gray-300">{{ $transaction->recorder?->name ?? 'Unknown' }}</dd></div>
                                 <div><dt class="text-xs text-gray-500 dark:text-gray-400">Recorded</dt><dd class="mt-1 text-gray-700 dark:text-gray-300">{{ $transaction->created_at->format('Y-m-d H:i') }}</dd></div>
                             </dl>
@@ -136,7 +136,7 @@
                                         <span class="font-medium text-gray-900 dark:text-gray-100">{{ ucfirst($transaction->type) }}</span>
                                         <span class="block text-xs text-gray-500 dark:text-gray-400">{{ $transaction->receipt_number ?? $transaction->reference ?? 'No reference' }}</span>
                                     </td>
-                                    <td class="whitespace-nowrap px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</td>
+                                    <td class="whitespace-nowrap px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
                                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ $transaction->recorder?->name ?? 'Unknown' }}</td>
                                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-600 dark:text-gray-400">{{ $transaction->created_at->format('Y-m-d H:i') }}</td>
                                     <td class="px-5 py-4 text-right">

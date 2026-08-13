@@ -154,6 +154,132 @@ class TuitionChargeGenerationTest extends TestCase
         $this->assertSame('350000.00', $agreement->total_amount);
     }
 
+    public function test_generating_invoice_for_a_scholarship_student_automatically_applies_the_discount(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('SCH');
+        $student = $this->makeStudent($university, $department, ['scholarship_percentage' => 70]);
+        $academicYear = $this->makeAcademicYear($university);
+        $semester = $this->makeSemester($university, $academicYear);
+        TuitionRate::create([
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'rate_per_credit' => 50000,
+        ]);
+        $this->enroll($student, $semester, 4.0);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.students.tuition-charges.store', $student), [
+                'semester_id' => $semester->id,
+                'currency' => 'IQD',
+                'transaction_date' => '2026-09-05',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->firstOrFail();
+        $this->assertSame('200000.00', $invoice->amount);
+
+        $scholarship = FinanceTransaction::where('invoice_transaction_id', $invoice->id)
+            ->where('type', 'scholarship')
+            ->where('reference', 'AUTO-SCHOLARSHIP')
+            ->firstOrFail();
+        $this->assertSame('140000.00', $scholarship->amount);
+        $this->assertSame('posted', $scholarship->posting_status);
+        $this->assertSame('60000.00', $scholarship->balance_after);
+
+        $this->assertSame('partial', $invoice->fresh()->payment_status);
+    }
+
+    public function test_student_without_a_scholarship_gets_no_automatic_credit(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('NOSCH');
+        $student = $this->makeStudent($university, $department);
+        $academicYear = $this->makeAcademicYear($university);
+        $semester = $this->makeSemester($university, $academicYear);
+        TuitionRate::create([
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'rate_per_credit' => 50000,
+        ]);
+        $this->enroll($student, $semester, 4.0);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.students.tuition-charges.store', $student), [
+                'semester_id' => $semester->id,
+                'currency' => 'IQD',
+                'transaction_date' => '2026-09-05',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertSame(0, FinanceTransaction::where('student_id', $student->id)->where('type', 'scholarship')->count());
+    }
+
+    public function test_flat_rate_department_charges_a_fixed_amount_regardless_of_credits(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('FLAT');
+        $student = $this->makeStudent($university, $department);
+        $academicYear = $this->makeAcademicYear($university);
+        $semester = $this->makeSemester($university, $academicYear);
+        TuitionRate::create([
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => 900000,
+        ]);
+        $this->enroll($student, $semester, 3.0);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.students.tuition-charges.store', $student), [
+                'semester_id' => $semester->id,
+                'currency' => 'IQD',
+                'transaction_date' => '2026-09-05',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->firstOrFail();
+        // The rate is the full program's tuition (8 semesters for a university), billed as an even share each semester.
+        $this->assertSame('112500.00', $invoice->amount);
+        $this->assertSame('posted', $invoice->posting_status);
+        $this->assertSame(0, TuitionChargeLine::where('finance_transaction_id', $invoice->id)->count());
+    }
+
+    public function test_flat_rate_is_not_charged_twice_for_the_same_semester(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('FLATTWICE');
+        $student = $this->makeStudent($university, $department);
+        $academicYear = $this->makeAcademicYear($university);
+        $semester = $this->makeSemester($university, $academicYear);
+        TuitionRate::create([
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => 900000,
+        ]);
+        $this->enroll($student, $semester, 3.0);
+
+        $chargeRoute = fn () => $this->actingAs($admin)->post(route('finance.students.tuition-charges.store', $student), [
+            'semester_id' => $semester->id,
+            'currency' => 'IQD',
+            'transaction_date' => '2026-09-05',
+        ]);
+
+        $chargeRoute()->assertRedirect(route('finance.students.show', $student));
+        $this->enroll($student, $semester, 4.0);
+        $chargeRoute()->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertSame(1, FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->count());
+    }
+
     public function test_retake_enrollment_is_billed_like_any_other_course(): void
     {
         $admin = $this->makeSuperAdmin();

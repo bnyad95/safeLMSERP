@@ -18,6 +18,10 @@
         $initialFinanceType = old('type', $allowedEntryTypes[0] ?? 'invoice');
         $initialPaymentPlan = old('payment_plan', $selectedStudent->preferred_payment_method === 'semester' ? 'semester' : 'full');
         $initialSemesterIds = collect(old('semester_ids', []))->map(fn ($id) => (string) $id)->values();
+        $initialAmountRaw = old('amount', '');
+        $initialAmount = $initialAmountRaw !== ''
+            ? rtrim(rtrim(number_format((float) $initialAmountRaw, 2, '.', ','), '0'), '.')
+            : '';
     @endphp
 
     <div class="finance-workspace py-5 sm:py-8">
@@ -25,19 +29,34 @@
             x-data="{
                 recordType: @js($initialFinanceType),
                 paymentPlan: @js($initialPaymentPlan),
-                amount: @js(old('amount', '')),
+                amount: @js($initialAmount),
+                currency: @js(old('currency', 'IQD')),
                 selectedSemesters: @js($initialSemesterIds),
                 installmentCount: @js((string) old('installment_count', $expectedInstallmentCount)),
+                discountMode: @js(old('discount_mode', 'amount')),
+                discountPercentage: @js(old('discount_percentage', '')),
+                selectedInvoiceId: @js((string) old('invoice_transaction_id', '')),
+                invoiceAmounts: @js($invoiceOptions->mapWithKeys(fn ($invoice) => [(string) $invoice->id => (float) $invoice->amount])),
                 formattedAmount() {
-                    const amount = Number.parseFloat(this.amount || 0);
+                    const amount = Number.parseFloat(String(this.amount || 0).replace(/,/g, ''));
+                    const decimals = this.currency === 'USD' ? 2 : 0;
 
-                    return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+                    return formatMoneyDisplay((Number.isFinite(amount) ? amount : 0).toFixed(decimals));
                 },
                 perSemesterAmount() {
-                    const amount = Number.parseFloat(this.amount || 0);
+                    const amount = Number.parseFloat(String(this.amount || 0).replace(/,/g, ''));
                     const count = Number.parseInt(this.installmentCount || 0, 10) || this.selectedSemesters.length;
+                    const decimals = this.currency === 'USD' ? 2 : 0;
 
-                    return count > 0 ? (amount / count).toFixed(2) : '0.00';
+                    return formatMoneyDisplay((count > 0 ? amount / count : 0).toFixed(decimals));
+                },
+                discountPercentageAmount() {
+                    const invoiceAmount = Number(this.invoiceAmounts[this.selectedInvoiceId] || 0);
+                    const pct = Number.parseFloat(this.discountPercentage || 0);
+                    const decimals = this.currency === 'USD' ? 2 : 0;
+                    const computed = Number.isFinite(invoiceAmount) && Number.isFinite(pct) ? (invoiceAmount * pct) / 100 : 0;
+
+                    return formatMoneyDisplay(computed.toFixed(decimals));
                 }
             }"
             class="mx-auto max-w-4xl space-y-6 px-4 sm:px-6 lg:px-8"
@@ -75,7 +94,7 @@
                         </div>
                     @endif
 
-                    <form method="POST" action="{{ route('finance.transactions.store') }}" class="mt-5 grid grid-cols-1 gap-4">
+                    <form method="POST" action="{{ route('finance.transactions.store') }}" class="mt-5 grid grid-cols-1 gap-4" x-on:submit="stripMoneyCommas($el)">
                         @csrf
                         <input type="hidden" name="student_id" value="{{ $selectedStudent->id }}">
 
@@ -88,20 +107,37 @@
                                     @endif
                                 @endforeach
                             </select>
+                            @if($autoBilledPlan)
+                                <p class="mt-2 text-xs text-blue-700">This student is on an automatically billed tuition plan — invoices are generated automatically at the department's rate. Manual invoice entry is disabled here to prevent conflicting charges.</p>
+                            @endif
+                        </div>
+
+                        <div class="min-w-0" x-show="recordType === 'discount'">
+                            <label class="block text-sm font-medium text-gray-700">Discount Type</label>
+                            <select name="discount_mode" x-model="discountMode" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="amount" @selected(old('discount_mode', 'amount') === 'amount')>Fixed amount</option>
+                                <option value="percentage" @selected(old('discount_mode') === 'percentage')>Percentage of invoice</option>
+                            </select>
                         </div>
 
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div class="min-w-0">
+                            <div class="min-w-0" x-show="!(recordType === 'discount' && discountMode === 'percentage')">
                                 <label class="block text-sm font-medium text-gray-700">
                                     <span x-show="recordType === 'invoice'">Agreed Tuition Charge</span>
                                     <span x-show="recordType !== 'invoice'">Amount</span>
                                 </label>
-                                <input type="number" step="0.01" min="0.01" name="amount" x-model="amount" value="{{ old('amount') }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                <input type="text" inputmode="decimal" name="amount" value="{{ $initialAmount }}" x-on:input="formatMoneyInput($event); amount = $event.target.value" class="money-input mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" :required="!(recordType === 'discount' && discountMode === 'percentage')">
+                            </div>
+
+                            <div class="min-w-0" x-show="recordType === 'discount' && discountMode === 'percentage'">
+                                <label class="block text-sm font-medium text-gray-700">Discount Percentage</label>
+                                <input type="number" min="0.01" max="100" step="0.01" name="discount_percentage" value="{{ old('discount_percentage') }}" x-model="discountPercentage" placeholder="e.g. 10" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" :required="recordType === 'discount' && discountMode === 'percentage'">
+                                <p class="mt-1 text-xs text-gray-500" x-show="selectedInvoiceId">&asymp; <span class="font-semibold" x-text="discountPercentageAmount()"></span> <span x-text="currency"></span> off the selected invoice.</p>
                             </div>
 
                             <div class="min-w-0">
                                 <label class="block text-sm font-medium text-gray-700">Currency</label>
-                                <select name="currency" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                                <select name="currency" x-model="currency" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" required>
                                     <option value="IQD" @selected(old('currency', 'IQD') === 'IQD')>IQD</option>
                                     <option value="USD" @selected(old('currency') === 'USD')>USD</option>
                                 </select>
@@ -213,28 +249,23 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <div x-show="recordType === 'invoice'" class="min-w-0">
-                                <label class="block text-sm font-medium text-gray-700">Invoice Number</label>
-                                <input type="text" name="invoice_number" value="{{ old('invoice_number') }}" placeholder="Auto for invoices" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            </div>
-                            <div x-show="recordType !== 'invoice'" class="min-w-0">
-                                <label class="block text-sm font-medium text-gray-700">Receipt Number</label>
-                                <input type="text" name="receipt_number" value="{{ old('receipt_number') }}" placeholder="Auto for payments/credits" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            </div>
+                        <div x-show="recordType === 'invoice'" class="min-w-0">
+                            <label class="block text-sm font-medium text-gray-700">Invoice Number</label>
+                            <input type="text" name="invoice_number" value="{{ old('invoice_number') }}" placeholder="Auto for invoices" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                         </div>
 
-                        <div x-show="['payment', 'discount', 'scholarship'].includes(recordType)" class="min-w-0">
+                        <div x-show="['payment', 'discount'].includes(recordType)" class="min-w-0">
                             <label class="block text-sm font-medium text-gray-700">Apply Credit To Invoice</label>
-                            <select name="invoice_transaction_id" class="mt-1 block w-full min-w-0 truncate rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <select name="invoice_transaction_id" x-model="selectedInvoiceId" :required="recordType === 'discount' && discountMode === 'percentage'" class="mt-1 block w-full min-w-0 truncate rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                 <option value="">No invoice allocation</option>
                                 @foreach($invoiceOptions as $invoice)
                                     <option value="{{ $invoice->id }}" @selected(old('invoice_transaction_id') == $invoice->id)>
-                                        {{ $invoice->documentNumber() }} / {{ number_format((float) ($invoice->remaining_amount ?? $invoice->amount), 2) }} {{ $invoice->currency }} remaining / {{ ucfirst($invoice->payment_status) }}
+                                        {{ $invoice->documentNumber() }} / {{ money($invoice->remaining_amount ?? $invoice->amount, $invoice->currency) }} {{ $invoice->currency }} remaining / {{ ucfirst($invoice->payment_status) }}
                                     </option>
                                 @endforeach
                             </select>
-                            <p class="mt-1 text-xs text-gray-500">Used for payments, discounts, and scholarships. Currency and student must match the invoice.</p>
+                            <p class="mt-1 text-xs text-gray-500" x-show="!(recordType === 'discount' && discountMode === 'percentage')">Used for payments and discounts. Currency and student must match the invoice.</p>
+                            <p class="mt-1 text-xs text-gray-500" x-show="recordType === 'discount' && discountMode === 'percentage'">Required for percentage discounts — the percentage is applied to this invoice's full amount.</p>
                         </div>
 
                         <div class="min-w-0">

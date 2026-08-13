@@ -172,7 +172,7 @@
                                             <p class="mt-1 text-xs text-gray-500">{{ $transaction->transaction_date->format('Y-m-d') }} / {{ ucfirst($transaction->type) }}</p>
                                         </div>
                                         <div class="shrink-0 text-right">
-                                            <p class="text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }}</p>
+                                            <p class="text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }}</p>
                                             <p class="text-xs text-gray-500">{{ $transaction->currency }}</p>
                                         </div>
                                     </div>
@@ -201,7 +201,7 @@
                                         </div>
                                         <div>
                                             <p class="text-xs font-medium uppercase text-gray-500">Balance</p>
-                                            <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? number_format((float) $transaction->balance_after, 2).' '.$transaction->currency : '-' }}</p>
+                                            <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                         </div>
                                         <div>
                                             <p class="text-xs font-medium uppercase text-gray-500">Approval</p>
@@ -273,7 +273,7 @@
                                                 @endif
                                             </td>
                                             <td class="min-w-0 max-w-[10rem] truncate px-5 py-3 text-sm font-medium text-gray-900">{{ $transaction->student->full_name ?? '-' }}</td>
-                                            <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</td>
+                                            <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
                                             <td class="px-5 py-3">
                                                 <div class="flex flex-col items-start gap-1">
                                                     <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>

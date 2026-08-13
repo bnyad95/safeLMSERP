@@ -1581,7 +1581,7 @@ class ErpController extends Controller
 
         $value = $balances
             ->take(2)
-            ->map(fn (array $balance) => number_format($balance['balance'], 2).' '.$balance['currency'])
+            ->map(fn (array $balance) => money($balance['balance'], $balance['currency']).' '.$balance['currency'])
             ->join(' / ');
 
         return [
@@ -2001,6 +2001,7 @@ class ErpController extends Controller
 
         $validated = $request->validate([
             'rates' => ['required', 'array'],
+            'pricing_type' => ['nullable', 'array'],
         ]);
 
         foreach ($validated['rates'] as $departmentId => $years) {
@@ -2021,6 +2022,12 @@ class ErpController extends Controller
                     ]);
                 }
 
+                $pricingType = $validated['pricing_type'][$departmentId][$academicYearId] ?? TuitionRate::PRICING_PER_CREDIT;
+                if (! in_array($pricingType, [TuitionRate::PRICING_PER_CREDIT, TuitionRate::PRICING_FLAT], true)) {
+                    $pricingType = TuitionRate::PRICING_PER_CREDIT;
+                }
+                $amountLabel = $pricingType === TuitionRate::PRICING_FLAT ? 'flat tuition amount' : 'rate per credit';
+
                 foreach ($currencyValues as $currency => $value) {
                     if (! in_array($currency, ['IQD', 'USD'], true)) {
                         continue;
@@ -2032,15 +2039,20 @@ class ErpController extends Controller
                     }
 
                     $rate = (float) $value;
-                    if ($rate <= 0 || $rate > 999999.99) {
+                    if ($rate <= 0 || $rate > 999999999.99) {
                         return back()->withInput()->withErrors([
-                            "rates.{$departmentId}.{$academicYearId}.{$currency}" => "{$department->name} {$academicYear->name} ({$currency}): rate per credit must be between 0.01 and 999999.99.",
+                            "rates.{$departmentId}.{$academicYearId}.{$currency}" => "{$department->name} {$academicYear->name} ({$currency}): {$amountLabel} must be between 0.01 and 999999999.99.",
                         ]);
                     }
 
                     $tuitionRate = TuitionRate::updateOrCreate(
                         ['department_id' => $department->id, 'academic_year_id' => $academicYear->id, 'currency' => $currency],
-                        ['rate_per_credit' => round($rate, 2), 'created_by' => $user->id]
+                        [
+                            'pricing_type' => $pricingType,
+                            'rate_per_credit' => $pricingType === TuitionRate::PRICING_PER_CREDIT ? round($rate, 2) : null,
+                            'flat_amount' => $pricingType === TuitionRate::PRICING_FLAT ? round($rate, 2) : null,
+                            'created_by' => $user->id,
+                        ]
                     );
 
                     if ($tuitionRate->wasRecentlyCreated || $tuitionRate->wasChanged()) {
@@ -2055,7 +2067,8 @@ class ErpController extends Controller
                                 'department_id' => $department->id,
                                 'academic_year_id' => $academicYear->id,
                                 'currency' => $currency,
-                                'rate_per_credit' => round($rate, 2),
+                                'pricing_type' => $pricingType,
+                                'amount' => round($rate, 2),
                             ],
                         ]);
                     }

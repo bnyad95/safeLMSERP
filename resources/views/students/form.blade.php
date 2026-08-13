@@ -4,12 +4,10 @@
     $selectedCollegeId = old('college_id', $student->department?->college_id ?? '');
     $selectedDepartmentId = old('department_id', $student->department_id ?? '');
     $selectedStageId = old('current_stage_id', $student->current_stage_id ?? '');
-    $selectedPaymentMethod = old('preferred_payment_method', 'full');
+    $selectedPaymentMethod = old('preferred_payment_method', 'semester');
 @endphp
 
-<div
-    @unless($isEdit) x-data="{ paymentMethod: @js($selectedPaymentMethod) }" @endunless
-    class="space-y-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-6">
+<div class="space-y-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-6">
     <section>
         <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Student identity</h3>
         <div class="mt-4 grid gap-5 md:grid-cols-2">
@@ -93,21 +91,30 @@
     @unless($isEdit)
         <section class="border-t border-gray-200 pt-6 dark:border-gray-700">
             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Tuition plan</h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Record how the student agreed to pay tuition. Finance staff will use this plan to generate the actual charges at the department's current rate.</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Record how the student will pay tuition, billed automatically at the department's current rate — either one charge per semester as it happens, or the whole active year charged as a single invoice right away.</p>
             <div class="mt-4 grid gap-5 md:grid-cols-2">
                 <div>
                     <label for="student-payment-method" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Payment plan</label>
-                    <select id="student-payment-method" name="preferred_payment_method" x-model="paymentMethod" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
-                        <option value="full" @selected($selectedPaymentMethod === 'full')>Full tuition paid once</option>
-                        <option value="semester" @selected($selectedPaymentMethod === 'semester')>Divide tuition by semesters</option>
-                        <option value="per_credit" @selected($selectedPaymentMethod === 'per_credit')>Per-credit, billed automatically each semester</option>
+                    <select id="student-payment-method" name="preferred_payment_method" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
+                        <option value="semester" @selected($selectedPaymentMethod === 'semester')>Billed automatically each semester</option>
+                        <option value="full" @selected($selectedPaymentMethod === 'full')>Full payment once</option>
                     </select>
                     <x-input-error :messages="$errors->get('preferred_payment_method')" class="mt-2" />
                 </div>
-                <div x-show="paymentMethod === 'semester'">
-                    <label for="student-installment-count" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Number of installments</label>
-                    <input id="student-installment-count" type="number" min="1" max="24" name="preferred_installment_count" value="{{ old('preferred_installment_count') }}" placeholder="e.g. 8" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
-                    <x-input-error :messages="$errors->get('preferred_installment_count')" class="mt-2" />
+            </div>
+        </section>
+
+        <section class="border-t border-gray-200 pt-6 dark:border-gray-700">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Scholarship</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">If the organization is awarding this student a scholarship, set the percentage of tuition it covers. For example, 100% means the student owes nothing; 70% means the student still owes the remaining 30%. This is applied automatically to every tuition invoice generated for the student. Leave blank if there is no scholarship.</p>
+            <div class="mt-4 grid gap-5 md:grid-cols-2">
+                <div>
+                    <label for="student-scholarship-percentage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Scholarship percentage</label>
+                    <div class="relative mt-1">
+                        <input id="student-scholarship-percentage" type="number" min="0" max="100" step="0.01" name="scholarship_percentage" value="{{ old('scholarship_percentage') }}" placeholder="e.g. 70" class="block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
+                        <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-gray-400">%</span>
+                    </div>
+                    <x-input-error :messages="$errors->get('scholarship_percentage')" class="mt-2" />
                 </div>
             </div>
         </section>

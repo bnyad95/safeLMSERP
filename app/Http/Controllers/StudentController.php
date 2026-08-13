@@ -12,6 +12,7 @@ use App\Models\StudentDocument;
 use App\Models\StudentGuardian;
 use App\Models\University;
 use App\Models\User;
+use App\Services\TuitionChargeService;
 use App\Support\OrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -101,9 +102,12 @@ class StudentController extends Controller
         $temporaryPassword = $validated['password'];
         unset($validated['password'], $validated['password_confirmation']);
 
-        [$student, $accountCreated] = DB::transaction(function () use ($validated, $temporaryPassword) {
+        [$student, $accountCreated] = DB::transaction(function () use ($validated, $temporaryPassword, $request) {
             $student = Student::create($validated);
             $accountCreated = $this->syncStudentUser($student, $temporaryPassword, true);
+            $tuitionCharges = app(TuitionChargeService::class);
+            $tuitionCharges->autoGenerateFlatChargesForNewStudent($student, $request->user());
+            $tuitionCharges->autoGenerateFullChargeForStudent($student, $request->user());
 
             return [$student, $accountCreated];
         });
@@ -410,17 +414,13 @@ class StudentController extends Controller
 
         if (! $student) {
             $rules['password'] = ['required', 'string', 'min:8', 'confirmed'];
-            $rules['preferred_payment_method'] = ['nullable', Rule::in(['full', 'semester', 'per_credit'])];
-            $rules['preferred_installment_count'] = ['nullable', 'integer', 'min:1', 'max:24'];
+            $rules['preferred_payment_method'] = ['nullable', Rule::in(['semester', 'full'])];
+            $rules['scholarship_percentage'] = ['nullable', 'numeric', 'min:0', 'max:100'];
         }
 
         $validated = $request->validate($rules);
 
         $validated['admission_status'] = $validated['admission_status'] ?? 'Admitted';
-
-        if (! $student && ($validated['preferred_payment_method'] ?? 'full') !== 'semester') {
-            $validated['preferred_installment_count'] = null;
-        }
 
         return $validated;
     }

@@ -146,7 +146,7 @@ class RoleWorkspaceController extends Controller
         $balance = max(0, $charges - $credits);
 
         return [
-            'value' => $balance > 0 ? number_format($balance, 2).' '.$currency : 'No balance',
+            'value' => $balance > 0 ? money($balance, $currency).' '.$currency : 'No balance',
             'detail' => $balance > 0 ? 'Outstanding tuition balance' : 'No unpaid tuition charges',
         ];
     }

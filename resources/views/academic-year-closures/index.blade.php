@@ -120,7 +120,7 @@
                                 <p class="text-sm font-semibold text-amber-900">Open finance archived with this year</p>
                                 <div class="mt-2 space-y-1 text-sm text-amber-900">
                                     @foreach($summary['open_finance_by_currency'] as $total)
-                                        <p>{{ number_format($total['total'], 2) }} {{ $total['currency'] }}</p>
+                                        <p>{{ money($total['total'], $total['currency']) }} {{ $total['currency'] }}</p>
                                     @endforeach
                                 </div>
                             </div>

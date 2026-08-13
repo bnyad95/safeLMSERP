@@ -98,6 +98,105 @@ class TuitionRateManagementTest extends TestCase
         ]);
     }
 
+    public function test_flat_pricing_writes_flat_amount_and_leaves_rate_per_credit_null(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('FLAT');
+        $academicYear = AcademicYear::create(['university_id' => $university->id, 'name' => '2026/2027', 'status' => 'active']);
+
+        $this->actingAs($admin)
+            ->post(route('bologna-definition.tuition-rates.store'), [
+                'rates' => [
+                    $department->id => [
+                        $academicYear->id => ['IQD' => '900000'],
+                    ],
+                ],
+                'pricing_type' => [
+                    $department->id => [
+                        $academicYear->id => 'flat',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('bologna-definition.tuition-rates'));
+
+        $this->assertDatabaseHas('tuition_rates', [
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => '900000.00',
+            'rate_per_credit' => null,
+        ]);
+    }
+
+    public function test_switching_from_flat_to_per_credit_clears_the_previous_amount(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('SWITCH');
+        $academicYear = AcademicYear::create(['university_id' => $university->id, 'name' => '2026/2027', 'status' => 'active']);
+        TuitionRate::create([
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => 900000,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('bologna-definition.tuition-rates.store'), [
+                'rates' => [
+                    $department->id => [
+                        $academicYear->id => ['IQD' => '55000'],
+                    ],
+                ],
+                'pricing_type' => [
+                    $department->id => [
+                        $academicYear->id => 'per_credit',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('bologna-definition.tuition-rates'));
+
+        $this->assertDatabaseHas('tuition_rates', [
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'per_credit',
+            'rate_per_credit' => '55000.00',
+            'flat_amount' => null,
+        ]);
+    }
+
+    public function test_large_flat_amount_is_accepted(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        [$university, $department] = $this->organization('LARGE');
+        $academicYear = AcademicYear::create(['university_id' => $university->id, 'name' => '2026/2027', 'status' => 'active']);
+
+        $this->actingAs($admin)
+            ->post(route('bologna-definition.tuition-rates.store'), [
+                'rates' => [
+                    $department->id => [
+                        $academicYear->id => ['IQD' => '300000000'],
+                    ],
+                ],
+                'pricing_type' => [
+                    $department->id => [
+                        $academicYear->id => 'flat',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('bologna-definition.tuition-rates'));
+
+        $this->assertDatabaseHas('tuition_rates', [
+            'department_id' => $department->id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => '300000000.00',
+        ]);
+    }
+
     public function test_rate_out_of_bounds_is_rejected(): void
     {
         $admin = $this->makeSuperAdmin();

@@ -195,7 +195,7 @@
                                             <div class="font-medium text-gray-900">{{ $row['student']->full_name }}</div>
                                             <div class="text-gray-500">{{ $row['student']->student_id }}</div>
                                         </td>
-                                        <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ number_format($row['balance'], 2) }} {{ $row['currency'] }}</td>
+                                        <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ money($row['balance'], $row['currency']) }} {{ $row['currency'] }}</td>
                                         <td class="px-5 py-3 text-sm text-gray-600">{{ $row['overdue'] }}</td>
                                         <td class="px-5 py-3 text-sm text-gray-600">{{ $row['last_activity'] ?? '-' }}</td>
                                     </tr>

@@ -335,12 +335,12 @@ class AnalyticsController extends Controller
     private function formatCurrencyTotals($rows): string
     {
         if ($rows->isEmpty()) {
-            return '0.00 IQD';
+            return '0 IQD';
         }
 
         return $rows
             ->groupBy('currency')
-            ->map(fn ($currencyRows, $currency) => number_format((float) $currencyRows->sum('balance'), 2).' '.$currency)
+            ->map(fn ($currencyRows, $currency) => money($currencyRows->sum('balance'), $currency).' '.$currency)
             ->implode(' / ');
     }
 

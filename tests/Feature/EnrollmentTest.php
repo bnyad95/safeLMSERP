@@ -14,8 +14,10 @@ use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Stage;
 use App\Models\Student;
+use App\Models\FinanceTransaction;
 use App\Models\Teacher;
 use App\Models\Timetable;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -261,6 +263,109 @@ class EnrollmentTest extends TestCase
             'course_section_id' => $section->id,
             'status' => 'enrolled',
         ]);
+    }
+
+    public function test_enrolling_a_semester_plan_student_automatically_generates_the_tuition_charge(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $setup['student']->update(['preferred_payment_method' => 'semester']);
+        TuitionRate::create([
+            'department_id' => $setup['department']->id,
+            'academic_year_id' => $setup['academicYear']->id,
+            'currency' => 'IQD',
+            'rate_per_credit' => 50000,
+        ]);
+        $section = $this->makeSection($setup);
+
+        $this->actingAs($admin)
+            ->post(route('enrollments.store'), [
+                'student_id' => $setup['student']->id,
+                'course_section_id' => $section->id,
+                'enrolled_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('enrollments.index'));
+
+        $invoice = FinanceTransaction::where('student_id', $setup['student']->id)->where('type', 'invoice')->first();
+        $this->assertNotNull($invoice, 'Enrolling a semester-plan student should automatically create a tuition invoice.');
+        $this->assertSame('150000.00', $invoice->amount);
+        $this->assertSame('posted', $invoice->posting_status);
+        $this->assertSame($setup['semester']->id, $invoice->semester_id);
+    }
+
+    public function test_enrolling_a_semester_plan_student_with_a_flat_rate_department_charges_the_flat_amount(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $setup['student']->update(['preferred_payment_method' => 'semester']);
+        TuitionRate::create([
+            'department_id' => $setup['department']->id,
+            'academic_year_id' => $setup['academicYear']->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => 900000,
+        ]);
+        $section = $this->makeSection($setup);
+
+        $this->actingAs($admin)
+            ->post(route('enrollments.store'), [
+                'student_id' => $setup['student']->id,
+                'course_section_id' => $section->id,
+                'enrolled_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('enrollments.index'));
+
+        $invoice = FinanceTransaction::where('student_id', $setup['student']->id)->where('type', 'invoice')->first();
+        $this->assertNotNull($invoice);
+        // The rate is the full program's tuition (8 semesters for a university), billed as an even share each semester.
+        $this->assertSame('112500.00', $invoice->amount);
+    }
+
+    public function test_semester_plan_enrollment_still_succeeds_without_a_configured_tuition_rate(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $setup['student']->update(['preferred_payment_method' => 'semester']);
+        $section = $this->makeSection($setup);
+
+        $this->actingAs($admin)
+            ->post(route('enrollments.store'), [
+                'student_id' => $setup['student']->id,
+                'course_section_id' => $section->id,
+                'enrolled_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('enrollments.index'));
+
+        $this->assertDatabaseHas('enrollments', [
+            'student_id' => $setup['student']->id,
+            'course_section_id' => $section->id,
+            'status' => 'enrolled',
+        ]);
+        $this->assertSame(0, FinanceTransaction::where('student_id', $setup['student']->id)->count());
+    }
+
+    public function test_per_credit_plan_student_enrollment_does_not_automatically_generate_a_charge(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $setup['student']->update(['preferred_payment_method' => 'per_credit']);
+        TuitionRate::create([
+            'department_id' => $setup['department']->id,
+            'academic_year_id' => $setup['academicYear']->id,
+            'currency' => 'IQD',
+            'rate_per_credit' => 50000,
+        ]);
+        $section = $this->makeSection($setup);
+
+        $this->actingAs($admin)
+            ->post(route('enrollments.store'), [
+                'student_id' => $setup['student']->id,
+                'course_section_id' => $section->id,
+                'enrolled_at' => '2026-09-01',
+            ])
+            ->assertRedirect(route('enrollments.index'));
+
+        $this->assertSame(0, FinanceTransaction::where('student_id', $setup['student']->id)->count());
     }
 
     public function test_unplaced_student_cannot_be_enrolled_or_waitlisted(): void

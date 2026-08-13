@@ -3,7 +3,7 @@
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
                 <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Tuition Rates</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Open an academic year to set each department's per-credit tuition rate. Closed years remain read-only.</p>
+                <p class="text-sm text-gray-600 dark:text-gray-400">Open an academic year to set each department's tuition pricing — per-credit or a flat amount. Closed years remain read-only.</p>
             </div>
             <a href="{{ $backRoute }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 {{ $backLabel }}
@@ -55,21 +55,22 @@
                             {{ $readOnly ? 'View Rates' : 'Enter Rates' }}
                         </button>
 
-                        <x-modal name="tuition-rates-{{ $academicYear->id }}" max-width="2xl" :show="$reopenModal">
+                        <x-modal name="tuition-rates-{{ $academicYear->id }}" max-width="4xl" :show="$reopenModal">
                             <div class="p-6">
                                 <div class="flex items-center justify-between">
                                     <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">{{ $academicYear->university?->name }} &middot; {{ $academicYear->name }}</h2>
                                     <button type="button" x-on:click="$dispatch('close')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">&times;</button>
                                 </div>
-                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Per-credit tuition rate for each department, by currency.</p>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Set each department's pricing model and tuition amount, by currency. Per-credit charges scale with enrolled course credits. Flat amounts are the full program tuition (8 semesters for a university, 4 for an institute) — students on the automatic semester plan are billed an even share of it each semester, and students on the full-payment plan are billed the whole amount once.</p>
 
-                                <form action="{{ route('bologna-definition.tuition-rates.store') }}" method="POST" class="mt-4">
+                                <form action="{{ route('bologna-definition.tuition-rates.store') }}" method="POST" class="mt-4" x-on:submit="stripMoneyCommas($el)">
                                     @csrf
                                     <div class="max-h-[60vh] overflow-y-auto overflow-x-auto rounded-md border border-gray-200 dark:border-gray-700">
                                         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                                             <thead class="bg-gray-50 dark:bg-gray-950">
                                                 <tr>
                                                     <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Department</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Pricing Model</th>
                                                     @foreach($currencies as $currency)
                                                         <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $currency }}</th>
                                                     @endforeach
@@ -79,28 +80,43 @@
                                                 @foreach($yearDepartments as $department)
                                                     @php
                                                         $departmentRates = $rates->get($department->id, collect())->keyBy(fn ($rate) => $rate->academic_year_id.'|'.$rate->currency);
+                                                        $existingPricingType = $departmentRates->first(fn ($rate) => (int) $rate->academic_year_id === (int) $academicYear->id)?->pricing_type;
+                                                        $initialPricingType = old("pricing_type.{$department->id}.{$academicYear->id}", $existingPricingType ?? 'per_credit');
                                                     @endphp
-                                                    <tr>
+                                                    <tr x-data="{ pricingType: @js($initialPricingType) }">
                                                         <td class="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                                                             {{ $department->name }}
                                                             <span class="block text-xs font-normal text-gray-500 dark:text-gray-400">{{ $department->college?->name }}</span>
+                                                        </td>
+                                                        <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                                                            <select
+                                                                name="pricing_type[{{ $department->id }}][{{ $academicYear->id }}]"
+                                                                x-model="pricingType"
+                                                                class="w-52 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
+                                                                @disabled($readOnly)
+                                                            >
+                                                                <option value="per_credit" @selected($initialPricingType === 'per_credit')>Per-credit</option>
+                                                                <option value="flat" @selected($initialPricingType === 'flat')>Flat, not credit-based</option>
+                                                            </select>
                                                         </td>
                                                         @foreach($currencies as $currency)
                                                             @php
                                                                 $existing = $departmentRates->get($academicYear->id.'|'.$currency);
                                                                 $oldValue = old("rates.{$department->id}.{$academicYear->id}.{$currency}");
-                                                                $value = $oldValue ?? $existing?->rate_per_credit;
+                                                                $value = $oldValue ?? $existing?->rate_per_credit ?? $existing?->flat_amount;
+                                                                $displayValue = $value !== null && $value !== ''
+                                                                    ? rtrim(rtrim(number_format((float) $value, 2, '.', ','), '0'), '.')
+                                                                    : '';
                                                             @endphp
                                                             <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
                                                                 <input
-                                                                    type="number"
-                                                                    step="0.01"
-                                                                    min="0.01"
-                                                                    max="999999.99"
+                                                                    type="text"
+                                                                    inputmode="decimal"
                                                                     name="rates[{{ $department->id }}][{{ $academicYear->id }}][{{ $currency }}]"
-                                                                    value="{{ $value }}"
-                                                                    placeholder="Not set"
-                                                                    class="w-32 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
+                                                                    value="{{ $displayValue }}"
+                                                                    x-on:input="formatMoneyInput($event)"
+                                                                    :placeholder="pricingType === 'flat' ? 'Full program amount' : 'Rate per credit'"
+                                                                    class="money-input w-40 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
                                                                     @disabled($readOnly)
                                                                 >
                                                             </td>

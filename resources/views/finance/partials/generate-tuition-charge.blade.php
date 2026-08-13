@@ -10,7 +10,7 @@
                     <button type="button" x-on:click="$dispatch('close')" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800">Close</button>
                 </div>
             @else
-                <form method="POST" action="{{ route('finance.students.tuition-charges.store', $selectedStudent) }}" class="mt-4 grid gap-4 sm:grid-cols-2">
+                <form method="POST" action="{{ route('finance.students.tuition-charges.store', $selectedStudent) }}" class="mt-4 grid gap-4 sm:grid-cols-2" x-on:submit="stripMoneyCommas($el)">
                     @csrf
                     <div class="min-w-0">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Semester</label>
@@ -38,7 +38,7 @@
                     </div>
                     <div class="min-w-0">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Amount (optional)</label>
-                        <input type="number" step="0.01" min="0.01" name="amount" placeholder="Auto-calculate" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
+                        <input type="text" inputmode="decimal" name="amount" placeholder="Auto-calculate" x-on:input="formatMoneyInput($event)" class="money-input mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                         <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Leave blank to auto-calculate from credits &times; rate.</p>
                     </div>
                     <div class="min-w-0 sm:col-span-2">

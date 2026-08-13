@@ -6,6 +6,42 @@ window.Alpine = Alpine;
 
 Alpine.start();
 
+const formatMoneyDisplay = (rawValue) => {
+	const cleaned = String(rawValue ?? '').replace(/[^0-9.]/g, '');
+	const firstDotIndex = cleaned.indexOf('.');
+	const integerPart = firstDotIndex === -1 ? cleaned : cleaned.slice(0, firstDotIndex);
+	const decimalPart = firstDotIndex === -1 ? undefined : cleaned.slice(firstDotIndex + 1).replace(/\./g, '').slice(0, 2);
+	const normalizedInteger = integerPart.replace(/^0+(?=\d)/, '');
+	const grouped = normalizedInteger.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+	return decimalPart === undefined ? grouped : `${grouped}.${decimalPart}`;
+};
+
+window.formatMoneyDisplay = formatMoneyDisplay;
+
+window.formatMoneyInput = (event) => {
+	const input = event.target;
+	const digitsBeforeCursor = input.value.slice(0, input.selectionStart).replace(/[^0-9]/g, '').length;
+
+	input.value = formatMoneyDisplay(input.value);
+
+	let position = 0;
+	let digitsSeen = 0;
+	while (position < input.value.length && digitsSeen < digitsBeforeCursor) {
+		if (/[0-9]/.test(input.value[position])) {
+			digitsSeen += 1;
+		}
+		position += 1;
+	}
+	input.setSelectionRange(position, position);
+};
+
+window.stripMoneyCommas = (formElement) => {
+	formElement.querySelectorAll('.money-input').forEach((field) => {
+		field.value = field.value.replace(/,/g, '');
+	});
+};
+
 const initializeFinanceDashboardCharts = async () => {
 	const root = document.querySelector('[data-finance-charts]');
 	const payloadElement = document.getElementById('finance-dashboard-chart-data');

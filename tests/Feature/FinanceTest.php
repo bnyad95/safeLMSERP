@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\TuitionAgreement;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -50,6 +51,22 @@ class FinanceTest extends TestCase
             'phone' => '07701234567',
             'status' => 'Active',
         ], $attributes));
+    }
+
+    private function makeActiveFlatRateFor(Student $student, float $flatAmount = 900000): void
+    {
+        $academicYear = AcademicYear::create([
+            'university_id' => $student->university_id,
+            'name' => '2026/2027',
+            'status' => 'active',
+        ]);
+        TuitionRate::create([
+            'department_id' => $student->department_id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => $flatAmount,
+        ]);
     }
 
     private function makeFinanceUser(string $roleName, array $permissionNames): User
@@ -118,6 +135,123 @@ class FinanceTest extends TestCase
         $this->assertSame('1250000.00', FinanceTransaction::first()->amount);
     }
 
+    public function test_manual_invoice_is_blocked_for_a_semester_plan_student(): void
+    {
+        $accountant = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
+        $student = $this->makeStudent(['preferred_payment_method' => 'semester']);
+        $this->makeActiveFlatRateFor($student);
+        $accountant->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($accountant)
+            ->from(route('finance.students.show', $student))
+            ->post('/finance/transactions', [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '1250000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors('type');
+
+        $this->assertSame(0, FinanceTransaction::where('student_id', $student->id)->count());
+    }
+
+    public function test_manual_invoice_is_blocked_for_a_semester_plan_student_even_for_super_administrator(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent(['preferred_payment_method' => 'semester']);
+        $this->makeActiveFlatRateFor($student);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post('/finance/transactions', [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '1250000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors('type');
+
+        $this->assertSame(0, FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->count());
+    }
+
+    public function test_manual_invoice_type_is_hidden_from_the_add_record_form_for_a_semester_plan_student(): void
+    {
+        $accountant = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
+        $student = $this->makeStudent(['preferred_payment_method' => 'semester']);
+        $this->makeActiveFlatRateFor($student);
+        $accountant->update(['university_id' => $student->university_id]);
+
+        $response = $this->actingAs($accountant)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('automatically billed tuition plan');
+
+        // The type filter dropdown always lists every type; only the create-record
+        // modal's option should disappear, leaving a single remaining occurrence.
+        $this->assertSame(1, substr_count($response->getContent(), 'Invoice / Tuition Charge'));
+    }
+
+    public function test_manual_invoice_type_stays_available_for_a_per_credit_plan_student(): void
+    {
+        $accountant = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
+        $student = $this->makeStudent(['preferred_payment_method' => 'per_credit']);
+        $accountant->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('Invoice / Tuition Charge');
+    }
+
+    public function test_manual_invoice_stays_available_for_a_semester_plan_student_when_no_rate_is_configured(): void
+    {
+        $accountant = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
+        $student = $this->makeStudent(['preferred_payment_method' => 'semester']);
+        $accountant->update(['university_id' => $student->university_id]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('Invoice / Tuition Charge');
+
+        $this->actingAs($accountant)
+            ->post('/finance/transactions', [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '1250000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertSame(1, FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->count());
+    }
+
+    public function test_manual_invoice_stays_available_for_a_full_plan_student_when_only_a_per_credit_rate_exists(): void
+    {
+        $accountant = $this->makeFinanceUser('chief_accountant', ['finance.view', 'finance.create_invoice', 'finance.record_payment']);
+        $student = $this->makeStudent(['preferred_payment_method' => 'full']);
+        $accountant->update(['university_id' => $student->university_id]);
+        $academicYear = AcademicYear::create(['university_id' => $student->university_id, 'name' => '2026/2027', 'status' => 'active']);
+        TuitionRate::create([
+            'department_id' => $student->department_id,
+            'academic_year_id' => $academicYear->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'per_credit',
+            'rate_per_credit' => 50000,
+        ]);
+
+        $this->actingAs($accountant)
+            ->get(route('finance.students.show', $student))
+            ->assertOk()
+            ->assertSee('Invoice / Tuition Charge');
+    }
+
     public function test_finance_can_split_tuition_invoice_by_semesters(): void
     {
         $admin = $this->makeSuperAdmin();
@@ -150,7 +284,7 @@ class FinanceTest extends TestCase
                 'transaction_date' => '2026-07-18',
             ])
             ->assertRedirect(route('finance.students.show', $student))
-            ->assertSessionHas('success', '2 semester invoices created: 600,000.00 IQD due 2026-12-31; 600,000.00 IQD due 2027-06-30.');
+            ->assertSessionHas('success', '2 semester invoices created: 600,000 IQD due 2026-12-31; 600,000 IQD due 2027-06-30.');
 
         $this->assertDatabaseHas('finance_transactions', [
             'student_id' => $student->id,
@@ -174,7 +308,7 @@ class FinanceTest extends TestCase
         $this->assertSame(2, FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->count());
 
         $this->actingAs($admin)
-            ->get(route('finance.students.show', $student))
+            ->get(route('finance.students.show', [$student, 'type' => 'invoice']))
             ->assertOk()
             ->assertSee('2 semester installments: 0 paid / 2 open / 0 overdue')
             ->assertSee('Semester tuition installment');
@@ -274,7 +408,7 @@ class FinanceTest extends TestCase
             ->assertOk()
             ->assertSee('Student Finance Statement')
             ->assertSee('INV-2026-000022')
-            ->assertSee('750,000.00 IQD');
+            ->assertSee('750,000 IQD');
     }
 
     public function test_finance_can_export_csv_for_student(): void
@@ -342,17 +476,17 @@ class FinanceTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->get(route('finance.students.show', $student))
+            ->get(route('finance.students.show', [$student, 'type' => 'invoice']))
             ->assertOk()
             ->assertSee('Outstanding Tuition')
             ->assertSee('Next Due')
             ->assertSee('Due 2026-08-10')
-            ->assertSee('Filtered balance: 500,000.00 IQD / 300.00 USD')
-            ->assertSee('500,000.00 IQD')
+            ->assertSee('Filtered balance: 500,000 IQD / 300.00 USD')
+            ->assertSee('500,000 IQD')
             ->assertSee('300.00 USD');
 
         $this->actingAs($admin)
-            ->get(route('finance.students.show', [$student, 'currency' => 'USD']))
+            ->get(route('finance.students.show', [$student, 'type' => 'invoice', 'currency' => 'USD']))
             ->assertOk()
             ->assertSee('300.00 USD')
             ->assertSee('INV-2026-000045')
@@ -513,7 +647,7 @@ class FinanceTest extends TestCase
         $this->assertSame('Tuition payment reminder', $notification->title);
         $this->assertSame(route('student.finance'), $notification->action_url);
         $this->assertStringContainsString('Please bring your tuition payment this week.', $notification->body);
-        $this->assertStringContainsString('500,000.00 IQD', $notification->body);
+        $this->assertStringContainsString('500,000 IQD', $notification->body);
     }
 
     public function test_finance_can_block_and_unblock_unpaid_student_login(): void
@@ -1154,6 +1288,37 @@ class FinanceTest extends TestCase
         $this->assertSame('paid', $agreement->transactions()->where('type', 'invoice')->firstOrFail()->payment_status);
     }
 
+    public function test_creating_a_manual_invoice_for_a_scholarship_student_automatically_applies_the_discount(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent(['scholarship_percentage' => 100]);
+
+        $this->actingAs($admin)
+            ->from(route('finance.students.show', $student))
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'invoice',
+                'amount' => '500000',
+                'currency' => 'IQD',
+                'status' => 'pending',
+                'reference' => 'Tuition',
+                'payment_plan' => 'full',
+                'transaction_date' => '2026-08-01',
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->firstOrFail();
+        $this->assertSame('500000.00', $invoice->amount);
+
+        $scholarship = FinanceTransaction::where('invoice_transaction_id', $invoice->id)
+            ->where('type', 'scholarship')
+            ->where('reference', 'AUTO-SCHOLARSHIP')
+            ->firstOrFail();
+        $this->assertSame('500000.00', $scholarship->amount);
+        $this->assertSame('0.00', $scholarship->balance_after);
+        $this->assertSame('paid', $invoice->fresh()->payment_status);
+    }
+
     public function test_semester_tuition_plan_can_span_multiple_academic_years(): void
     {
         $admin = $this->makeSuperAdmin();
@@ -1402,7 +1567,7 @@ class FinanceTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->get(route('finance.students.show', $student))
+            ->get(route('finance.students.show', [$student, 'type' => 'invoice']))
             ->assertOk()
             ->assertSee('VISIBLE-STUDENT-RECORD')
             ->assertDontSee('HIDDEN-STUDENT-RECORD');
@@ -1925,5 +2090,99 @@ class FinanceTest extends TestCase
             ])
             ->assertRedirect(route('finance.students.records.create', $student))
             ->assertSessionHasErrors('amount');
+    }
+
+    public function test_percentage_discount_computes_amount_from_the_selected_invoice(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        $invoice = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'open',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'discount',
+                'discount_mode' => 'percentage',
+                'discount_percentage' => '10',
+                'invoice_transaction_id' => $invoice->id,
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'discount',
+            'invoice_transaction_id' => $invoice->id,
+            'amount' => '100000.00',
+        ]);
+    }
+
+    public function test_percentage_discount_requires_an_invoice_selection(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'discount',
+                'discount_mode' => 'percentage',
+                'discount_percentage' => '10',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors(['invoice_transaction_id']);
+    }
+
+    public function test_percentage_discount_cannot_exceed_the_invoice_remaining_balance(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        $invoice = FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'open',
+            'transaction_date' => now()->toDateString(),
+        ]);
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'discount',
+            'invoice_transaction_id' => $invoice->id,
+            'amount' => '950000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'paid',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'discount',
+                'discount_mode' => 'percentage',
+                'discount_percentage' => '10',
+                'invoice_transaction_id' => $invoice->id,
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors(['amount']);
     }
 }

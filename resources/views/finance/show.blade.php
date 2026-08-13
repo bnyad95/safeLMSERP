@@ -45,6 +45,11 @@
                                     Registrar recorded plan: {{ ['full' => 'full tuition paid once', 'semester' => 'divide tuition by semesters', 'per_credit' => 'per-credit, billed automatically'][$selectedStudent->preferred_payment_method] ?? $selectedStudent->preferred_payment_method }}{{ $selectedStudent->preferred_installment_count ? ' ('.$selectedStudent->preferred_installment_count.' installments)' : '' }} — no tuition agreement created yet.
                                 </p>
                             @endif
+                            @if($selectedStudent->scholarship_percentage > 0)
+                                <p class="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                                    Scholarship: {{ rtrim(rtrim(number_format((float) $selectedStudent->scholarship_percentage, 2), '0'), '.') }}% of tuition covered automatically on every invoice.
+                                </p>
+                            @endif
                         </div>
                         <div class="flex flex-wrap gap-2">
                             @if($selectedStudent->user?->account_blocked_at)
@@ -53,7 +58,7 @@
                                 <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Balance: {{ ucfirst($selectedPaymentStatus) }}</span>
                             @endif
                             @forelse($selectedBalances as $balance)
-                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">Balance {{ number_format((float) $balance['balance'], 2) }} {{ $balance['currency'] }}</span>
+                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">Balance {{ money($balance['balance'], $balance['currency']) }} {{ $balance['currency'] }}</span>
                             @empty
                                 <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">No balance</span>
                             @endforelse
@@ -141,11 +146,11 @@
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Method</p>
-                                    <p class="mt-1 text-gray-800 dark:text-gray-200">{{ $agreement->payment_method === 'semester' ? 'Semester installments' : 'Full payment' }}</p>
+                                    <p class="mt-1 text-gray-800 dark:text-gray-200">{{ ['semester' => 'Semester installments', 'per_credit' => 'Billed automatically each semester'][$agreement->payment_method] ?? 'Full payment' }}</p>
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Agreed Tuition</p>
-                                    <p class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ number_format((float) $agreement->total_amount, 2) }} {{ $agreement->currency }}</p>
+                                    <p class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ money($agreement->total_amount, $agreement->currency) }} {{ $agreement->currency }}</p>
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Schedule</p>
@@ -180,6 +185,7 @@
                         <label class="block text-sm font-medium text-gray-700">Type</label>
                         <select name="type" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">All types</option>
+                            <option value="credits" @selected($filters['type'] === 'credits')>Payments, Discounts &amp; Refunds</option>
                             @foreach($types as $value => $label)
                                 <option value="{{ $value }}" @selected($filters['type'] === $value)>{{ $label }}</option>
                             @endforeach
@@ -266,7 +272,7 @@
                                     @endif
                                 </div>
                                 <div class="shrink-0 text-right">
-                                    <p class="text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }}</p>
+                                    <p class="text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }}</p>
                                     <p class="text-xs text-gray-500">{{ $transaction->currency }}</p>
                                 </div>
                             </div>
@@ -292,7 +298,7 @@
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Balance</p>
-                                    <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? number_format((float) $transaction->balance_after, 2).' '.$transaction->currency : '-' }}</p>
+                                    <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Approval</p>
@@ -378,10 +384,10 @@
                                         @endif
                                     </td>
                                     <td class="px-5 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
-                                    <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ number_format((float) $transaction->amount, 2) }} {{ $transaction->currency }}</td>
+                                    <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
                                     <td class="px-5 py-3"><span class="rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span></td>
                                     <td class="px-5 py-3"><span class="rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span></td>
-                                    <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? number_format((float) $transaction->balance_after, 2).' '.$transaction->currency : '-' }}</td>
+                                    <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                     <td class="px-5 py-3 text-sm text-gray-600">
                                         <div>{{ $transaction->approver->name ?? '-' }}</div>
                                         @if($transaction->approved_at)

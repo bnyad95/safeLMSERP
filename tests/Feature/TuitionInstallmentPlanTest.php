@@ -12,6 +12,7 @@ use App\Models\Role;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\TuitionAgreement;
+use App\Models\TuitionRate;
 use App\Models\University;
 use App\Models\User;
 use App\Services\TuitionChargeService;
@@ -188,6 +189,122 @@ class TuitionInstallmentPlanTest extends TestCase
             'amount' => '1000000.00',
         ]);
         $this->assertSame(2, FinanceTransaction::where('tuition_agreement_id', $agreement->id)->where('type', 'invoice')->count());
+    }
+
+    public function test_semester_split_invoices_for_a_scholarship_student_each_get_an_automatic_credit(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = $this->makeUniversity(University::TYPE_UNIVERSITY);
+        $student = $this->makeStudentFor($university);
+        $student->update(['scholarship_percentage' => 50]);
+        $year1 = $this->makeAcademicYear($university, '2026/2027', '2026-09-01', '2027-06-30');
+        $semester1 = $this->makeSemester($university, $year1, 'Semester 1', 1, '2026-09-01', '2026-12-31');
+        $semester2 = $this->makeSemester($university, $year1, 'Semester 2', 2, '2027-02-01', '2027-06-30');
+
+        $this->actingAs($admin)->post(route('finance.transactions.store'), [
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'reference' => 'Annual tuition',
+            'payment_plan' => 'semester',
+            'semester_ids' => [$semester1->id, $semester2->id],
+            'transaction_date' => '2026-08-01',
+        ])->assertRedirect(route('finance.students.show', $student));
+
+        $invoices = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->get();
+        $this->assertSame(2, $invoices->count());
+
+        foreach ($invoices as $invoice) {
+            $scholarship = FinanceTransaction::where('invoice_transaction_id', $invoice->id)
+                ->where('type', 'scholarship')
+                ->where('reference', 'AUTO-SCHOLARSHIP')
+                ->first();
+            $this->assertNotNull($scholarship, "Invoice {$invoice->id} is missing its automatic scholarship credit.");
+            $this->assertSame(round((float) $invoice->amount * 0.5, 2), (float) $scholarship->amount);
+        }
+
+        $this->assertSame(4, FinanceTransaction::where('student_id', $student->id)->count());
+    }
+
+    public function test_creating_a_new_semester_automatically_flat_bills_an_existing_semester_plan_student(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = $this->makeUniversity(University::TYPE_UNIVERSITY);
+        $student = $this->makeStudentFor($university);
+        $student->update(['preferred_payment_method' => 'semester']);
+        $year = $this->makeAcademicYear($university, '2026/2027', '2026-09-01', '2027-06-30');
+        TuitionRate::create([
+            'department_id' => $student->department_id,
+            'academic_year_id' => $year->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => 400000,
+        ]);
+
+        $this->actingAs($admin)->post(route('semesters.store'), [
+            'name' => 'Semester 1',
+            'term_type' => 'regular',
+            'sequence' => 1,
+            'academic_year_id' => $year->id,
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-12-31',
+            'university_id' => $university->id,
+        ])->assertRedirect(route('semesters.index'));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->first();
+        $this->assertNotNull($invoice, 'Creating a semester should automatically flat-bill an existing semester-plan student with no enrollment required.');
+        // The rate is the full program's tuition (8 semesters for a university), billed as an even share each semester.
+        $this->assertSame('50000.00', $invoice->amount);
+        // The agreement's "Agreed Tuition" should show the full program amount from day one,
+        // not accumulate one semester's share at a time as more semesters get billed.
+        $this->assertSame('400000.00', $invoice->tuitionAgreement->total_amount);
+    }
+
+    public function test_creating_a_new_semester_automatically_charges_an_existing_full_plan_student(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $university = $this->makeUniversity(University::TYPE_UNIVERSITY);
+        $student = $this->makeStudentFor($university);
+        $student->update(['preferred_payment_method' => 'full']);
+        $year = $this->makeAcademicYear($university, '2026/2027', '2026-09-01', '2027-06-30');
+        TuitionRate::create([
+            'department_id' => $student->department_id,
+            'academic_year_id' => $year->id,
+            'currency' => 'IQD',
+            'pricing_type' => 'flat',
+            'flat_amount' => 400000,
+        ]);
+
+        $this->actingAs($admin)->post(route('semesters.store'), [
+            'name' => 'Semester 1',
+            'term_type' => 'regular',
+            'sequence' => 1,
+            'academic_year_id' => $year->id,
+            'start_date' => '2026-09-01',
+            'end_date' => '2026-12-31',
+            'university_id' => $university->id,
+        ])->assertRedirect(route('semesters.index'));
+
+        $invoice = FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->first();
+        $this->assertNotNull($invoice);
+        $this->assertSame('400000.00', $invoice->amount);
+        $this->assertNull($invoice->semester_id);
+
+        // A second semester should top up via a fresh call, but since a full-payment
+        // invoice already exists for this academic year, no further charge is made.
+        $this->actingAs($admin)->post(route('semesters.store'), [
+            'name' => 'Semester 2',
+            'term_type' => 'regular',
+            'sequence' => 2,
+            'academic_year_id' => $year->id,
+            'start_date' => '2027-02-01',
+            'end_date' => '2027-06-30',
+            'university_id' => $university->id,
+        ])->assertRedirect(route('semesters.index'));
+
+        $this->assertSame(1, FinanceTransaction::where('student_id', $student->id)->where('type', 'invoice')->count());
     }
 
     public function test_final_installment_absorbs_rounding_remainder(): void

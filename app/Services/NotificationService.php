@@ -194,7 +194,7 @@ class NotificationService
         $student = $transaction->student;
         $user = $this->userForStudent($student);
         $title = 'Payment due: '.($transaction->reference ?: 'Invoice');
-        $body = number_format((float) $transaction->amount, 2).' '.$transaction->currency.' due on '.$transaction->due_date->format('Y-m-d');
+        $body = money($transaction->amount, $transaction->currency).' '.$transaction->currency.' due on '.$transaction->due_date->format('Y-m-d');
 
         CalendarEvent::updateOrCreate(
             [
@@ -229,7 +229,7 @@ class NotificationService
             ->values();
 
         $balanceText = $balanceRows
-            ->map(fn ($balance) => number_format((float) $balance['balance'], 2).' '.$balance['currency'])
+            ->map(fn ($balance) => money($balance['balance'], $balance['currency']).' '.$balance['currency'])
             ->implode(', ');
 
         $body = trim((string) $message);

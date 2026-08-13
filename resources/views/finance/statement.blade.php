@@ -59,7 +59,7 @@
                     <div class="shrink-0 text-right text-sm text-gray-600">
                         <p>Generated: {{ now()->format('Y-m-d H:i') }}</p>
                         <p>Status: <span class="font-semibold text-gray-900">{{ ucfirst($paymentStatus) }}</span></p>
-                        <p>Outstanding Balance: <span class="font-semibold text-gray-900">{{ $balances->isEmpty() ? '0.00 IQD' : $balances->map(fn ($row) => number_format((float) $row['balance'], 2).' '.$row['currency'])->implode(' / ') }}</span></p>
+                        <p>Outstanding Balance: <span class="font-semibold text-gray-900">{{ $balances->isEmpty() ? '0 IQD' : $balances->map(fn ($row) => money($row['balance'], $row['currency']).' '.$row['currency'])->implode(' / ') }}</span></p>
                     </div>
                 </div>
 
@@ -95,12 +95,12 @@
                                     </td>
                                     <td class="px-4 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
                                     <td class="px-4 py-3 text-right text-sm text-gray-900">
-                                        {{ $signedAmount > 0 ? number_format($signedAmount, 2).' '.$transaction->currency : '-' }}
+                                        {{ $signedAmount > 0 ? money($signedAmount, $transaction->currency).' '.$transaction->currency : '-' }}
                                     </td>
                                     <td class="px-4 py-3 text-right text-sm text-gray-900">
-                                        {{ $signedAmount < 0 ? number_format(abs($signedAmount), 2).' '.$transaction->currency : '-' }}
+                                        {{ $signedAmount < 0 ? money(abs($signedAmount), $transaction->currency).' '.$transaction->currency : '-' }}
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm font-semibold text-gray-900">{{ number_format((float) $balanceAfter, 2) }} {{ $transaction->currency }}</td>
+                                    <td class="px-4 py-3 text-right text-sm font-semibold text-gray-900">{{ money($balanceAfter, $transaction->currency) }} {{ $transaction->currency }}</td>
                                 </tr>
                             @empty
                                 <tr>

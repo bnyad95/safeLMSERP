@@ -38,7 +38,7 @@
 
         <div class="amount">
             <span>Amount received</span>
-            <strong>{{ number_format((float) $financeTransaction->amount, 2) }} {{ $financeTransaction->currency }}</strong>
+            <strong>{{ money($financeTransaction->amount, $financeTransaction->currency) }} {{ $financeTransaction->currency }}</strong>
         </div>
 
         <section class="meta">

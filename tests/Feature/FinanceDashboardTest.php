@@ -61,7 +61,7 @@ class FinanceDashboardTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Visible Finance Student')
-            ->assertSee('100.00 IQD')
+            ->assertSee('100 IQD')
             ->assertDontSee('Hidden Finance Student')
             ->assertDontSee('999.00 USD')
             ->assertDontSee('HIDDEN-INV');

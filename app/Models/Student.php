@@ -62,10 +62,12 @@ class Student extends Model
         'emergency_contact_phone',
         'preferred_payment_method',
         'preferred_installment_count',
+        'scholarship_percentage',
     ];
 
     protected $casts = [
         'admission_date' => 'date',
+        'scholarship_percentage' => 'decimal:2',
     ];
 
     public function university()

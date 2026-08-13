@@ -136,7 +136,7 @@ class AnalyticsTest extends TestCase
             ->assertSee('GPA Trend')
             ->assertSee('Fall 2026')
             ->assertDontSee('Finance')
-            ->assertDontSee('1,200,000.00 IQD / 300.00 USD')
+            ->assertDontSee('1,200,000 IQD / 300.00 USD')
             ->assertDontSee('Unpaid Balances')
             ->assertDontSee('Course Performance');
 
@@ -158,7 +158,7 @@ class AnalyticsTest extends TestCase
             ->get(route('analytics.index', ['tab' => 'finance', 'academic_year' => '2026']))
             ->assertOk()
             ->assertSee('Unpaid Balances')
-            ->assertSee('1,200,000.00 IQD')
+            ->assertSee('1,200,000 IQD')
             ->assertSee('300.00 USD');
 
         $this->actingAs($user)

@@ -136,6 +136,10 @@ class EnrollmentService
                 $notes
             );
 
+            if ($enrollment->status === 'enrolled' && $section->semester) {
+                app(TuitionChargeService::class)->autoGenerateForSemesterPlanEnrollment($student, $section->semester, $actor);
+            }
+
             return ['ok' => true, 'enrollment' => $enrollment, 'status' => $enrollment->status];
         });
     }

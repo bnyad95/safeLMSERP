@@ -10,6 +10,7 @@ use App\Models\FinanceTransaction;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\TuitionAgreement;
+use App\Models\TuitionRate;
 use App\Models\User;
 use App\Services\FinanceLedgerService;
 use App\Services\NotificationService;
@@ -370,8 +371,8 @@ class FinanceController extends Controller
             'selectedStudent' => $selectedStudent,
             'transactions' => $transactions,
             'stats' => [
-                ['label' => 'Total Charges', 'value' => $this->formatCurrencyTotals($scopeBalances, 'charges'), 'detail' => 'Invoices and refunds by currency'],
-                ['label' => 'Total Credits', 'value' => $this->formatCurrencyTotals($scopeBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships by currency'],
+                ['label' => 'Total Charges', 'value' => $this->formatCurrencyTotals($scopeBalances, 'charges'), 'detail' => 'Invoices by currency'],
+                ['label' => 'Total Credits', 'value' => $this->formatCurrencyTotals($scopeBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships, net of refunds'],
                 ['label' => 'Outstanding Balance', 'value' => $this->formatCurrencyTotals($scopeBalances, 'balance'), 'detail' => 'Scoped balances by currency'],
                 ['label' => 'Filtered Balance', 'value' => $this->formatCurrencyTotals($filteredBalances, 'balance'), 'detail' => $selectedStudent ? 'Selected filters for this student' : 'Current filters'],
             ],
@@ -403,8 +404,13 @@ class FinanceController extends Controller
         $this->authorizeStudentScope($request->user(), $student);
 
         $filters = $this->financeFilters($request);
+        if (! $request->has('type')) {
+            $filters['type'] = 'credits';
+        }
         $user = $request->user();
-        app(FinanceLedgerService::class)->refreshStudentInvoiceStatuses($student);
+        $ledger = app(FinanceLedgerService::class);
+        $ledger->refreshStudentInvoiceStatuses($student);
+        $ledger->refreshStudentLedgerBalances($student);
 
         $student->load([
             'department.college',
@@ -419,8 +425,8 @@ class FinanceController extends Controller
             ->latest('transaction_date')
             ->latest();
         $transactions = $transactionQuery->paginate(20)->withQueryString();
-        $selectedBalances = $this->balancesByCurrencyQuery($student->financeTransactions());
-        $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery);
+        $selectedBalances = $this->balancesByCurrencyQuery($student->financeTransactions(), $student->id);
+        $filteredBalances = $this->balancesByCurrencyQuery($transactionQuery, $student->id);
         $selectedBalance = (float) $selectedBalances->sum('balance');
         $selectedPaymentStatus = $this->paymentStatusForBalances($selectedBalances);
         $nextDueInvoice = $this->nextDueInvoiceQuery($student);
@@ -438,6 +444,7 @@ class FinanceController extends Controller
             ? $this->financeRecordFormContext($student, $user)
             : [
                 'allowedEntryTypes' => [],
+                'autoBilledPlan' => $this->studentHasAutomaticFlatBilling($student),
                 'creationStatuses' => ['pending' => 'Pending approval'],
                 'canCollectPayment' => false,
                 'canPostImmediately' => false,
@@ -453,8 +460,8 @@ class FinanceController extends Controller
             'transactions' => $transactions,
             'stats' => [
                 ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($selectedBalances, 'balance'), 'detail' => 'Remaining balance by currency'],
-                ['label' => 'Paid / Credits', 'value' => $this->formatCurrencyTotals($selectedBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships'],
-                ['label' => 'Next Due', 'value' => $nextDueInvoice ? number_format($this->remainingInvoiceAmount($nextDueInvoice), 2).' '.$nextDueInvoice->currency : 'No due invoices', 'detail' => $nextDueInvoice ? 'Due '.$nextDueInvoice->due_date->format('Y-m-d') : 'No open invoice due date'],
+                ['label' => 'Paid / Credits', 'value' => $this->formatCurrencyTotals($selectedBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships, net of refunds'],
+                ['label' => 'Next Due', 'value' => $nextDueInvoice ? money($this->remainingInvoiceAmount($nextDueInvoice), $nextDueInvoice->currency).' '.$nextDueInvoice->currency : 'No due invoices', 'detail' => $nextDueInvoice ? 'Due '.$nextDueInvoice->due_date->format('Y-m-d') : 'No open invoice due date'],
                 ['label' => 'Payment Status', 'value' => ucfirst($selectedPaymentStatus), 'detail' => $paymentPlanSummary['total'] > 0 ? $paymentPlanSummary['label'] : 'No semester payment plan'],
             ],
             'selectedBalances' => $selectedBalances,
@@ -511,13 +518,38 @@ class FinanceController extends Controller
         ];
     }
 
+    private function studentHasAutomaticFlatBilling(Student $student): bool
+    {
+        if (! in_array($student->preferred_payment_method, ['semester', 'full'], true)) {
+            return false;
+        }
+
+        $activeYear = AcademicYear::where('university_id', $student->university_id)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $activeYear) {
+            return false;
+        }
+
+        return TuitionRate::where('department_id', $student->department_id)
+            ->where('academic_year_id', $activeYear->id)
+            ->where('pricing_type', TuitionRate::PRICING_FLAT)
+            ->exists();
+    }
+
     private function financeRecordFormContext(Student $student, User $user): array
     {
         $allowedEntryTypes = $this->allowedFinanceEntryTypes($user);
+        $autoBilledPlan = $this->studentHasAutomaticFlatBilling($student);
+        if ($autoBilledPlan) {
+            $allowedEntryTypes = array_values(array_diff($allowedEntryTypes, ['invoice']));
+        }
         $canPostImmediately = $user->hasAnyRole(['super_administrator', 'chief_accountant']);
 
         return [
             'allowedEntryTypes' => $allowedEntryTypes,
+            'autoBilledPlan' => $autoBilledPlan,
             'creationStatuses' => $canPostImmediately
                 ? ['pending' => 'Pending approval', 'paid' => 'Post immediately']
                 : ['pending' => 'Pending approval'],
@@ -604,7 +636,7 @@ class FinanceController extends Controller
                 'student' => $student,
                 'balances' => $balances,
                 'balanceText' => $balances
-                    ->map(fn ($balance) => number_format((float) $balance['balance'], 2).' '.$balance['currency'])
+                    ->map(fn ($balance) => money($balance['balance'], $balance['currency']).' '.$balance['currency'])
                     ->implode(' / '),
                 'oldestDueDate' => $oldestDueDates->get($student->id),
             ];
@@ -631,9 +663,11 @@ class FinanceController extends Controller
 
         $validated = $request->validate([
             'student_id' => ['required', 'exists:students,id'],
-            'invoice_transaction_id' => ['nullable', 'exists:finance_transactions,id'],
-            'type' => ['required', 'in:invoice,payment,discount,scholarship,refund'],
-            'amount' => ['required', 'numeric', 'min:0.01', 'max:999999999.99'],
+            'invoice_transaction_id' => ['nullable', 'exists:finance_transactions,id', 'required_if:discount_mode,percentage'],
+            'type' => ['required', 'in:invoice,payment,discount,refund'],
+            'discount_mode' => ['nullable', 'in:amount,percentage'],
+            'discount_percentage' => ['nullable', 'numeric', 'min:0.01', 'max:100', 'required_if:discount_mode,percentage'],
+            'amount' => ['required_unless:discount_mode,percentage', 'nullable', 'numeric', 'min:0.01', 'max:999999999.99'],
             'currency' => ['required', 'in:IQD,USD'],
             'status' => ['required', 'in:pending,paid'],
             'invoice_number' => ['nullable', 'string', 'max:100', 'unique:finance_transactions,invoice_number'],
@@ -655,10 +689,28 @@ class FinanceController extends Controller
         $this->validateFinancePostingAuthority($request, $validated);
 
         $transactions = DB::transaction(function () use (&$validated, $request) {
-            $this->scopedStudentQuery($request->user())
+            $lockedStudent = $this->scopedStudentQuery($request->user())
                 ->whereKey($validated['student_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($validated['type'] === 'invoice' && $this->studentHasAutomaticFlatBilling($lockedStudent)) {
+                throw ValidationException::withMessages([
+                    'type' => 'This student is on an automatically billed tuition plan. Tuition invoices are generated automatically; manual invoices are disabled to prevent conflicts.',
+                ]);
+            }
+
+            if ($validated['type'] === 'discount' && ($validated['discount_mode'] ?? 'amount') === 'percentage') {
+                $percentageInvoice = FinanceTransaction::whereKey($validated['invoice_transaction_id'])
+                    ->where('student_id', $validated['student_id'])
+                    ->where('currency', $validated['currency'])
+                    ->where('type', 'invoice')
+                    ->where('status', '!=', 'cancelled')
+                    ->first();
+                abort_unless($percentageInvoice, 422);
+                $validated['amount'] = round((float) $percentageInvoice->amount * (float) $validated['discount_percentage'] / 100, 2);
+            }
+
             $validated['invoice_transaction_id'] = $this->validatedInvoiceAllocation($validated);
             $isSemesterPlan = $validated['type'] === 'invoice' && ($validated['payment_plan'] ?? 'full') === 'semester';
             $ledger = app(FinanceLedgerService::class);
@@ -680,6 +732,7 @@ class FinanceController extends Controller
                 $firstTransaction = $transactions->first();
                 $ledger->recalculateStudentBalances((int) $firstTransaction->student_id, $firstTransaction->currency);
                 $transactions->each(fn (FinanceTransaction $transaction) => $ledger->refreshAllocatedInvoice($transaction->fresh()));
+                $transactions->each(fn (FinanceTransaction $transaction) => $ledger->applyAutomaticScholarship($transaction->fresh(), $request->user()));
                 $ledger->synchronizeFinanceHold($firstTransaction->student()->with('user')->first());
                 $transactions->each(fn (FinanceTransaction $transaction) => $this->logFinanceActivity($transaction, "{$transaction->type}_created", $request->user()));
             }
@@ -997,13 +1050,15 @@ class FinanceController extends Controller
         $balances = collect();
 
         if ($student) {
-            app(FinanceLedgerService::class)->refreshStudentInvoiceStatuses($student);
+            $ledger = app(FinanceLedgerService::class);
+            $ledger->refreshStudentInvoiceStatuses($student);
+            $ledger->refreshStudentLedgerBalances($student);
             $transactions = $student->financeTransactions()
                 ->with(['invoice', 'originalTransaction'])
                 ->latest('transaction_date')
                 ->latest()
                 ->paginate(20);
-            $balances = $this->balancesByCurrencyQuery($student->financeTransactions());
+            $balances = $this->balancesByCurrencyQuery($student->financeTransactions(), $student->id);
         }
 
         return view('finance.student', [
@@ -1021,13 +1076,14 @@ class FinanceController extends Controller
         $this->authorizeStudentScope($user, $student);
 
         $student->load(['department', 'university']);
+        app(FinanceLedgerService::class)->refreshStudentLedgerBalances($student);
         $transactions = $student->financeTransactions()
             ->with(['recorder', 'invoice'])
             ->oldest('transaction_date')
             ->oldest()
             ->get();
 
-        $balances = $this->balancesByCurrency($transactions);
+        $balances = $this->balancesByCurrency($transactions, $student->id);
 
         return view('finance.statement', [
             'student' => $student,
@@ -1171,7 +1227,7 @@ class FinanceController extends Controller
     {
         return [
             'q' => trim((string) $request->input('q', '')),
-            'type' => in_array($request->input('type'), ['invoice', 'payment', 'discount', 'scholarship', 'refund'], true) ? $request->input('type') : '',
+            'type' => in_array($request->input('type'), ['invoice', 'payment', 'discount', 'scholarship', 'refund', 'credits'], true) ? $request->input('type') : '',
             'status' => in_array($request->input('status'), ['pending', 'paid', 'partial', 'approved', 'cancelled'], true) ? $request->input('status') : '',
             'payment_status' => in_array($request->input('payment_status'), ['open', 'partial', 'paid', 'overdue', 'cancelled'], true) ? $request->input('payment_status') : '',
             'currency' => in_array($request->input('currency'), ['IQD', 'USD'], true) ? $request->input('currency') : '',
@@ -1336,7 +1392,9 @@ class FinanceController extends Controller
                         });
                 });
             })
-            ->when($filters['type'], fn ($query) => $query->where('type', $filters['type']))
+            ->when($filters['type'], fn ($query) => $filters['type'] === 'credits'
+                ? $query->whereIn('type', ['payment', 'discount', 'refund'])
+                : $query->where('type', $filters['type']))
             ->when($filters['status'], fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['payment_status'], fn ($query) => $query->where('payment_status', $filters['payment_status']))
             ->when($filters['currency'], fn ($query) => $query->where('currency', $filters['currency']))
@@ -1360,14 +1418,35 @@ class FinanceController extends Controller
         ];
     }
 
-    private function balancesByCurrency($transactions)
+    private function agreedTuitionTotalsByCurrency(?int $studentId): array
     {
+        if (! $studentId) {
+            return [];
+        }
+
+        return TuitionAgreement::where('student_id', $studentId)
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw('currency, SUM(total_amount) as total')
+            ->groupBy('currency')
+            ->pluck('total', 'currency')
+            ->map(fn ($total) => (float) $total)
+            ->all();
+    }
+
+    private function balancesByCurrency($transactions, ?int $agreementStudentId = null)
+    {
+        $agreedTotals = $this->agreedTuitionTotalsByCurrency($agreementStudentId);
+
         return $transactions
             ->where('posting_status', 'posted')
             ->groupBy('currency')
-            ->map(function ($currencyTransactions, $currency) {
-                $charges = $currencyTransactions->whereIn('type', FinanceTransaction::chargeTypes())->sum(fn ($transaction) => (float) $transaction->amount);
-                $credits = $currencyTransactions->whereIn('type', FinanceTransaction::creditTypes())->sum(fn ($transaction) => (float) $transaction->amount);
+            ->map(function ($currencyTransactions, $currency) use ($agreedTotals) {
+                $agreedTotal = $agreedTotals[$currency] ?? 0.0;
+                $invoiceCharges = $currencyTransactions->where('type', 'invoice')->sum(fn ($transaction) => (float) $transaction->amount);
+                $refundCharges = $currencyTransactions->where('type', 'refund')->sum(fn ($transaction) => (float) $transaction->amount);
+                $charges = $agreedTotal > 0 ? $agreedTotal : $invoiceCharges;
+                $credits = $currencyTransactions->whereIn('type', FinanceTransaction::creditTypes())->sum(fn ($transaction) => (float) $transaction->amount)
+                    - $refundCharges;
 
                 return [
                     'currency' => $currency,
@@ -1379,28 +1458,30 @@ class FinanceController extends Controller
             ->sortKeys();
     }
 
-    private function balancesByCurrencyQuery($query)
+    private function balancesByCurrencyQuery($query, ?int $agreementStudentId = null)
     {
+        $agreedTotals = $this->agreedTuitionTotalsByCurrency($agreementStudentId);
+
         return (clone $query)
             ->withoutEagerLoads()
             ->reorder()
             ->where('posting_status', 'posted')
             ->select('currency')
+            ->selectRaw("SUM(CASE WHEN type = 'invoice' THEN amount ELSE 0 END) as invoice_charges")
+            ->selectRaw("SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as refund_charges")
             ->selectRaw(
-                'SUM(CASE WHEN type IN (?, ?) THEN amount ELSE 0 END) as charges',
-                FinanceTransaction::chargeTypes()
-            )
-            ->selectRaw(
-                'SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) as credits',
+                "SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) as gross_credits",
                 FinanceTransaction::creditTypes()
             )
             ->groupBy('currency')
             ->orderBy('currency')
             ->get()
-            ->mapWithKeys(function ($row) {
+            ->mapWithKeys(function ($row) use ($agreedTotals) {
                 $currency = $row->currency ?: 'IQD';
-                $charges = (float) $row->charges;
-                $credits = (float) $row->credits;
+                $agreedTotal = $agreedTotals[$currency] ?? 0.0;
+                $refundCharges = (float) $row->refund_charges;
+                $charges = $agreedTotal > 0 ? $agreedTotal : (float) $row->invoice_charges;
+                $credits = (float) $row->gross_credits - $refundCharges;
 
                 return [
                     $currency => [
@@ -1423,12 +1504,9 @@ class FinanceController extends Controller
             ->whereIn('student_id', $studentIds)
             ->where('posting_status', 'posted')
             ->select('student_id', 'currency')
+            ->selectRaw("SUM(CASE WHEN type = 'invoice' THEN amount ELSE 0 END) as charges")
             ->selectRaw(
-                'SUM(CASE WHEN type IN (?, ?) THEN amount ELSE 0 END) as charges',
-                FinanceTransaction::chargeTypes()
-            )
-            ->selectRaw(
-                'SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) as credits',
+                "SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) - SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as credits",
                 FinanceTransaction::creditTypes()
             )
             ->groupBy('student_id', 'currency')
@@ -1474,11 +1552,11 @@ class FinanceController extends Controller
     private function formatCurrencyTotals($balances, string $field): string
     {
         if ($balances->isEmpty()) {
-            return '0.00 IQD';
+            return '0 IQD';
         }
 
         return $balances
-            ->map(fn ($row) => number_format((float) $row[$field], 2).' '.$row['currency'])
+            ->map(fn ($row) => money($row[$field], $row['currency']).' '.$row['currency'])
             ->implode(' / ');
     }
 
@@ -1683,7 +1761,7 @@ class FinanceController extends Controller
                 return $this->createSemesterTuitionInvoices($validated, $semesters, $agreement, $installmentAmount);
             }
 
-            $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count'])->all();
+            $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count', 'discount_mode', 'discount_percentage'])->all();
             $invoice = FinanceTransaction::create($payload);
             $transactions = collect([$invoice]);
 
@@ -1722,7 +1800,7 @@ class FinanceController extends Controller
             return $transactions;
         }
 
-        $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count'])->all();
+        $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count', 'discount_mode', 'discount_percentage'])->all();
 
         return collect([FinanceTransaction::create($payload)]);
     }
@@ -1731,7 +1809,7 @@ class FinanceController extends Controller
     {
         if ($transactions->count() > 1 && $transactions->every(fn (FinanceTransaction $transaction) => $transaction->type === 'invoice')) {
             $schedule = $transactions
-                ->map(fn (FinanceTransaction $transaction) => number_format((float) $transaction->amount, 2).' '.$transaction->currency.' due '.($transaction->due_date?->format('Y-m-d') ?? 'no due date'))
+                ->map(fn (FinanceTransaction $transaction) => money($transaction->amount, $transaction->currency).' '.$transaction->currency.' due '.($transaction->due_date?->format('Y-m-d') ?? 'no due date'))
                 ->implode('; ');
 
             return $transactions->count().' semester invoices created: '.$schedule.'.';
@@ -1755,7 +1833,7 @@ class FinanceController extends Controller
                     : $installmentAmount;
                 $allocated += $amount;
 
-                $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count'])->merge([
+                $payload = collect($validated)->except(['payment_plan', 'semester_ids', 'academic_year_id', 'collect_now', 'installment_count', 'discount_mode', 'discount_percentage'])->merge([
                     'amount' => $amount,
                     'semester_id' => $semester->id,
                     'invoice_number' => null,
@@ -1882,14 +1960,13 @@ class FinanceController extends Controller
     private function allowedFinanceEntryTypes(User $user): array
     {
         if ($user->hasRole('super_administrator')) {
-            return ['invoice', 'payment', 'discount', 'scholarship', 'refund'];
+            return ['invoice', 'payment', 'discount', 'refund'];
         }
 
         return collect([
             'invoice' => 'finance.create_invoice',
             'payment' => 'finance.record_payment',
             'discount' => 'finance.record_expense',
-            'scholarship' => 'finance.record_expense',
             'refund' => 'finance.refund',
         ])->filter(fn (string $permission) => $user->hasPermission($permission))->keys()->all();
     }
@@ -1993,7 +2070,7 @@ class FinanceController extends Controller
 
         if ((float) $transaction['amount'] > $remaining) {
             throw ValidationException::withMessages([
-                'amount' => 'The amount exceeds the remaining invoice balance of '.number_format($remaining, 2).' '.$invoice->currency.'.',
+                'amount' => 'The amount exceeds the remaining invoice balance of '.money($remaining, $invoice->currency).' '.$invoice->currency.'.',
             ]);
         }
 
