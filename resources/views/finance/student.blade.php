@@ -30,13 +30,13 @@
                 <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     @forelse($balances as $row)
                         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p class="text-sm font-medium text-gray-500">{{ $row['currency'] }} Balance</p>
+                            <p class="text-sm font-medium text-gray-500">{{ $row['currency'] }} Remaining Due</p>
                             <p class="mt-2 text-2xl font-semibold text-gray-900">{{ money($row['balance'], $row['currency']) }} {{ $row['currency'] }}</p>
                             <p class="mt-2 text-xs text-gray-500">Charges {{ money($row['charges'], $row['currency']) }} / Credits {{ money($row['credits'], $row['currency']) }}</p>
                         </div>
                     @empty
                         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p class="text-sm font-medium text-gray-500">Balance</p>
+                            <p class="text-sm font-medium text-gray-500">Remaining Due</p>
                             <p class="mt-2 text-2xl font-semibold text-gray-900">0 IQD</p>
                             <p class="mt-2 text-xs text-gray-500">No finance records yet.</p>
                         </div>
@@ -85,7 +85,7 @@
                                         <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ ucfirst($transaction->payment_status) }}</span>
                                     </div>
                                     <div>
-                                        <p class="text-xs font-medium uppercase text-gray-500">Balance</p>
+                                        <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
                                         <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                     </div>
                                 </div>
@@ -105,7 +105,7 @@
                                     <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
                                     <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
                                     <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
-                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
+                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Remaining Due</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">

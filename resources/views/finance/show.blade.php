@@ -58,9 +58,9 @@
                                 <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Balance: {{ ucfirst($selectedPaymentStatus) }}</span>
                             @endif
                             @forelse($selectedBalances as $balance)
-                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">Balance {{ money($balance['balance'], $balance['currency']) }} {{ $balance['currency'] }}</span>
+                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">Remaining Due {{ money($balance['balance'], $balance['currency']) }} {{ $balance['currency'] }}</span>
                             @empty
-                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">No balance</span>
+                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">No remaining due</span>
                             @endforelse
                         </div>
                     </div>
@@ -178,14 +178,14 @@
             <form method="GET" action="{{ route('finance.students.show', $selectedStudent) }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <h3 class="text-base font-semibold text-gray-900">Ledger Filters</h3>
-                    <p class="text-sm font-medium text-gray-600">Filtered balance: {{ $filteredBalanceText }}</p>
+                    <p class="text-sm font-medium text-gray-600">Filtered remaining due: {{ $filteredBalanceText }}</p>
                 </div>
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                     <div class="min-w-0">
                         <label class="block text-sm font-medium text-gray-700">Type</label>
                         <select name="type" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">All types</option>
-                            <option value="credits" @selected($filters['type'] === 'credits')>Payments, Discounts &amp; Refunds</option>
+                            <option value="credits" @selected($filters['type'] === 'credits')>Payments, Discounts, Scholarships &amp; Refunds</option>
                             @foreach($types as $value => $label)
                                 <option value="{{ $value }}" @selected($filters['type'] === $value)>{{ $label }}</option>
                             @endforeach
@@ -297,7 +297,7 @@
                                     <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
                                 </div>
                                 <div>
-                                    <p class="text-xs font-medium uppercase text-gray-500">Balance</p>
+                                    <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
                                     <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                 </div>
                                 <div>
@@ -337,7 +337,7 @@
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Amount</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
-                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Balance</th>
+                                <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Remaining Due</th>
                                 <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Approval</th>
                                 <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Actions</th>
                             </tr>

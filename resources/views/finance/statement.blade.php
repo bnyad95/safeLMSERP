@@ -59,7 +59,7 @@
                     <div class="shrink-0 text-right text-sm text-gray-600">
                         <p>Generated: {{ now()->format('Y-m-d H:i') }}</p>
                         <p>Status: <span class="font-semibold text-gray-900">{{ ucfirst($paymentStatus) }}</span></p>
-                        <p>Outstanding Balance: <span class="font-semibold text-gray-900">{{ $balances->isEmpty() ? '0 IQD' : $balances->map(fn ($row) => money($row['balance'], $row['currency']).' '.$row['currency'])->implode(' / ') }}</span></p>
+                        <p>Remaining Due: <span class="font-semibold text-gray-900">{{ $balances->isEmpty() ? '0 IQD' : $balances->map(fn ($row) => money($row['balance'], $row['currency']).' '.$row['currency'])->implode(' / ') }}</span></p>
                     </div>
                 </div>
 
@@ -72,7 +72,7 @@
                                 <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Type</th>
                                 <th class="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
                                 <th class="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
-                                <th class="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
+                                <th class="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Remaining Due</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">

@@ -1393,7 +1393,7 @@ class FinanceController extends Controller
                 });
             })
             ->when($filters['type'], fn ($query) => $filters['type'] === 'credits'
-                ? $query->whereIn('type', ['payment', 'discount', 'refund'])
+                ? $query->whereIn('type', ['payment', 'discount', 'scholarship', 'refund'])
                 : $query->where('type', $filters['type']))
             ->when($filters['status'], fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['payment_status'], fn ($query) => $query->where('payment_status', $filters['payment_status']))

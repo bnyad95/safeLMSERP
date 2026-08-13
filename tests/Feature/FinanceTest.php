@@ -481,7 +481,7 @@ class FinanceTest extends TestCase
             ->assertSee('Outstanding Tuition')
             ->assertSee('Next Due')
             ->assertSee('Due 2026-08-10')
-            ->assertSee('Filtered balance: 500,000 IQD / 300.00 USD')
+            ->assertSee('Filtered remaining due: 500,000 IQD / 300.00 USD')
             ->assertSee('500,000 IQD')
             ->assertSee('300.00 USD');
 

@@ -200,7 +200,7 @@
                                             <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
                                         </div>
                                         <div>
-                                            <p class="text-xs font-medium uppercase text-gray-500">Balance</p>
+                                            <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
                                             <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                         </div>
                                         <div>
