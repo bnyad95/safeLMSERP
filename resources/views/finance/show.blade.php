@@ -65,9 +65,15 @@
                         </div>
                     </div>
                     <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <div x-data="{ statementLoaded: false }" class="contents">
-                            <button type="button" x-on:click="statementLoaded = true; $dispatch('open-modal', 'print-statement')" class="inline-flex w-full justify-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">
+                        <div x-data="{ ledgerPrintLoaded: false }" class="contents">
+                            <button type="button" x-on:click="ledgerPrintLoaded = true; $dispatch('open-modal', 'print-ledger')" class="inline-flex w-full justify-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">
                                 Print Statement
+                            </button>
+                            @include('finance.partials.print-ledger')
+                        </div>
+                        <div x-data="{ statementLoaded: false }" class="contents">
+                            <button type="button" x-on:click="statementLoaded = true; $dispatch('open-modal', 'print-statement')" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                                Report
                             </button>
                             @include('finance.partials.print-statement')
                         </div>

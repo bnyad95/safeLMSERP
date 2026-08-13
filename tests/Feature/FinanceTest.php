@@ -411,6 +411,50 @@ class FinanceTest extends TestCase
             ->assertSee('750,000 IQD');
     }
 
+    public function test_ledger_print_matches_the_current_student_ledger_filters(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'invoice',
+            'amount' => '750000',
+            'balance_after' => '750000',
+            'currency' => 'IQD',
+            'status' => 'pending',
+            'payment_status' => 'open',
+            'invoice_number' => 'INV-2026-000023',
+            'transaction_date' => '2026-07-10',
+        ]);
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'recorded_by' => $admin->id,
+            'type' => 'payment',
+            'amount' => '250000',
+            'balance_after' => '500000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'payment_status' => 'paid',
+            'receipt_number' => 'RCT-2026-000030',
+            'transaction_date' => '2026-07-11',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.ledger-print', $student))
+            ->assertOk()
+            ->assertSee('Student Ledger')
+            ->assertSee('RCT-2026-000030')
+            ->assertDontSee('INV-2026-000023');
+
+        $this->actingAs($admin)
+            ->get(route('finance.students.ledger-print', [$student, 'type' => 'invoice']))
+            ->assertOk()
+            ->assertSee('INV-2026-000023')
+            ->assertDontSee('RCT-2026-000030');
+    }
+
     public function test_finance_can_export_csv_for_student(): void
     {
         $admin = $this->makeSuperAdmin();

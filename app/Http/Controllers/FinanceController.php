@@ -1096,6 +1096,37 @@ class FinanceController extends Controller
         ]);
     }
 
+    public function ledgerPrint(Request $request, Student $student)
+    {
+        $user = auth()->user();
+        $this->authorizeStudentFinanceView($user);
+        $this->authorizeStudentScope($user, $student);
+
+        $filters = $this->financeFilters($request);
+        if (! $request->has('type')) {
+            $filters['type'] = 'credits';
+        }
+
+        $student->load(['department', 'university']);
+        app(FinanceLedgerService::class)->refreshStudentLedgerBalances($student);
+
+        $transactionQuery = $student->financeTransactions()
+            ->with(['approver', 'invoice'])
+            ->tap(fn ($builder) => $this->applyFinanceFilters($builder, $filters))
+            ->latest('transaction_date')
+            ->latest();
+        $transactions = $transactionQuery->get();
+        $balances = $this->balancesByCurrencyQuery($transactionQuery, $student->id);
+
+        return view('finance.ledger-print', [
+            'student' => $student,
+            'transactions' => $transactions,
+            'balances' => $balances,
+            'filters' => $filters,
+            'paymentStatus' => $this->paymentStatusForBalances($balances),
+        ]);
+    }
+
     public function receipt(Request $request, FinanceTransaction $financeTransaction)
     {
         abort_unless(

@@ -331,6 +331,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/finance/students/{student}/statement', [FinanceController::class, 'statement'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.statement');
+    Route::get('/finance/students/{student}/ledger-print', [FinanceController::class, 'ledgerPrint'])
+        ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
+        ->name('finance.students.ledger-print');
     Route::get('/finance/transactions/{financeTransaction}/receipt', [FinanceController::class, 'receipt'])
         ->middleware('access.any:role:super_administrator,role:chief_accountant,role:accountant,permission:finance.view')
         ->name('finance.transactions.receipt');
