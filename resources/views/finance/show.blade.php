@@ -181,12 +181,18 @@
 
 
 
-            <form method="GET" action="{{ route('finance.students.show', $selectedStudent) }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+            @php
+                $advancedLedgerFilterActive = collect([
+                    $filters['status'], $filters['payment_status'], $filters['currency'], $filters['academic_year'],
+                ])->filter(fn ($value) => ! blank($value))->isNotEmpty();
+            @endphp
+
+            <form method="GET" action="{{ route('finance.students.show', $selectedStudent) }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5" x-data="{ showMore: {{ $advancedLedgerFilterActive ? 'true' : 'false' }} }">
                 <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <h3 class="text-base font-semibold text-gray-900">Ledger Filters</h3>
                     <p class="text-sm font-medium text-gray-600">Filtered remaining due: {{ $filteredBalanceText }}</p>
                 </div>
-                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div class="min-w-0">
                         <label class="block text-sm font-medium text-gray-700">Type</label>
                         <select name="type" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -198,42 +204,6 @@
                         </select>
                     </div>
                     <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Record Status</label>
-                        <select name="status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All statuses</option>
-                            @foreach($statuses as $value => $label)
-                                <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Payment Status</label>
-                        <select name="payment_status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All payment</option>
-                            @foreach($paymentStatuses as $value => $label)
-                                <option value="{{ $value }}" @selected($filters['payment_status'] === $value)>{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Currency</label>
-                        <select name="currency" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All currencies</option>
-                            @foreach(['IQD', 'USD'] as $currency)
-                                <option value="{{ $currency }}" @selected($filters['currency'] === $currency)>{{ $currency }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Academic Year</label>
-                        <select name="academic_year" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All years</option>
-                            @foreach($filterOptions['academicYears'] as $year)
-                                <option value="{{ $year }}" @selected($filters['academic_year'] === $year)>{{ $year }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="min-w-0">
                         <label class="block text-sm font-medium text-gray-700">Date From</label>
                         <input type="date" name="date_from" value="{{ $filters['date_from'] }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
@@ -241,6 +211,54 @@
                         <label class="block text-sm font-medium text-gray-700">Date To</label>
                         <input type="date" name="date_to" value="{{ $filters['date_to'] }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
+                    <div class="flex items-end justify-end">
+                        <button type="button" @click="showMore = ! showMore" class="text-sm font-semibold text-blue-700 hover:underline">
+                            <span x-show="! showMore">More filters</span>
+                            <span x-show="showMore" x-cloak>Fewer filters</span>
+                        </button>
+                    </div>
+
+                    <div class="sm:col-span-2 lg:col-span-4" x-show="showMore" x-transition x-cloak>
+                        <div class="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Record Status</label>
+                                <select name="status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="">All statuses</option>
+                                    @foreach($statuses as $value => $label)
+                                        <option value="{{ $value }}" @selected($filters['status'] === $value)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Payment Status</label>
+                                <select name="payment_status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="">All payment</option>
+                                    @foreach($paymentStatuses as $value => $label)
+                                        <option value="{{ $value }}" @selected($filters['payment_status'] === $value)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Currency</label>
+                                <select name="currency" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="">All currencies</option>
+                                    @foreach(['IQD', 'USD'] as $currency)
+                                        <option value="{{ $currency }}" @selected($filters['currency'] === $currency)>{{ $currency }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="min-w-0">
+                                <label class="block text-sm font-medium text-gray-700">Academic Year</label>
+                                <select name="academic_year" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="">All years</option>
+                                    @foreach($filterOptions['academicYears'] as $year)
+                                        <option value="{{ $year }}" @selected($filters['academic_year'] === $year)>{{ $year }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                         <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">Filter</button>
                         <a href="{{ route('finance.students.show', $selectedStudent) }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">Reset</a>

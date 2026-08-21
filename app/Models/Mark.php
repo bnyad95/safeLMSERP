@@ -22,6 +22,14 @@ class Mark extends Model
         'final_exam_entered_at' => 'datetime',
     ];
 
+    public function hasAnyGrade(): bool
+    {
+        return ! is_null($this->prefinal_mark)
+            || ! is_null($this->first_trial_final_exam)
+            || ! is_null($this->second_trial_final_exam)
+            || $this->submission_status !== 'draft';
+    }
+
     public function activeFinalExamScore(): ?float
     {
         if (! is_null($this->second_trial_final_exam)) {

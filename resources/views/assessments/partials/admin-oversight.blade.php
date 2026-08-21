@@ -28,14 +28,28 @@
             'assessment_id' => $item->id,
         ]));
     };
+
+    $assessmentCrumbs = collect([
+        ['label' => 'Assessment Analytics', 'href' => route('assessments.index')],
+        $selectedCollege ? ['label' => $selectedCollege->name, 'href' => $collegeUrl($selectedCollege)] : null,
+        $selectedDepartment ? ['label' => $selectedDepartment->name, 'href' => $departmentUrl($selectedDepartment)] : null,
+        $selectedGrade ? ['label' => $selectedGrade['label'], 'href' => $gradeUrl($selectedGrade)] : null,
+        $selectedSection ? ['label' => $selectedSection->course->code.' Group '.$selectedSection->section_code, 'href' => null] : null,
+    ])->filter()->values();
+    $assessmentCrumbs = $assessmentCrumbs->map(fn ($crumb, $index) => $index === $assessmentCrumbs->count() - 1
+        ? [...$crumb, 'href' => null]
+        : $crumb);
 @endphp
 
 <nav class="flex flex-wrap items-center gap-2 text-sm" aria-label="Assessment hierarchy">
-    <a href="{{ route('assessments.index') }}" class="font-semibold text-blue-700 hover:underline">Assessment Analytics</a>
-    @if($selectedCollege)<span class="text-gray-400">/</span><a href="{{ $collegeUrl($selectedCollege) }}" class="font-semibold text-blue-700 hover:underline">{{ $selectedCollege->name }}</a>@endif
-    @if($selectedDepartment)<span class="text-gray-400">/</span><a href="{{ $departmentUrl($selectedDepartment) }}" class="font-semibold text-blue-700 hover:underline">{{ $selectedDepartment->name }}</a>@endif
-    @if($selectedGrade)<span class="text-gray-400">/</span><a href="{{ $gradeUrl($selectedGrade) }}" class="font-semibold text-blue-700 hover:underline">{{ $selectedGrade['label'] }}</a>@endif
-    @if($selectedSection)<span class="text-gray-400">/</span><span class="font-semibold text-gray-700">{{ $selectedSection->course->code }} Group {{ $selectedSection->section_code }}</span>@endif
+    @foreach($assessmentCrumbs as $crumb)
+        @if(! $loop->first)<span class="text-gray-400">/</span>@endif
+        @if($crumb['href'])
+            <a href="{{ $crumb['href'] }}" class="font-semibold text-blue-700 hover:underline">{{ $crumb['label'] }}</a>
+        @else
+            <span class="font-semibold text-gray-700">{{ $crumb['label'] }}</span>
+        @endif
+    @endforeach
 </nav>
 
 @php
@@ -45,7 +59,14 @@
     $largestType = max((int) $oversightAnalytics['types']->max('total'), 1);
 @endphp
 
-<section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+@php
+    $advancedAssessmentFilterActive = collect([
+        $adminFilters['semester_id'], $adminFilters['teacher_id'], $adminFilters['type'],
+        $adminFilters['due_from'], $adminFilters['due_until'],
+    ])->filter(fn ($value) => ! blank($value))->isNotEmpty();
+@endphp
+
+<section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm" x-data="{ showMore: {{ $advancedAssessmentFilterActive ? 'true' : 'false' }} }">
     <form method="GET" action="{{ route('assessments.index') }}" class="grid gap-4 lg:grid-cols-6">
         @foreach($hierarchyParams as $name => $value)
             <input type="hidden" name="{{ $name }}" value="{{ $value }}">
@@ -57,41 +78,11 @@
         </div>
 
         <div>
-            <label for="assessment-semester" class="block text-sm font-medium text-gray-700">Semester</label>
-            <select id="assessment-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <option value="">All semesters</option>
-                @foreach($adminFilterOptions['semesters'] as $semester)
-                    <option value="{{ $semester->id }}" @selected($adminFilters['semester_id'] === $semester->id)>{{ $semester->name }} {{ $semester->academic_year }}</option>
-                @endforeach
-            </select>
-        </div>
-
-        <div>
             <label for="assessment-course" class="block text-sm font-medium text-gray-700">Course</label>
             <select id="assessment-course" name="course_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                 <option value="">All courses</option>
                 @foreach($adminFilterOptions['courses'] as $course)
                     <option value="{{ $course->id }}" @selected($adminFilters['course_id'] === $course->id)>{{ $course->code }} - {{ $course->name }}</option>
-                @endforeach
-            </select>
-        </div>
-
-        <div>
-            <label for="assessment-teacher" class="block text-sm font-medium text-gray-700">Teacher</label>
-            <select id="assessment-teacher" name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <option value="">All teachers</option>
-                @foreach($adminFilterOptions['teachers'] as $teacher)
-                    <option value="{{ $teacher->id }}" @selected($adminFilters['teacher_id'] === $teacher->id)>{{ $teacher->full_name }}</option>
-                @endforeach
-            </select>
-        </div>
-
-        <div>
-            <label for="assessment-type" class="block text-sm font-medium text-gray-700">Type</label>
-            <select id="assessment-type" name="type" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <option value="">All types</option>
-                @foreach($adminFilterOptions['types'] as $type)
-                    <option value="{{ $type }}" @selected($adminFilters['type'] === $type)>{{ ucfirst($type) }}</option>
                 @endforeach
             </select>
         </div>
@@ -106,17 +97,58 @@
             </select>
         </div>
 
-        <div>
-            <label for="assessment-due-from" class="block text-sm font-medium text-gray-700">Due from</label>
-            <input id="assessment-due-from" type="date" name="due_from" value="{{ $adminFilters['due_from'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+        <div class="flex items-end justify-end lg:col-span-2">
+            <button type="button" @click="showMore = ! showMore" class="text-sm font-semibold text-blue-700 hover:underline">
+                <span x-show="! showMore">More filters</span>
+                <span x-show="showMore" x-cloak>Fewer filters</span>
+            </button>
         </div>
 
-        <div>
-            <label for="assessment-due-until" class="block text-sm font-medium text-gray-700">Due until</label>
-            <input id="assessment-due-until" type="date" name="due_until" value="{{ $adminFilters['due_until'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+        <div class="lg:col-span-6" x-show="showMore" x-transition x-cloak>
+            <div class="grid gap-4 border-t border-gray-100 pt-4 lg:grid-cols-5">
+                <div>
+                    <label for="assessment-semester" class="block text-sm font-medium text-gray-700">Semester</label>
+                    <select id="assessment-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All semesters</option>
+                        @foreach($adminFilterOptions['semesters'] as $semester)
+                            <option value="{{ $semester->id }}" @selected($adminFilters['semester_id'] === $semester->id)>{{ $semester->name }} {{ $semester->academic_year }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label for="assessment-teacher" class="block text-sm font-medium text-gray-700">Teacher</label>
+                    <select id="assessment-teacher" name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All teachers</option>
+                        @foreach($adminFilterOptions['teachers'] as $teacher)
+                            <option value="{{ $teacher->id }}" @selected($adminFilters['teacher_id'] === $teacher->id)>{{ $teacher->full_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label for="assessment-type" class="block text-sm font-medium text-gray-700">Type</label>
+                    <select id="assessment-type" name="type" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <option value="">All types</option>
+                        @foreach($adminFilterOptions['types'] as $type)
+                            <option value="{{ $type }}" @selected($adminFilters['type'] === $type)>{{ ucfirst($type) }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label for="assessment-due-from" class="block text-sm font-medium text-gray-700">Due from</label>
+                    <input id="assessment-due-from" type="date" name="due_from" value="{{ $adminFilters['due_from'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label for="assessment-due-until" class="block text-sm font-medium text-gray-700">Due until</label>
+                    <input id="assessment-due-until" type="date" name="due_until" value="{{ $adminFilters['due_until'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                </div>
+            </div>
         </div>
 
-        <div class="flex flex-wrap items-end gap-3 lg:col-span-3">
+        <div class="flex flex-wrap items-end gap-3 lg:col-span-6">
             <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Apply</button>
             <a href="{{ $resetUrl }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Reset</a>
             <a href="{{ $exportUrl }}" class="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50">Export CSV</a>

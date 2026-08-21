@@ -182,12 +182,11 @@
                         $canUserManagement = $isSuper || ($navUser->hasRole('it_support') && $navUser->hasAnyPermission(['users.create', 'users.update', 'users.assign_roles', 'users.reset_password']));
 
                         $academicSectionActive = request()->routeIs('students.*', 'teachers.*', 'enrollments.*', 'course-sections.show', 'timetables.*', 'timetable-time-slots.*', 'attendance', 'attendance.*');
-                        $learningSectionActive = request()->routeIs('teacher-dashboard', 'classrooms.*', 'archived-classes.*', 'assessments.*', 'assessment-items.*', 'assessment-submissions.*', 'exams', 'marks.final-exam.*', 'marks.submission-queue', 'academic-year-closures.archive', 'academic-year-closures.archive.show');
-                        $reportsSectionActive = request()->routeIs('analytics.*');
+                        $learningSectionActive = request()->routeIs('teacher-dashboard', 'classrooms.*', 'archived-classes.*', 'assessments.*', 'assessment-items.*', 'assessment-submissions.*', 'exams', 'marks.final-exam.*', 'marks.submission-queue');
                         $financeSectionActive = request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export', 'finance.approvals.*', 'finance.tuition-reminders.*', 'bologna-definition.tuition-rates*');
                         $operationsSectionActive = request()->routeIs('integrations.*');
                         $setupSectionActive = request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore', 'academic-year-closures.index', 'academic-year-closures.archive', 'academic-year-closures.archive.show');
-                        $systemSectionActive = request()->routeIs('users.*', 'access-matrix', 'activity-log');
+                        $systemSectionActive = request()->routeIs('users.*', 'access-matrix', 'activity-log', 'analytics.*');
                     @endphp
 
                     @if($canStudents || $canTeachers || $canEnrollments || $canTimetable || $canAttendance)
@@ -200,7 +199,7 @@
                         </x-nav-group>
                     @endif
 
-                    @if($canClassrooms || $canAssessments || $canExams || $canMarkQueue || $canFinalExamEntry || ($canAcademicArchive && ! $canStructure))
+                    @if($canClassrooms || $canAssessments || $canExams || $canMarkQueue || $canFinalExamEntry)
                         <x-nav-group label="Learning & Results" storage-key="learning" :active="$learningSectionActive">
                             @if($canClassrooms)<x-nav-link :href="$usesTeachingWorkspace ? route('teacher-dashboard') : route('classrooms.index')" :active="request()->routeIs('teacher-dashboard', 'classrooms.*')">{{ $usesTeachingWorkspace ? __('Teaching') : __('Classrooms') }}</x-nav-link>@endif
                             @if($navUser->hasRole('teacher'))<x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>@endif
@@ -208,13 +207,6 @@
                             @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
                             @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ $canReallyEnterFinalExam ? __('Final Exam Entry') : __('Final Exam Corrections') }}</x-nav-link>@endif
                             @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
-                            @if($canAcademicArchive && ! $canStructure)<x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>@endif
-                        </x-nav-group>
-                    @endif
-
-                    @if($canAnalytics)
-                        <x-nav-group label="Reports & Analytics" storage-key="reports" :active="$reportsSectionActive">
-                            <x-nav-link :href="route('analytics.index')" :active="request()->routeIs('analytics.*')">{{ __('Institution Analytics') }}</x-nav-link>
                         </x-nav-group>
                     @endif
 
@@ -233,16 +225,17 @@
                         </x-nav-group>
                     @endif
 
-                    @if($canStructure)
+                    @if($canStructure || $canAcademicArchive)
                         <x-nav-group label="Academic Setup" storage-key="setup" :active="$setupSectionActive">
-                            <x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore')">{{ __('Bologna Definition') }}</x-nav-link>
-                            <x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>
-                            <x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>
+                            @if($canStructure)<x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore')">{{ __('Bologna Definition') }}</x-nav-link>@endif
+                            @if($canStructure)<x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>@endif
+                            @if($canAcademicArchive)<x-nav-link :href="route('academic-year-closures.archive')" :active="request()->routeIs('academic-year-closures.archive', 'academic-year-closures.archive.show')">{{ __('Academic Year Archive') }}</x-nav-link>@endif
                         </x-nav-group>
                     @endif
 
-                    @if($canUserManagement || $isSuper)
+                    @if($canUserManagement || $isSuper || $canAnalytics)
                         <x-nav-group label="System" storage-key="system" :active="$systemSectionActive">
+                            @if($canAnalytics)<x-nav-link :href="route('analytics.index')" :active="request()->routeIs('analytics.*')">{{ __('Institution Analytics') }}</x-nav-link>@endif
                             @if($canUserManagement)<x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">{{ __('User Management') }}</x-nav-link>@endif
                             @if($isSuper)<x-nav-link :href="route('access-matrix')" :active="request()->routeIs('access-matrix')">{{ __('Access Matrix') }}</x-nav-link>@endif
                             @if($isSuper)<x-nav-link :href="route('activity-log')" :active="request()->routeIs('activity-log')">{{ __('Activity Log') }}</x-nav-link>@endif

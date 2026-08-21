@@ -552,6 +552,55 @@ class EnrollmentController extends Controller
         }, $filename, ['Content-Type' => 'text/csv']);
     }
 
+    public function classReport(Request $request, CourseSection $courseSection)
+    {
+        $this->requireAnyPermission('marks.view', 'marks.review', 'marks.approve', 'marks.publish');
+        $this->authorizeSection($courseSection, $request->user());
+
+        $courseSection->load(['course.department.college', 'semester.academicYear', 'teacher']);
+
+        $marks = $courseSection->marks()
+            ->with('student')
+            ->get()
+            ->filter(fn (Mark $mark) => $mark->student !== null)
+            ->sortBy(fn (Mark $mark) => $mark->student->full_name)
+            ->values();
+
+        $rows = $marks->map(function (Mark $mark) {
+            $hasAnyMark = $mark->hasAnyGrade();
+            $finalExam = $mark->activeFinalExamScore();
+
+            return [
+                'student_id' => $mark->student->student_id,
+                'student_name' => $mark->student->full_name,
+                'prefinal_mark' => is_null($mark->prefinal_mark) ? null : number_format((float) $mark->prefinal_mark, 1),
+                'final_exam' => is_null($finalExam) ? null : number_format((float) $finalExam, 1),
+                'final_mark' => $hasAnyMark ? number_format((float) $mark->final_mark, 1) : null,
+                'final_mark_raw' => $hasAnyMark ? (float) $mark->final_mark : null,
+                'result' => ! $hasAnyMark ? 'No mark' : ((float) $mark->final_mark >= 50 ? 'Passed' : 'Failed'),
+                'submission_status' => str($mark->submission_status ?: 'draft')->replace('_', ' ')->title()->toString(),
+                'visibility_status' => str($mark->visibility_status ?: 'draft')->replace('_', ' ')->title()->toString(),
+            ];
+        });
+
+        $published = $rows->where('visibility_status', 'Published');
+        $publishedFinalMarks = $published->pluck('final_mark_raw')->filter(fn ($value) => ! is_null($value));
+
+        $stats = [
+            'total' => $rows->count(),
+            'published' => $published->count(),
+            'passed' => $rows->where('result', 'Passed')->count(),
+            'failed' => $rows->where('result', 'Failed')->count(),
+            'average' => $publishedFinalMarks->isNotEmpty() ? number_format($publishedFinalMarks->avg(), 1) : 'N/A',
+        ];
+
+        return view('enrollments.class-report', [
+            'section' => $courseSection,
+            'rows' => $rows,
+            'stats' => $stats,
+        ]);
+    }
+
     public function dropEnrollment(Request $request, Enrollment $enrollment)
     {
         $this->requireAnyPermission('enrollments.manage');

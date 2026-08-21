@@ -9,6 +9,7 @@ use App\Models\CourseSection;
 use App\Models\Department;
 use App\Models\Enrollment;
 use App\Models\EnrollmentEvent;
+use App\Models\Mark;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Semester;
@@ -527,6 +528,46 @@ class EnrollmentTest extends TestCase
             ->assertSee('Waitlist')
             ->assertSee('History')
             ->assertSee('Program Semester 3');
+    }
+
+    public function test_class_report_shows_marks_and_summary_for_the_section(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $setup = $this->makeAcademicSetup();
+        $section = $this->makeSection($setup);
+
+        Mark::create([
+            'student_id' => $setup['student']->id,
+            'course_id' => $setup['course']->id,
+            'course_section_id' => $section->id,
+            'prefinal_mark' => 40,
+            'first_trial_final_exam' => 45,
+            'final_mark' => 85,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('course-sections.report', $section))
+            ->assertOk()
+            ->assertSee('Class Report')
+            ->assertSee('45.0')
+            ->assertSee($setup['course']->code)
+            ->assertSee('Noor Student')
+            ->assertSee('S-100')
+            ->assertSee('85.0')
+            ->assertSee('Passed');
+    }
+
+    public function test_class_report_requires_offering_access(): void
+    {
+        $outsider = User::factory()->create();
+        $setup = $this->makeAcademicSetup();
+        $section = $this->makeSection($setup);
+
+        $this->actingAs($outsider)
+            ->get(route('course-sections.report', $section))
+            ->assertForbidden();
     }
 
     public function test_module_offering_calculates_program_semester_eight_and_keeps_summer_separate(): void

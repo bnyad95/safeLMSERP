@@ -183,6 +183,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/course-sections/{courseSection}/export-roster', [EnrollmentController::class, 'exportRoster'])
         ->middleware('permission.any:enrollments.view')
         ->name('course-sections.export-roster');
+    Route::get('/course-sections/{courseSection}/report', [EnrollmentController::class, 'classReport'])
+        ->name('course-sections.report');
     Route::post('/enrollments', [EnrollmentController::class, 'enrollStudent'])
         ->middleware('permission.any:enrollments.manage')
         ->name('enrollments.store');

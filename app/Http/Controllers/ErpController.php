@@ -569,8 +569,8 @@ class ErpController extends Controller
             ->when($filters['teacher_id'], fn ($markQuery) => $markQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('teacher_id', $filters['teacher_id'])))
             ->when($filters['submission_status'] !== '', fn ($markQuery) => $markQuery->where('submission_status', $filters['submission_status']))
             ->when($filters['visibility_status'] !== '', fn ($markQuery) => $markQuery->where('visibility_status', $filters['visibility_status']))
-            ->when($filters['result_status'] === 'passed', fn ($markQuery) => $markQuery->whereNotNull('final_mark')->where('final_mark', '>=', 50))
-            ->when($filters['result_status'] === 'failed', fn ($markQuery) => $markQuery->whereNotNull('final_mark')->where('final_mark', '<', 50));
+            ->when($filters['result_status'] === 'passed', fn ($markQuery) => $markQuery->where(fn ($q) => $this->whereHasAnyMark($q))->where('final_mark', '>=', 50))
+            ->when($filters['result_status'] === 'failed', fn ($markQuery) => $markQuery->where(fn ($q) => $this->whereHasAnyMark($q))->where('final_mark', '<', 50));
     }
 
     private function applyResultStageQueryFilter($query, string $stage): void
@@ -818,6 +818,9 @@ class ErpController extends Controller
             $selectedSemester ? ['label' => trim($selectedSemester->name.' '.$selectedSemester->academic_year), 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage'], 'semester_id' => $selectedSemester->id])] : null,
             $selectedSection ? ['label' => ($selectedSection->course?->code ?? 'Course').' Group '.$selectedSection->section_code, 'href' => null] : null,
         ])->filter()->values();
+        $breadcrumbs = $breadcrumbs->map(fn ($crumb, $index) => $index === $breadcrumbs->count() - 1
+            ? [...$crumb, 'href' => null]
+            : $crumb);
 
         return compact('level', 'cards', 'breadcrumbs');
     }
@@ -982,7 +985,7 @@ class ErpController extends Controller
             'student_id' => $mark->student?->student_id ?? '-',
             'course' => trim(($mark->course?->code ? $mark->course->code.' - ' : '').($mark->course?->name ?? 'No course')),
             'class' => $mark->courseSection ? 'Group '.$mark->courseSection->section_code : 'No class',
-            'final_mark' => is_null($mark->final_mark) ? 'N/A' : number_format((float) $mark->final_mark, 1),
+            'final_mark' => $this->resultHasMark($mark) ? number_format((float) $mark->final_mark, 1) : 'N/A',
             'result_status' => $this->resultOutcome($mark),
             'submission_status' => $this->resultStatusLabel($mark->submission_status),
             'visibility_status' => $this->resultStatusLabel($mark->visibility_status),
@@ -1096,19 +1099,32 @@ class ErpController extends Controller
             ?? $enrollment->student?->department;
     }
 
+    private function resultHasMark(Mark $mark): bool
+    {
+        return $mark->hasAnyGrade();
+    }
+
+    private function whereHasAnyMark($query)
+    {
+        return $query->whereNotNull('prefinal_mark')
+            ->orWhereNotNull('first_trial_final_exam')
+            ->orWhereNotNull('second_trial_final_exam')
+            ->orWhere('submission_status', '!=', 'draft');
+    }
+
     private function resultPassed(Mark $mark): bool
     {
-        return ! is_null($mark->final_mark) && (float) $mark->final_mark >= 50;
+        return $this->resultHasMark($mark) && (float) $mark->final_mark >= 50;
     }
 
     private function resultFailed(Mark $mark): bool
     {
-        return ! is_null($mark->final_mark) && (float) $mark->final_mark < 50;
+        return $this->resultHasMark($mark) && (float) $mark->final_mark < 50;
     }
 
     private function resultOutcome(Mark $mark): string
     {
-        if (is_null($mark->final_mark)) {
+        if (! $this->resultHasMark($mark)) {
             return 'No mark';
         }
 

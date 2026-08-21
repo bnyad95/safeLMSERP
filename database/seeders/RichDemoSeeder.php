@@ -275,6 +275,7 @@ class RichDemoSeeder extends Seeder
                     'course_id' => $section->course_id,
                     'prefinal_mark' => $prefinal,
                     'first_trial_final_exam' => $finalExam,
+                    'final_exam' => $finalExam ?? 0,
                     'final_mark' => $finalExam !== null ? min(100, $prefinal + $finalExam) : 0,
                     'submission_status' => match ($state) {
                         'approved_draft', 'published' => 'approved',
