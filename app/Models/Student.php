@@ -50,6 +50,7 @@ class Student extends Model
         'name',
         'email',
         'phone',
+        'national_id',
         'status',
         'academic_standing',
         'admission_status',

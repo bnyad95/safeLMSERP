@@ -1,14 +1,5 @@
 <nav
-    x-data="{
-        open: false,
-        darkMode: document.documentElement.classList.contains('dark'),
-        toggleTheme() {
-            this.darkMode = ! this.darkMode;
-            document.documentElement.classList.toggle('dark', this.darkMode);
-            document.documentElement.style.colorScheme = this.darkMode ? 'dark' : 'light';
-            localStorage.setItem('theme', this.darkMode ? 'dark' : 'light');
-        },
-    }"
+    x-data="{ open: false }"
     class="shrink-0"
 >
     <div class="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:hidden">
@@ -17,17 +8,21 @@
             <span class="sr-only">{{ config('app.name', 'SafeLMS ERP') }}</span>
         </a>
 
-        <button
-            type="button"
-            @click="open = ! open"
-            class="inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-            aria-label="Toggle navigation"
-        >
-            <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-                <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-        </button>
+        <div class="flex items-center gap-1">
+            @include('layouts.user-menu')
+
+            <button
+                type="button"
+                @click="open = ! open"
+                class="inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                aria-label="Toggle navigation"
+            >
+                <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                    <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                    <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
     </div>
 
     <div
@@ -254,53 +249,6 @@
                         </x-nav-group>
                     @endif
                 @endif
-            </div>
-        </div>
-
-        <div class="border-t border-gray-200 p-3 dark:border-gray-800">
-            <button
-                type="button"
-                @click="toggleTheme()"
-                class="mb-2 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-400 dark:hover:bg-gray-800"
-                :aria-pressed="darkMode.toString()"
-                :aria-label="darkMode ? 'Dark mode' : 'Light mode'"
-            >
-                <span class="flex items-center gap-1.5">
-                    <svg x-show="!darkMode" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-                    </svg>
-                    <svg x-show="darkMode" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-                    </svg>
-                    <span x-text="darkMode ? 'Dark mode' : 'Light mode'">Theme</span>
-                </span>
-                <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-gray-300 transition dark:bg-indigo-600">
-                    <span
-                        class="inline-block h-4 w-4 rounded-full bg-white shadow transition"
-                        :class="darkMode ? 'translate-x-4' : 'translate-x-0.5'"
-                    ></span>
-                </span>
-            </button>
-
-            <div class="flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800">
-                <a href="{{ route('profile.edit') }}" class="min-w-0 flex-1" title="{{ Auth::user()?->hasRole('student') ? __('Account Settings') : __('Profile') }}">
-                    <div class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ Auth::user()->name }}</div>
-                    <div class="truncate text-xs text-gray-500 dark:text-gray-400">{{ Auth::user()->email }}</div>
-                </a>
-
-                <form method="POST" action="{{ route('logout') }}" class="shrink-0">
-                    @csrf
-                    <button
-                        type="submit"
-                        title="{{ __('Log Out') }}"
-                        aria-label="{{ __('Log Out') }}"
-                        class="rounded-md p-1.5 text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                    >
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l3 3m0 0-3 3m3-3H3" />
-                        </svg>
-                    </button>
-                </form>
             </div>
         </div>
     </aside>

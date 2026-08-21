@@ -2,8 +2,8 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">ERP Overview</p>
-                <h2 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ config('app.name', 'SafeLMS ERP') }}</h2>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('ERP Overview') }}</p>
+                <h2 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Welcome back, :name', ['name' => explode(' ', Auth::user()->name)[0]]) }}</h2>
             </div>
             <x-dashboard-clock />
         </div>

@@ -30,6 +30,11 @@
                 <input id="student-phone" type="text" name="phone" value="{{ old('phone', $student->phone ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
                 <x-input-error :messages="$errors->get('phone')" class="mt-2" />
             </div>
+            <div>
+                <label for="student-national-id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">National ID / Passport number</label>
+                <input id="student-national-id" type="text" name="national_id" value="{{ old('national_id', $student->national_id ?? '') }}" placeholder="Used to prevent duplicate student records" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
+                <x-input-error :messages="$errors->get('national_id')" class="mt-2" />
+            </div>
         </div>
     </section>
 

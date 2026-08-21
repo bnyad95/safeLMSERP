@@ -326,7 +326,8 @@ class StudentController extends Controller
             ->when($search !== '', fn ($query) => $query->where(function ($searchQuery) use ($search) {
                 $searchQuery->where('full_name', 'like', "%{$search}%")
                     ->orWhere('student_id', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('national_id', 'like', "%{$search}%");
             }))
             ->orderByDesc('deleted_at')
             ->paginate(15)
@@ -397,6 +398,7 @@ class StudentController extends Controller
             'full_name' => ['required', 'string', 'max:255'],
             'email' => $emailRules,
             'phone' => ['nullable', 'string', 'max:50'],
+            'national_id' => ['nullable', 'string', 'max:50', Rule::unique('students', 'national_id')->ignore($student)],
             'university_id' => ['nullable', 'exists:universities,id'],
             'college_id' => ['nullable', 'exists:colleges,id'],
             'department_id' => ['required', 'exists:departments,id'],
@@ -581,7 +583,8 @@ class StudentController extends Controller
             ->when($filters['q'] !== '', fn ($query) => $query->where(function ($searchQuery) use ($filters) {
                 $searchQuery->where('students.full_name', 'like', "%{$filters['q']}%")
                     ->orWhere('students.student_id', 'like', "%{$filters['q']}%")
-                    ->orWhere('students.email', 'like', "%{$filters['q']}%");
+                    ->orWhere('students.email', 'like', "%{$filters['q']}%")
+                    ->orWhere('students.national_id', 'like', "%{$filters['q']}%");
             }))
             ->when($filters['college_id'], fn ($query) => $query->whereHas('department', fn ($departmentQuery) => $departmentQuery->where('college_id', $filters['college_id'])))
             ->when($filters['department_id'], fn ($query) => $query->where('students.department_id', $filters['department_id']))
