@@ -460,7 +460,8 @@ class FinanceController extends Controller
             'transactions' => $transactions,
             'stats' => [
                 ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($selectedBalances, 'balance'), 'detail' => 'Remaining balance by currency'],
-                ['label' => 'Paid / Credits', 'value' => $this->formatCurrencyTotals($selectedBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships, net of refunds'],
+                ['label' => 'Cash Paid', 'value' => $this->formatCurrencyTotals($selectedBalances, 'cash_paid'), 'detail' => 'Payments received, net of refunds'],
+                ['label' => 'Discounts & Scholarships', 'value' => $this->formatCurrencyTotals($selectedBalances, 'non_cash_credits'), 'detail' => 'Non-cash credits applied to invoices'],
                 ['label' => 'Next Due', 'value' => $nextDueInvoice ? money($this->remainingInvoiceAmount($nextDueInvoice), $nextDueInvoice->currency).' '.$nextDueInvoice->currency : 'No due invoices', 'detail' => $nextDueInvoice ? 'Due '.$nextDueInvoice->due_date->format('Y-m-d') : 'No open invoice due date'],
                 ['label' => 'Payment Status', 'value' => ucfirst($selectedPaymentStatus), 'detail' => $paymentPlanSummary['total'] > 0 ? $paymentPlanSummary['label'] : 'No semester payment plan'],
             ],
@@ -709,6 +710,26 @@ class FinanceController extends Controller
                     ->first();
                 abort_unless($percentageInvoice, 422);
                 $validated['amount'] = round((float) $percentageInvoice->amount * (float) $validated['discount_percentage'] / 100, 2);
+            }
+
+            if ($validated['type'] === 'refund') {
+                $refundable = $this->refundableAmount((int) $validated['student_id'], $validated['currency']);
+
+                if ((float) $validated['amount'] > $refundable) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'The refund exceeds the amount available to refund ('.money($refundable, $validated['currency']).' '.$validated['currency'].').',
+                    ]);
+                }
+            }
+
+            if ($validated['type'] === 'discount' && empty($validated['invoice_transaction_id'])) {
+                $outstanding = $this->outstandingBalanceForStudent($lockedStudent, $validated['currency']);
+
+                if ((float) $validated['amount'] > $outstanding) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'The discount exceeds the student\'s outstanding balance of '.money($outstanding, $validated['currency']).' '.$validated['currency'].'.',
+                    ]);
+                }
             }
 
             $validated['invoice_transaction_id'] = $this->validatedInvoiceAllocation($validated);
@@ -1130,7 +1151,7 @@ class FinanceController extends Controller
     public function receipt(Request $request, FinanceTransaction $financeTransaction)
     {
         abort_unless(
-            in_array($financeTransaction->type, FinanceTransaction::creditTypes(), true)
+            in_array($financeTransaction->type, ['payment', 'discount', 'scholarship', 'refund'], true)
             && $financeTransaction->posting_status === 'posted'
             && $financeTransaction->status !== 'cancelled',
             404
@@ -1500,6 +1521,8 @@ class FinanceController extends Controller
             ->select('currency')
             ->selectRaw("SUM(CASE WHEN type = 'invoice' THEN amount ELSE 0 END) as invoice_charges")
             ->selectRaw("SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as refund_charges")
+            ->selectRaw("SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END) as payment_credits")
+            ->selectRaw("SUM(CASE WHEN type IN ('discount', 'scholarship') THEN amount ELSE 0 END) as non_cash_credits")
             ->selectRaw(
                 "SUM(CASE WHEN type IN (?, ?, ?) THEN amount ELSE 0 END) as gross_credits",
                 FinanceTransaction::creditTypes()
@@ -1519,6 +1542,8 @@ class FinanceController extends Controller
                         'currency' => $currency,
                         'charges' => $charges,
                         'credits' => $credits,
+                        'cash_paid' => (float) $row->payment_credits - $refundCharges,
+                        'non_cash_credits' => (float) $row->non_cash_credits,
                         'balance' => $charges - $credits,
                     ],
                 ];
@@ -2075,6 +2100,32 @@ class FinanceController extends Controller
 
         return $user->hasPermission('finance.view')
             && $user->hasAnyPermission(['finance.create_invoice', 'finance.record_payment', 'finance.approve_payment']);
+    }
+
+    private function refundableAmount(int $studentId, string $currency): float
+    {
+        $paid = (float) FinanceTransaction::where('student_id', $studentId)
+            ->where('currency', $currency)
+            ->where('type', 'payment')
+            ->where('status', '!=', 'cancelled')
+            ->where('posting_status', 'posted')
+            ->sum('amount');
+
+        $alreadyRefunded = (float) FinanceTransaction::where('student_id', $studentId)
+            ->where('currency', $currency)
+            ->where('type', 'refund')
+            ->where('status', '!=', 'cancelled')
+            ->where('posting_status', 'posted')
+            ->sum('amount');
+
+        return round($paid - $alreadyRefunded, 2);
+    }
+
+    private function outstandingBalanceForStudent(Student $student, string $currency): float
+    {
+        $balances = $this->balancesByCurrencyQuery($student->financeTransactions(), $student->id);
+
+        return (float) ($balances->get($currency)['balance'] ?? 0.0);
     }
 
     private function validatedInvoiceAllocation(array $transaction): ?int

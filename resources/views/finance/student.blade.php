@@ -82,7 +82,7 @@
                                 <div class="grid grid-cols-2 gap-3 text-sm">
                                     <div>
                                         <p class="text-xs font-medium uppercase text-gray-500">Status</p>
-                                        <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ ucfirst($transaction->payment_status) }}</span>
+                                        <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ $transaction->paymentStatusLabel() }}</span>
                                     </div>
                                     <div>
                                         <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
@@ -135,7 +135,7 @@
                                         <td class="px-5 py-3 text-right text-sm text-gray-900">{{ $signedAmount > 0 ? money($signedAmount, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                         <td class="px-5 py-3 text-right text-sm text-gray-900">{{ $signedAmount < 0 ? money(abs($signedAmount), $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                         <td class="px-5 py-3">
-                                            <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ ucfirst($transaction->payment_status) }}</span>
+                                            <span class="rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ $transaction->paymentStatusLabel() }}</span>
                                         </td>
                                         <td class="px-5 py-3 text-right text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                     </tr>

@@ -1,9 +1,23 @@
+@php
+    $documentTitle = [
+        'payment' => 'Payment Receipt',
+        'discount' => 'Discount Voucher',
+        'scholarship' => 'Scholarship Credit',
+        'refund' => 'Refund Receipt',
+    ][$financeTransaction->type] ?? 'Payment Receipt';
+    $amountLabel = [
+        'payment' => 'Amount received',
+        'discount' => 'Amount discounted',
+        'scholarship' => 'Amount awarded',
+        'refund' => 'Amount refunded',
+    ][$financeTransaction->type] ?? 'Amount';
+@endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipt {{ $financeTransaction->receipt_number }}</title>
+    <title>{{ $documentTitle }} {{ $financeTransaction->receipt_number }}</title>
     <style>
         body { margin: 0; background: #f3f4f6; color: #111827; font-family: Arial, sans-serif; }
         .sheet { width: min(760px, calc(100% - 32px)); margin: 32px auto; background: white; border: 1px solid #d1d5db; padding: 32px; box-sizing: border-box; }
@@ -27,7 +41,7 @@
     <main class="sheet">
         <header class="header">
             <div>
-                <h1>Payment Receipt</h1>
+                <h1>{{ $documentTitle }}</h1>
                 <h2>{{ $student->university->name ?? config('app.name') }}</h2>
             </div>
             <div>
@@ -37,7 +51,7 @@
         </header>
 
         <div class="amount">
-            <span>Amount received</span>
+            <span>{{ $amountLabel }}</span>
             <strong>{{ money($financeTransaction->amount, $financeTransaction->currency) }} {{ $financeTransaction->currency }}</strong>
         </div>
 
@@ -45,7 +59,7 @@
             <div class="row"><span class="label">Student</span><strong>{{ $student->full_name }}</strong></div>
             <div class="row"><span class="label">Student ID</span><span>{{ $student->student_id }}</span></div>
             <div class="row"><span class="label">College / Department</span><span>{{ $student->department->college->name ?? '-' }} / {{ $student->department->name ?? '-' }}</span></div>
-            <div class="row"><span class="label">Payment type</span><span>{{ ucfirst($financeTransaction->type) }}</span></div>
+            <div class="row"><span class="label">Type</span><span>{{ ucfirst($financeTransaction->type) }}</span></div>
             <div class="row"><span class="label">Applied invoice</span><span>{{ $financeTransaction->invoice?->invoice_number ?? 'General account credit' }}</span></div>
             <div class="row"><span class="label">Reference</span><span>{{ $financeTransaction->reference ?: '-' }}</span></div>
             <div class="row"><span class="label">Recorded by</span><span>{{ $financeTransaction->recorder->name ?? '-' }}</span></div>

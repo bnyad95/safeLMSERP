@@ -15,7 +15,7 @@
 
     <div class="finance-workspace py-5 sm:py-8">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
-            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 @foreach($stats as $stat)
                     <div class="min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                         <p class="text-sm font-medium text-gray-500">{{ $stat['label'] }}</p>
@@ -313,7 +313,7 @@
                             <div class="grid grid-cols-2 gap-3 text-sm">
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Record</p>
-                                    <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>
+                                    <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ $transaction->statusLabel() }}</span>
                                 </div>
                                 <div>
                                     <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
@@ -407,7 +407,7 @@
                                     </td>
                                     <td class="px-5 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
                                     <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
-                                    <td class="px-5 py-3"><span class="rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span></td>
+                                    <td class="px-5 py-3"><span class="rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ $transaction->statusLabel() }}</span></td>
                                     <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                     <td class="px-5 py-3 text-sm text-gray-600">
                                         <div>{{ $transaction->approver->name ?? '-' }}</div>

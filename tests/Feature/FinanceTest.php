@@ -2229,4 +2229,129 @@ class FinanceTest extends TestCase
             ])
             ->assertSessionHasErrors(['amount']);
     }
+
+    public function test_refund_cannot_exceed_the_amount_available_to_refund(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'payment',
+            'amount' => '500000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'paid',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'refund',
+                'amount' => '500001',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors(['amount']);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'refund',
+                'amount' => '500000',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'refund',
+            'amount' => '500000.00',
+        ]);
+    }
+
+    public function test_refund_cannot_exceed_amount_remaining_after_a_prior_refund(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'payment',
+            'amount' => '500000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'paid',
+            'transaction_date' => now()->toDateString(),
+        ]);
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'refund',
+            'amount' => '300000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'open',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'refund',
+                'amount' => '200001',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors(['amount']);
+    }
+
+    public function test_unlinked_discount_cannot_exceed_the_students_outstanding_balance(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $student = $this->makeStudent();
+        FinanceTransaction::create([
+            'student_id' => $student->id,
+            'type' => 'invoice',
+            'amount' => '1000000',
+            'currency' => 'IQD',
+            'status' => 'approved',
+            'posting_status' => 'posted',
+            'payment_status' => 'open',
+            'transaction_date' => now()->toDateString(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'discount',
+                'amount' => '1000001',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertSessionHasErrors(['amount']);
+
+        $this->actingAs($admin)
+            ->post(route('finance.transactions.store'), [
+                'student_id' => $student->id,
+                'type' => 'discount',
+                'amount' => '1000000',
+                'currency' => 'IQD',
+                'status' => 'paid',
+                'transaction_date' => now()->toDateString(),
+            ])
+            ->assertRedirect(route('finance.students.show', $student));
+
+        $this->assertDatabaseHas('finance_transactions', [
+            'student_id' => $student->id,
+            'type' => 'discount',
+            'amount' => '1000000.00',
+        ]);
+    }
 }

@@ -89,7 +89,7 @@
                                     </td>
                                     <td class="px-4 py-3 text-sm text-gray-600">{{ ucfirst($transaction->type) }}</td>
                                     <td class="px-4 py-3 text-right text-sm text-gray-900">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
-                                    <td class="px-4 py-3 text-sm text-gray-600">{{ ucfirst($transaction->status) }}</td>
+                                    <td class="px-4 py-3 text-sm text-gray-600">{{ $transaction->statusLabel() }}</td>
                                     <td class="px-4 py-3 text-right text-sm font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</td>
                                     <td class="px-4 py-3 text-sm text-gray-600">{{ $transaction->approver->name ?? '-' }}</td>
                                     <td class="px-4 py-3 text-sm text-gray-600">{{ $transaction->notes ?: '-' }}</td>

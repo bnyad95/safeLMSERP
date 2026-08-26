@@ -193,11 +193,11 @@
                                     <div class="grid grid-cols-2 gap-3 text-sm">
                                         <div>
                                             <p class="text-xs font-medium uppercase text-gray-500">Record</p>
-                                            <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>
+                                            <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ $transaction->statusLabel() }}</span>
                                         </div>
                                         <div>
                                             <p class="text-xs font-medium uppercase text-gray-500">Payment</p>
-                                            <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
+                                            <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ $transaction->paymentStatusLabel() }}</span>
                                         </div>
                                         <div>
                                             <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
@@ -276,8 +276,8 @@
                                             <td class="px-5 py-3 text-sm font-semibold text-gray-900">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
                                             <td class="px-5 py-3">
                                                 <div class="flex flex-col items-start gap-1">
-                                                    <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ ucfirst($transaction->status) }}</span>
-                                                    <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ ucfirst($transaction->payment_status) }}</span>
+                                                    <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $recordClass }}">{{ $transaction->statusLabel() }}</span>
+                                                    <span class="inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold {{ $paymentClass }}">{{ $transaction->paymentStatusLabel() }}</span>
                                                 </div>
                                                 @if($transaction->voided_at)
                                                     <div class="mt-1 text-xs text-red-700">Voided {{ $transaction->voided_at->format('Y-m-d') }}</div>

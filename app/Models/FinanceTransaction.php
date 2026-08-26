@@ -118,6 +118,33 @@ class FinanceTransaction extends Model
         return in_array($this->type, self::creditTypes(), true) ? -$amount : $amount;
     }
 
+    public function statusLabel(): string
+    {
+        if ($this->status !== 'paid') {
+            return ucfirst($this->status);
+        }
+
+        return $this->nonCashLabelFor($this->type) ?? 'Paid';
+    }
+
+    public function paymentStatusLabel(): string
+    {
+        if ($this->payment_status !== 'paid') {
+            return ucfirst($this->payment_status);
+        }
+
+        return $this->nonCashLabelFor($this->type) ?? 'Paid';
+    }
+
+    private function nonCashLabelFor(string $type): ?string
+    {
+        return match ($type) {
+            'discount', 'scholarship' => 'Applied',
+            'refund' => 'Processed',
+            default => null,
+        };
+    }
+
     public function isPosted(): bool
     {
         return $this->posting_status === 'posted';
