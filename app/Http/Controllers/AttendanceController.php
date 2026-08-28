@@ -118,7 +118,7 @@ class AttendanceController extends Controller
             return response()->streamDownload(function () use ($attendanceQuery) {
                 $handle = fopen('php://output', 'w');
                 fputcsv($handle, ['Date', 'Student ID', 'Student', 'Email', 'Status', 'Remarks']);
-                foreach ((clone $attendanceQuery)->cursor() as $record) {
+                foreach ((clone $attendanceQuery)->lazy() as $record) {
                     fputcsv($handle, [
                         $record->date?->format('Y-m-d'),
                         $record->student->student_id ?? '',

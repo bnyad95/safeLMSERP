@@ -356,7 +356,7 @@ class ErpController extends Controller
                 'Published at',
             ]);
 
-            foreach ($marks->cursor() as $mark) {
+            foreach ($marks->lazy() as $mark) {
                 $section = $mark->courseSection;
                 $course = $mark->course;
                 fputcsv($handle, [

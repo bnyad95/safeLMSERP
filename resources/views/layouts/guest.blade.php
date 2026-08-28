@@ -40,6 +40,8 @@
             <div class="w-full sm:max-w-md mt-6 px-6 py-4 bg-white shadow-md overflow-hidden sm:rounded-lg dark:bg-gray-900 dark:shadow-gray-950/40">
                 {{ $slot }}
             </div>
+
+            <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">Developed by Safe Data Co. All rights reserved</p>
         </div>
     </body>
 </html>
