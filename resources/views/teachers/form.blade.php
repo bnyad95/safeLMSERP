@@ -39,7 +39,7 @@
 
     <section>
         <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Organization Placement</h3>
-        <div class="mt-4 grid gap-5 md:grid-cols-3">
+        <div class="mt-4 grid gap-5 md:grid-cols-2">
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">University <span class="text-red-500">*</span></label>
                 <select id="teacher-form-university" name="university_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
@@ -60,7 +60,7 @@
                 </select>
                 @error('college_id')<p class="mt-1 text-xs text-red-600 dark:text-red-300">{{ $message }}</p>@enderror
             </div>
-            <div>
+            <div class="md:col-span-2">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department <span class="text-red-500">*</span></label>
                 <select id="teacher-form-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
                     <option value="">Select department</option>

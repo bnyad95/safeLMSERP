@@ -1,8 +1,12 @@
 <x-app-layout>
-<div class="max-w-2xl mx-auto px-4 py-8">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Upload Course Material</h1>
-    <p class="text-gray-500 mb-4">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - Group '.$section->section_code : '' }}</p>
+    <x-slot name="header">
+        <div>
+            <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-200">Upload Course Material</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - Group '.$section->section_code : '' }}</p>
+        </div>
+    </x-slot>
 
+<div class="max-w-2xl mx-auto px-4 py-8">
     <form method="POST" action="{{ route('materials.store', ['course' => $course->id, 'section_id' => $section?->id]) }}" enctype="multipart/form-data">
         @csrf
         <div class="bg-white rounded-lg shadow p-6 space-y-4">

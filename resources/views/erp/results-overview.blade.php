@@ -309,11 +309,20 @@
                                     </td>
                                     <td class="px-5 py-4 text-sm font-semibold text-gray-900">{{ $row['final_mark'] }}</td>
                                     <td class="px-5 py-4">
-                                        <span class="{{ $row['result_status'] === 'Passed' ? 'rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800' : 'rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-800' }}">{{ $row['result_status'] }}</span>
+                                        @php
+                                            $resultBadgeClass = match($row['result_status']) {
+                                                'Passed' => 'rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800',
+                                                'Failed' => 'rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-800',
+                                                default => 'rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600',
+                                            };
+                                        @endphp
+                                        <span class="{{ $resultBadgeClass }}">{{ $row['result_status'] }}</span>
                                     </td>
                                     <td class="px-5 py-4">
-                                        <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">{{ $row['submission_status'] }}</span>
-                                        <span class="ml-1 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{{ $row['visibility_status'] }}</span>
+                                        <div class="flex flex-col gap-1">
+                                            <span><span class="text-[10px] font-medium uppercase text-gray-400">Submission </span><span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">{{ $row['submission_status'] }}</span></span>
+                                            <span><span class="text-[10px] font-medium uppercase text-gray-400">Visibility </span><span class="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{{ $row['visibility_status'] }}</span></span>
+                                        </div>
                                     </td>
                                     <td class="px-5 py-4 text-sm text-gray-500">{{ $row['submitted_at'] }}</td>
                                     <td class="px-5 py-4 text-right text-sm">

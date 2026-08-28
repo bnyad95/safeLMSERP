@@ -1,18 +1,20 @@
 <x-app-layout>
-<div class="max-w-7xl mx-auto px-4 py-8">
-    <div class="flex justify-between items-center mb-6">
-        <div>
-            <h1 class="text-2xl font-bold text-gray-800">Course Materials</h1>
-            <p class="text-gray-500 mt-1">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - Group '.$section->section_code : '' }}</p>
+    <x-slot name="header">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-200">Course Materials</h2>
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - Group '.$section->section_code : '' }}</p>
+            </div>
+            @if(auth()->user()->hasAnyRole(['teacher', 'super_administrator']))
+                <a href="{{ route('materials.create', ['course' => $course->id, 'section_id' => $section?->id]) }}"
+                   class="inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                    + Upload Material
+                </a>
+            @endif
         </div>
-        @if(auth()->user()->hasAnyRole(['teacher', 'super_administrator']))
-            <a href="{{ route('materials.create', ['course' => $course->id, 'section_id' => $section?->id]) }}"
-               class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                + Upload Material
-            </a>
-        @endif
-    </div>
+    </x-slot>
 
+<div class="max-w-7xl mx-auto px-4 py-8">
     <div class="bg-white rounded-lg shadow overflow-hidden">
         @forelse($materials as $material)
             <div class="border-b last:border-0 p-4 flex items-center justify-between">

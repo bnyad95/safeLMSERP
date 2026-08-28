@@ -48,7 +48,7 @@
                         <h3 class="mt-1 text-xl font-semibold text-gray-900">{{ $canManageClassroom ? ($teacher->full_name ?? 'Teacher') : 'Classrooms' }}</h3>
                         <p class="mt-1 text-sm text-gray-600">{{ $canManageClassroom ? (($teacher->title ?? 'Teaching staff').' - '.($teacher->department->name ?? 'Department')) : 'Browse colleges, departments, stages, and classes in your academic scope.' }}</p>
                     </div>
-                    <p class="text-sm font-semibold text-gray-600">{{ $assignedSections->count() }} classes</p>
+                    <p class="text-sm font-semibold text-gray-600">{{ $assignedSections->count() }} {{ Str::plural('class', $assignedSections->count()) }}</p>
                 </section>
 
                 @if($canManageClassroom)

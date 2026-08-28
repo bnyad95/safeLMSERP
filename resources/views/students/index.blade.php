@@ -84,9 +84,9 @@
                             <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 sm:px-5">
                                 <span class="min-w-0">
                                     <span class="block truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $collegeGroup['college'] }}</span>
-                                    <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ $collegeGroup['departments']->count() }} departments</span>
+                                    <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ $collegeGroup['departments']->count() }} {{ Str::plural('department', $collegeGroup['departments']->count()) }}</span>
                                 </span>
-                                <span class="shrink-0 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">{{ $collegeGroup['count'] }} students</span>
+                                <span class="shrink-0 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">{{ $collegeGroup['count'] }} {{ Str::plural('student', $collegeGroup['count']) }}</span>
                             </summary>
                             <div class="border-t border-gray-100 p-4 dark:border-gray-800 sm:p-5">
                                 <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -95,9 +95,9 @@
                                             <div class="flex items-start justify-between gap-3">
                                                 <div class="min-w-0">
                                                     <p class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $departmentGroup['department'] }}</p>
-                                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $departmentGroup['count'] }} students</p>
+                                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $departmentGroup['count'] }} {{ Str::plural('student', $departmentGroup['count']) }}</p>
                                                 </div>
-                                                <span class="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-200">{{ $departmentGroup['grades']->count() }} stages</span>
+                                                <span class="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-200">{{ $departmentGroup['grades']->count() }} {{ Str::plural('stage', $departmentGroup['grades']->count()) }}</span>
                                             </div>
                                             <div class="mt-4 flex flex-wrap gap-2">
                                                 @foreach($departmentGroup['grades'] as $gradeGroup)

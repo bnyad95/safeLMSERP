@@ -263,6 +263,34 @@ class MarkSubmissionTest extends TestCase
         $this->assertSame('approved', $mark->fresh()->submission_status);
     }
 
+    public function test_mark_with_no_final_exam_score_cannot_be_approved_or_published()
+    {
+        $incompleteMark = Mark::factory()->create([
+            'student_id' => $this->student->id,
+            'course_id' => $this->course->id,
+            'prefinal_mark' => 40,
+            'first_trial_final_exam' => null,
+            'second_trial_final_exam' => null,
+            'final_exam' => 0,
+            'final_mark' => 0,
+            'submission_status' => 'submitted',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson(route('marks.approve'), ['mark_ids' => [$incompleteMark->id]])
+            ->assertUnprocessable();
+
+        $this->assertSame('submitted', $incompleteMark->fresh()->submission_status);
+
+        $incompleteMark->forceFill(['submission_status' => 'approved'])->save();
+
+        $this->actingAs($this->admin)
+            ->postJson(route('marks.publish'), ['mark_ids' => [$incompleteMark->id]])
+            ->assertUnprocessable();
+
+        $this->assertSame('draft', $incompleteMark->fresh()->visibility_status);
+    }
+
     public function test_queue_batch_is_atomic_when_one_mark_has_invalid_relationships()
     {
         $validMark = Mark::factory()->create([
@@ -657,6 +685,8 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 43,
             'final_mark' => 85,
             'submission_status' => 'submitted',
         ]);
@@ -705,6 +735,8 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 43,
             'final_mark' => 85,
             'submission_status' => 'approved',
             'visibility_status' => 'draft',
@@ -728,6 +760,8 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 43,
             'final_mark' => 85,
             'submission_status' => 'submitted',
         ]);
@@ -753,6 +787,8 @@ class MarkSubmissionTest extends TestCase
         $mark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 43,
             'final_mark' => 85,
             'submission_status' => 'approved',
             'visibility_status' => 'draft',
@@ -1066,6 +1102,8 @@ class MarkSubmissionTest extends TestCase
         $approveMark = Mark::factory()->create([
             'student_id' => $this->student->id,
             'course_id' => $this->course->id,
+            'prefinal_mark' => 42,
+            'first_trial_final_exam' => 43,
             'final_mark' => 85,
             'submission_status' => 'under_review',
         ]);

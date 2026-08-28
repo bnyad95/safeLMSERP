@@ -146,7 +146,7 @@ class ErpController extends Controller
         $recentMarks = Mark::with(['student', 'course', 'courseSection.teacher'])
             ->whereIn('submission_status', ['submitted', 'under_review', 'approved', 'rejected'])
             ->latest('updated_at')
-            ->limit(8)
+            ->limit(10)
             ->get();
 
         return view('erp.examination-dashboard', compact('stats', 'reviewItems', 'recentMarks', 'canPublish'));
@@ -569,8 +569,8 @@ class ErpController extends Controller
             ->when($filters['teacher_id'], fn ($markQuery) => $markQuery->whereHas('courseSection', fn ($sectionQuery) => $sectionQuery->where('teacher_id', $filters['teacher_id'])))
             ->when($filters['submission_status'] !== '', fn ($markQuery) => $markQuery->where('submission_status', $filters['submission_status']))
             ->when($filters['visibility_status'] !== '', fn ($markQuery) => $markQuery->where('visibility_status', $filters['visibility_status']))
-            ->when($filters['result_status'] === 'passed', fn ($markQuery) => $markQuery->where(fn ($q) => $this->whereHasAnyMark($q))->where('final_mark', '>=', 50))
-            ->when($filters['result_status'] === 'failed', fn ($markQuery) => $markQuery->where(fn ($q) => $this->whereHasAnyMark($q))->where('final_mark', '<', 50));
+            ->when($filters['result_status'] === 'passed', fn ($markQuery) => $markQuery->whereRaw($this->hasFinalScoreSql())->where('final_mark', '>=', 50))
+            ->when($filters['result_status'] === 'failed', fn ($markQuery) => $markQuery->whereRaw($this->hasFinalScoreSql())->where('final_mark', '<', 50));
     }
 
     private function applyResultStageQueryFilter($query, string $stage): void
@@ -834,7 +834,7 @@ class ErpController extends Controller
             ->selectRaw('COUNT(*) as marks_count')
             ->selectRaw("SUM(CASE WHEN marks.submission_status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) as pending_count")
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' THEN 1 ELSE 0 END) as published_count")
-            ->selectRaw("AVG(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark IS NOT NULL THEN marks.final_mark END) as average_mark");
+            ->selectRaw("AVG(CASE WHEN marks.visibility_status = 'published' AND {$this->hasFinalScoreSql('marks.')} THEN marks.final_mark END) as average_mark");
 
         match ($level) {
             'colleges' => $query
@@ -947,35 +947,46 @@ class ErpController extends Controller
 
     private function resultStats(array $filters, int $missingResultsCount): array
     {
+        $hasFinalScore = $this->hasFinalScoreSql();
+
         $row = $this->resultsMarkQuery($filters, false)
             ->selectRaw('COUNT(*) as total')
             ->selectRaw("SUM(CASE WHEN submission_status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) as pending")
             ->selectRaw("SUM(CASE WHEN submission_status = 'approved' AND visibility_status != 'published' THEN 1 ELSE 0 END) as ready")
             ->selectRaw("SUM(CASE WHEN visibility_status = 'published' THEN 1 ELSE 0 END) as published")
-            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND final_mark >= 50 THEN 1 ELSE 0 END) as passed")
-            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND final_mark < 50 THEN 1 ELSE 0 END) as failed")
-            ->selectRaw("AVG(CASE WHEN visibility_status = 'published' AND final_mark IS NOT NULL THEN final_mark END) as average")
+            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND NOT ({$hasFinalScore}) THEN 1 ELSE 0 END) as published_incomplete")
+            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND {$hasFinalScore} AND final_mark >= 50 THEN 1 ELSE 0 END) as passed")
+            ->selectRaw("SUM(CASE WHEN visibility_status = 'published' AND {$hasFinalScore} AND final_mark < 50 THEN 1 ELSE 0 END) as failed")
+            ->selectRaw("AVG(CASE WHEN visibility_status = 'published' AND {$hasFinalScore} THEN final_mark END) as average")
             ->first();
         $total = (int) ($row->total ?? 0);
         $pending = (int) ($row->pending ?? 0);
         $ready = (int) ($row->ready ?? 0);
         $published = (int) ($row->published ?? 0);
+        $publishedIncomplete = (int) ($row->published_incomplete ?? 0);
         $passed = (int) ($row->passed ?? 0);
         $failed = (int) ($row->failed ?? 0);
-        $average = $published > 0 && ! is_null($row->average) ? number_format((float) $row->average, 1) : 'N/A';
-        $passRate = $published > 0 ? number_format(($passed / $published) * 100, 1).'%' : 'N/A';
+        $graded = $passed + $failed;
+        $average = $graded > 0 && ! is_null($row->average) ? number_format((float) $row->average, 1) : 'N/A';
+        $passRate = $graded > 0 ? number_format(($passed / $graded) * 100, 1).'%' : 'N/A';
 
-        return [
+        $stats = [
             ['label' => 'Total Marks', 'value' => number_format($total), 'detail' => 'Matching current scope'],
             ['label' => 'Pending Review', 'value' => number_format($pending), 'detail' => 'Submitted or under review'],
             ['label' => 'Ready to Publish', 'value' => number_format($ready), 'detail' => 'Approved and not published'],
             ['label' => 'Published', 'value' => number_format($published), 'detail' => 'Visible to students'],
-            ['label' => 'Passed', 'value' => number_format($passed), 'detail' => 'Published final mark 50 or more'],
-            ['label' => 'Failed', 'value' => number_format($failed), 'detail' => 'Published final mark below 50'],
-            ['label' => 'Pass Rate', 'value' => $passRate, 'detail' => 'Published results only'],
-            ['label' => 'Avg Published Mark', 'value' => $average, 'detail' => 'Published final mark average'],
+            ['label' => 'Passed', 'value' => number_format($passed), 'detail' => 'Published with a final mark of 50 or more'],
+            ['label' => 'Failed', 'value' => number_format($failed), 'detail' => 'Published with a final mark below 50'],
+            ['label' => 'Pass Rate', 'value' => $passRate, 'detail' => 'Published results with a recorded final exam'],
+            ['label' => 'Avg Published Mark', 'value' => $average, 'detail' => 'Published results with a recorded final exam'],
             ['label' => 'Missing Results', 'value' => number_format($missingResultsCount), 'detail' => 'Enrolled students without marks'],
         ];
+
+        if ($publishedIncomplete > 0) {
+            $stats[] = ['label' => 'Published, No Final Exam', 'value' => number_format($publishedIncomplete), 'detail' => 'Published without a recorded final-exam score'];
+        }
+
+        return $stats;
     }
 
     private function resultRows($marks, bool $canOpenMarkQueue, bool $canViewStudents, bool $canViewCourses)
@@ -985,7 +996,7 @@ class ErpController extends Controller
             'student_id' => $mark->student?->student_id ?? '-',
             'course' => trim(($mark->course?->code ? $mark->course->code.' - ' : '').($mark->course?->name ?? 'No course')),
             'class' => $mark->courseSection ? 'Group '.$mark->courseSection->section_code : 'No class',
-            'final_mark' => $this->resultHasMark($mark) ? number_format((float) $mark->final_mark, 1) : 'N/A',
+            'final_mark' => $mark->hasCompleteFinalMark() ? number_format((float) $mark->final_mark, 1) : 'N/A',
             'result_status' => $this->resultOutcome($mark),
             'submission_status' => $this->resultStatusLabel($mark->submission_status),
             'visibility_status' => $this->resultStatusLabel($mark->visibility_status),
@@ -1015,14 +1026,16 @@ class ErpController extends Controller
 
     private function resultCoursePerformance(array $filters)
     {
+        $hasFinalScore = $this->hasFinalScoreSql('marks.');
+
         $query = $this->resultsMarkQuery($filters, false)
             ->leftJoin('courses', 'marks.course_id', '=', 'courses.id')
             ->select('marks.course_id', 'courses.code', 'courses.name')
             ->selectRaw('COUNT(*) as marks_count')
             ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' THEN 1 ELSE 0 END) as published_count")
-            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark >= 50 THEN 1 ELSE 0 END) as passed_count")
-            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark < 50 THEN 1 ELSE 0 END) as failed_count")
-            ->selectRaw("AVG(CASE WHEN marks.visibility_status = 'published' AND marks.final_mark IS NOT NULL THEN marks.final_mark END) as average_mark")
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND {$hasFinalScore} AND marks.final_mark >= 50 THEN 1 ELSE 0 END) as passed_count")
+            ->selectRaw("SUM(CASE WHEN marks.visibility_status = 'published' AND {$hasFinalScore} AND marks.final_mark < 50 THEN 1 ELSE 0 END) as failed_count")
+            ->selectRaw("AVG(CASE WHEN marks.visibility_status = 'published' AND {$hasFinalScore} THEN marks.final_mark END) as average_mark")
             ->groupBy('marks.course_id', 'courses.code', 'courses.name')
             ->orderByDesc('average_mark')
             ->limit(8);
@@ -1031,6 +1044,8 @@ class ErpController extends Controller
             ->map(function ($row) {
                 $published = (int) $row->published_count;
                 $passed = (int) $row->passed_count;
+                $failed = (int) $row->failed_count;
+                $graded = $passed + $failed;
 
                 return [
                     'course' => trim(($row->code ? $row->code.' - ' : '').($row->name ?? 'No course')),
@@ -1038,8 +1053,8 @@ class ErpController extends Controller
                     'average' => is_null($row->average_mark) ? null : round((float) $row->average_mark, 1),
                     'published' => $published,
                     'passed' => $passed,
-                    'failed' => (int) $row->failed_count,
-                    'pass_rate' => $published > 0 ? round(($passed / $published) * 100, 1) : null,
+                    'failed' => $failed,
+                    'pass_rate' => $graded > 0 ? round(($passed / $graded) * 100, 1) : null,
                 ];
             })
             ->values();
@@ -1112,20 +1127,38 @@ class ErpController extends Controller
             ->orWhere('submission_status', '!=', 'draft');
     }
 
+    /**
+     * SQL fragment for "this mark has a real, computed final mark" — i.e. both a prefinal
+     * mark and a final-exam trial were entered. A mark can be approved/published with
+     * neither (final_mark defaults to 0 per Mark::recalculateFinalMark()), and that 0 must
+     * not be treated as a genuine failing score.
+     */
+    private function hasFinalScoreSql(string $prefix = ''): string
+    {
+        // Mirrors Mark::activeFinalExamScore()'s priority: second trial, then first
+        // trial, then the legacy final_exam column (for marks predating the trial
+        // fields) — so this SQL-level check never disagrees with the model method.
+        return "{$prefix}prefinal_mark IS NOT NULL AND ({$prefix}first_trial_final_exam IS NOT NULL OR {$prefix}second_trial_final_exam IS NOT NULL OR {$prefix}final_exam > 0)";
+    }
+
     private function resultPassed(Mark $mark): bool
     {
-        return $this->resultHasMark($mark) && (float) $mark->final_mark >= 50;
+        return $mark->hasCompleteFinalMark() && (float) $mark->final_mark >= 50;
     }
 
     private function resultFailed(Mark $mark): bool
     {
-        return $this->resultHasMark($mark) && (float) $mark->final_mark < 50;
+        return $mark->hasCompleteFinalMark() && (float) $mark->final_mark < 50;
     }
 
     private function resultOutcome(Mark $mark): string
     {
         if (! $this->resultHasMark($mark)) {
             return 'No mark';
+        }
+
+        if (! $mark->hasCompleteFinalMark()) {
+            return 'Incomplete';
         }
 
         return $this->resultPassed($mark) ? 'Passed' : 'Failed';
@@ -2388,11 +2421,13 @@ class ErpController extends Controller
         $limit = 10;
 
         $canSearchStudents = $user->hasRole('super_administrator')
-            || $user->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive']);
+            || $user->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive'])
+            || $user->hasAnyRole(['teacher', 'teaching_assistant', 'examination_administrator', 'examination_committee', 'chief_accountant', 'accountant']);
         $canSearchTeachers = $user->hasRole('super_administrator')
             || $user->hasPermission('teachers.view');
         $canSearchCourses = $user->hasRole('super_administrator')
-            || $user->hasPermission('courses.view');
+            || $user->hasPermission('courses.view')
+            || $user->hasAnyRole(['teacher', 'teaching_assistant', 'examination_administrator', 'examination_committee']);
         $canSearchStructure = $user->hasAnyRole([
             'super_administrator',
             'university_administrator',
@@ -2420,6 +2455,7 @@ class ErpController extends Controller
                             ->orWhere('email', 'like', "%{$query}%")
                             ->orWhere('phone', 'like', "%{$query}%");
                     })
+                    ->tap(fn ($studentQuery) => $this->applyStudentSearchMembershipScope($studentQuery, $user))
                     ->latest()
                     ->limit($limit)
                     ->get();
@@ -2541,11 +2577,13 @@ class ErpController extends Controller
         $items = [];
 
         $canSearchStudents = $user->hasRole('super_administrator')
-            || $user->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive']);
+            || $user->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive'])
+            || $user->hasAnyRole(['teacher', 'teaching_assistant', 'examination_administrator', 'examination_committee', 'chief_accountant', 'accountant']);
         $canSearchTeachers = $user->hasRole('super_administrator')
             || $user->hasPermission('teachers.view');
         $canSearchCourses = $user->hasRole('super_administrator')
-            || $user->hasPermission('courses.view');
+            || $user->hasPermission('courses.view')
+            || $user->hasAnyRole(['teacher', 'teaching_assistant', 'examination_administrator', 'examination_committee']);
         $canSearchStructure = $user->hasAnyRole([
             'super_administrator',
             'university_administrator',
@@ -2556,8 +2594,11 @@ class ErpController extends Controller
         $canSearchUsers = $user->hasRole('super_administrator');
 
         if ($canSearchStudents) {
-            $students = Student::where('full_name', 'like', "%{$query}%")
-                ->orWhere('student_id', 'like', "%{$query}%")
+            $students = Student::where(function ($studentQuery) use ($query) {
+                    $studentQuery->where('full_name', 'like', "%{$query}%")
+                        ->orWhere('student_id', 'like', "%{$query}%");
+                })
+                ->tap(fn ($studentQuery) => $this->applyStudentSearchMembershipScope($studentQuery, $user))
                 ->limit($limit)
                 ->get(['full_name', 'student_id']);
 
@@ -2641,6 +2682,20 @@ class ErpController extends Controller
         return response()->json([
             'items' => collect($items)->take(12)->values(),
         ]);
+    }
+
+    private function applyStudentSearchMembershipScope($query, User $user): void
+    {
+        if ($user->hasRole('teacher')) {
+            $teacherId = Teacher::where('email', $user->email)->value('id');
+            $query->when(
+                $teacherId,
+                fn ($studentQuery, $id) => $studentQuery->whereHas('enrollments', fn ($enrollment) => $enrollment
+                    ->where('status', 'enrolled')
+                    ->whereHas('courseSection', fn ($section) => $section->where('teacher_id', $id))),
+                fn ($studentQuery) => $studentQuery->whereRaw('1 = 0')
+            );
+        }
     }
 
     private function applyCourseSearchMembershipScope($query, User $user): void

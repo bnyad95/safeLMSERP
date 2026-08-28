@@ -100,16 +100,16 @@
                             <div class="flex items-start justify-between gap-4">
                                 <div>
                                     <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $collegeGroup['college'] }}</h4>
-                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ number_format($collegeGroup['count']) }} teachers</p>
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ number_format($collegeGroup['count']) }} {{ Str::plural('teacher', $collegeGroup['count']) }}</p>
                                 </div>
-                                <span class="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm dark:bg-gray-900 dark:text-gray-200">{{ number_format($collegeGroup['active_classes']) }} active classes</span>
+                                <span class="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm dark:bg-gray-900 dark:text-gray-200">{{ number_format($collegeGroup['active_classes']) }} active {{ Str::plural('class', $collegeGroup['active_classes']) }}</span>
                             </div>
                             <div class="mt-4 grid gap-2">
                                 @foreach($collegeGroup['departments'] as $departmentGroup)
                                     <div class="flex items-center justify-between gap-4 rounded-md border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900">
                                         <div>
                                             <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $departmentGroup['department'] }}</p>
-                                            <p class="text-xs text-gray-500 dark:text-gray-400">{{ number_format($departmentGroup['active_classes']) }} active classes</p>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">{{ number_format($departmentGroup['active_classes']) }} active {{ Str::plural('class', $departmentGroup['active_classes']) }}</p>
                                         </div>
                                         <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">{{ number_format($departmentGroup['count']) }}</span>
                                     </div>

@@ -49,6 +49,12 @@ class MarkSubmissionService
                     ]);
                 }
 
+                if (! $mark->hasCompleteFinalMark()) {
+                    throw ValidationException::withMessages([
+                        'mark_ids' => 'A selected mark has no recorded final-exam score and cannot be approved until one is entered.',
+                    ]);
+                }
+
                 $mark->update([
                     'submission_status' => 'approved',
                     'reviewer_notes' => $notes,
@@ -87,6 +93,12 @@ class MarkSubmissionService
             $marks = $this->marksForTransition($markIds, ['approved'], true);
 
             foreach ($marks as $mark) {
+                if (! $mark->hasCompleteFinalMark()) {
+                    throw ValidationException::withMessages([
+                        'mark_ids' => 'A selected mark has no recorded final-exam score and cannot be published until one is entered.',
+                    ]);
+                }
+
                 $mark->update([
                     'visibility_status' => 'published',
                     'published_at' => now(),

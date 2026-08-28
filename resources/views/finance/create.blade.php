@@ -65,7 +65,7 @@
                 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div class="min-w-0">
                         <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student</p>
-                        <p class="mt-1 truncate font-semibold text-gray-900 dark:text-gray-100">{{ $selectedStudent->full_name }}</p>
+                        <p class="mt-1 truncate font-semibold text-gray-900 dark:text-gray-100" title="{{ $selectedStudent->full_name }}">{{ $selectedStudent->full_name }}</p>
                     </div>
                     <div class="min-w-0">
                         <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Student ID</p>
@@ -73,11 +73,11 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">College</p>
-                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200">{{ $selectedStudent->department?->college?->name ?? 'Not assigned' }}</p>
+                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200" title="{{ $selectedStudent->department?->college?->name ?? 'Not assigned' }}">{{ $selectedStudent->department?->college?->name ?? 'Not assigned' }}</p>
                     </div>
                     <div class="min-w-0">
                         <p class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Department</p>
-                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200">{{ $selectedStudent->department?->name ?? 'Not assigned' }}</p>
+                        <p class="mt-1 truncate text-gray-800 dark:text-gray-200" title="{{ $selectedStudent->department?->name ?? 'Not assigned' }}">{{ $selectedStudent->department?->name ?? 'Not assigned' }}</p>
                     </div>
                 </div>
             </section>

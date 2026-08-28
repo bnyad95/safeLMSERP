@@ -181,6 +181,18 @@
                             || $navUser->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
                         $canUserManagement = $isSuper || ($navUser->hasRole('it_support') && $navUser->hasAnyPermission(['users.create', 'users.update', 'users.assign_roles', 'users.reset_password']));
 
+                        $isPlainTeacher = $usesTeachingWorkspace
+                            && ! $canStudents && ! $canTeachers && ! $canEnrollments && ! $canAttendance
+                            && ! $canAssessments && ! $canExams && ! $canMarkQueue && ! $canFinalExamEntry
+                            && ! $canFinance && ! $canDataExchange && ! $canStructure && ! $canAcademicArchive
+                            && ! $canUserManagement && ! $canAnalytics && ! $isSuper;
+
+                        $isPlainExamRole = $navUser->hasAnyRole(['examination_administrator', 'examination_committee'])
+                            && ! $canStudents && ! $canTeachers && ! $canEnrollments && ! $canTimetable && ! $canAttendance
+                            && ! $canClassrooms && ! $canAssessments
+                            && ! $canFinance && ! $canStructure
+                            && ! $canUserManagement && ! $canAnalytics && ! $isSuper;
+
                         $academicSectionActive = request()->routeIs('students.*', 'teachers.*', 'enrollments.*', 'course-sections.show', 'timetables.*', 'timetable-time-slots.*', 'attendance', 'attendance.*');
                         $learningSectionActive = request()->routeIs('teacher-dashboard', 'classrooms.*', 'archived-classes.*', 'assessments.*', 'assessment-items.*', 'assessment-submissions.*', 'exams', 'marks.final-exam.*', 'marks.submission-queue');
                         $financeSectionActive = request()->routeIs('finance', 'finance.students.*', 'finance.transactions.*', 'finance.statement', 'finance.export', 'finance.approvals.*', 'finance.tuition-reminders.*', 'bologna-definition.tuition-rates*');
@@ -189,25 +201,36 @@
                         $systemSectionActive = request()->routeIs('users.*', 'access-matrix', 'activity-log', 'analytics.*');
                     @endphp
 
-                    @if($canStudents || $canTeachers || $canEnrollments || $canTimetable || $canAttendance)
-                        <x-nav-group label="Academic" storage-key="academic" :active="$academicSectionActive">
-                            @if($canStudents)<x-nav-link :href="route('students.index')" :active="request()->routeIs('students.*')">{{ __('Student Records') }}</x-nav-link>@endif
-                            @if($canTeachers)<x-nav-link :href="route('teachers.index')" :active="request()->routeIs('teachers.*')">{{ __('Teachers') }}</x-nav-link>@endif
-                            @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.show')">{{ __('Enrollments') }}</x-nav-link>@endif
-                            @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
-                            @if($canAttendance)<x-nav-link :href="route('attendance')" :active="request()->routeIs('attendance', 'attendance.*')">{{ __('Attendance') }}</x-nav-link>@endif
-                        </x-nav-group>
-                    @endif
+                    @if($isPlainTeacher)
+                        <x-nav-link :href="route('teacher-dashboard')" :active="request()->routeIs('teacher-dashboard', 'classrooms.*')">{{ __('Teaching') }}</x-nav-link>
+                        @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
+                        <x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>
+                    @elseif($isPlainExamRole)
+                        @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
+                        @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ $canReallyEnterFinalExam ? __('Final Exam Entry') : __('Final Exam Corrections') }}</x-nav-link>@endif
+                        @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
+                        @if($canDataExchange)<x-nav-link :href="route('integrations.index')" :active="request()->routeIs('integrations.*')">{{ __('Data Import / Export') }}</x-nav-link>@endif
+                    @else
+                        @if($canStudents || $canTeachers || $canEnrollments || $canTimetable || $canAttendance)
+                            <x-nav-group label="Academic" storage-key="academic" :active="$academicSectionActive">
+                                @if($canStudents)<x-nav-link :href="route('students.index')" :active="request()->routeIs('students.*')">{{ __('Student Records') }}</x-nav-link>@endif
+                                @if($canTeachers)<x-nav-link :href="route('teachers.index')" :active="request()->routeIs('teachers.*')">{{ __('Teachers') }}</x-nav-link>@endif
+                                @if($canEnrollments)<x-nav-link :href="route('enrollments.index')" :active="request()->routeIs('enrollments.*', 'course-sections.show')">{{ __('Enrollments') }}</x-nav-link>@endif
+                                @if($canTimetable)<x-nav-link :href="route('timetables.index')" :active="request()->routeIs('timetables.*', 'timetable-time-slots.*')">{{ __('Timetable') }}</x-nav-link>@endif
+                                @if($canAttendance)<x-nav-link :href="route('attendance')" :active="request()->routeIs('attendance', 'attendance.*')">{{ __('Attendance') }}</x-nav-link>@endif
+                            </x-nav-group>
+                        @endif
 
-                    @if($canClassrooms || $canAssessments || $canExams || $canMarkQueue || $canFinalExamEntry)
-                        <x-nav-group label="Learning & Results" storage-key="learning" :active="$learningSectionActive">
-                            @if($canClassrooms)<x-nav-link :href="$usesTeachingWorkspace ? route('teacher-dashboard') : route('classrooms.index')" :active="request()->routeIs('teacher-dashboard', 'classrooms.*')">{{ $usesTeachingWorkspace ? __('Teaching') : __('Classrooms') }}</x-nav-link>@endif
-                            @if($navUser->hasRole('teacher'))<x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>@endif
-                            @if($canAssessments)<x-nav-link :href="route('assessments.index')" :active="request()->routeIs('assessments.*', 'assessment-items.*', 'assessment-submissions.*')">{{ $assessmentNavLabel }}</x-nav-link>@endif
-                            @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
-                            @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ $canReallyEnterFinalExam ? __('Final Exam Entry') : __('Final Exam Corrections') }}</x-nav-link>@endif
-                            @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
-                        </x-nav-group>
+                        @if($canClassrooms || $canAssessments || $canExams || $canMarkQueue || $canFinalExamEntry)
+                            <x-nav-group label="Learning & Results" storage-key="learning" :active="$learningSectionActive">
+                                @if($canClassrooms)<x-nav-link :href="$usesTeachingWorkspace ? route('teacher-dashboard') : route('classrooms.index')" :active="request()->routeIs('teacher-dashboard', 'classrooms.*')">{{ $usesTeachingWorkspace ? __('Teaching') : __('Classrooms') }}</x-nav-link>@endif
+                                @if($navUser->hasRole('teacher'))<x-nav-link :href="route('archived-classes.index')" :active="request()->routeIs('archived-classes.*')">{{ __('Archived Classes') }}</x-nav-link>@endif
+                                @if($canAssessments)<x-nav-link :href="route('assessments.index')" :active="request()->routeIs('assessments.*', 'assessment-items.*', 'assessment-submissions.*')">{{ $assessmentNavLabel }}</x-nav-link>@endif
+                                @if($canExams)<x-nav-link :href="route('exams')" :active="request()->routeIs('exams')">{{ __('Results Overview') }}</x-nav-link>@endif
+                                @if($canFinalExamEntry)<x-nav-link :href="route('marks.final-exam.index')" :active="request()->routeIs('marks.final-exam.*')">{{ $canReallyEnterFinalExam ? __('Final Exam Entry') : __('Final Exam Corrections') }}</x-nav-link>@endif
+                                @if($canMarkQueue)<x-nav-link :href="route('marks.submission-queue')" :active="request()->routeIs('marks.submission-queue')">{{ __('Mark Queue') }}</x-nav-link>@endif
+                            </x-nav-group>
+                        @endif
                     @endif
 
                     @if($canFinance)
@@ -219,13 +242,13 @@
                         </x-nav-group>
                     @endif
 
-                    @if($canDataExchange)
+                    @if($canDataExchange && ! $isPlainExamRole)
                         <x-nav-group label="Operations" storage-key="operations" :active="$operationsSectionActive">
                             <x-nav-link :href="route('integrations.index')" :active="request()->routeIs('integrations.*')">{{ __('Data Import / Export') }}</x-nav-link>
                         </x-nav-group>
                     @endif
 
-                    @if($canStructure || $canAcademicArchive)
+                    @if(($canStructure || $canAcademicArchive) && ! $isPlainExamRole)
                         <x-nav-group label="Academic Setup" storage-key="setup" :active="$setupSectionActive">
                             @if($canStructure)<x-nav-link :href="route('bologna-definition')" :active="request()->routeIs('bologna-definition*', 'academic-years.*', 'universities.*', 'colleges.*', 'departments.*', 'stages.*', 'semesters.*', 'course-records.*', 'module-offerings.*', 'course-sections.create', 'course-sections.archived', 'course-sections.restore')">{{ __('Bologna Definition') }}</x-nav-link>@endif
                             @if($canStructure)<x-nav-link :href="route('academic-year-closures.index')" :active="request()->routeIs('academic-year-closures.index')">{{ __('Academic Year Closing') }}</x-nav-link>@endif

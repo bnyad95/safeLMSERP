@@ -109,6 +109,17 @@
                 </div>
             </form>
 
+            @if ($permissionGroups->isNotEmpty())
+                <nav class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="Jump to module">
+                    <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Jump to module</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        @foreach ($permissionGroups as $moduleLabel => $groupPermissions)
+                            <a href="#module-{{ Str::slug($moduleLabel) }}" class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">{{ $moduleLabel }}</a>
+                        @endforeach
+                    </div>
+                </nav>
+            @endif
+
             @if ($selectedRoleImpact)
                 <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-labelledby="role-impact-title">
                     <div class="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
@@ -160,7 +171,7 @@
                         @endforeach
 
                         @forelse ($permissionGroups as $moduleLabel => $groupPermissions)
-                            <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                            <section id="module-{{ Str::slug($moduleLabel) }}" class="scroll-mt-24 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                                 <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $moduleLabel }}</h3>
                                     <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ $groupPermissions->count() }} permissions</span>
@@ -210,7 +221,7 @@
                 </div>
 
                 @forelse ($permissionGroups as $moduleLabel => $groupPermissions)
-                    <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <section id="module-{{ Str::slug($moduleLabel) }}" class="scroll-mt-24 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $moduleLabel }}</h3>
                             <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ $groupPermissions->count() }} permissions</span>

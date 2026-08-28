@@ -192,59 +192,63 @@
 
                 <div class="divide-y divide-gray-100">
                     @forelse($readiness['unresolved_students'] as $item)
-                        <div class="space-y-4 px-5 py-5">
-                            <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                    <p class="font-semibold text-gray-900">{{ $item['student']->full_name }}</p>
-                                    <p class="mt-1 text-sm text-gray-500">{{ $item['student']->student_id }} / {{ $item['student']->department->name ?? 'No department' }}</p>
+                        <div class="px-5 py-3" x-data="{ open: false }">
+                            <button type="button" @click="open = ! open" class="flex w-full flex-col gap-1 text-left sm:flex-row sm:items-center sm:justify-between">
+                                <div class="flex items-baseline gap-2">
+                                    <span class="font-semibold text-gray-900">{{ $item['student']->full_name }}</span>
+                                    <span class="text-sm text-gray-500">{{ $item['student']->student_id }} / {{ $item['student']->department->name ?? 'No department' }}</span>
                                 </div>
-                                <div class="text-sm text-red-700">
-                                    @foreach($item['issues'] as $issue)
-                                        <p>{{ $issue }}</p>
-                                    @endforeach
-                                </div>
+                                <span class="text-sm text-red-700">
+                                    {{ $item['issues']->count() }} {{ Str::plural('issue', $item['issues']->count()) }}
+                                    <span class="ml-2 text-xs font-semibold text-blue-700" x-show="! open">Show details</span>
+                                    <span class="ml-2 text-xs font-semibold text-blue-700" x-show="open" x-cloak>Hide details</span>
+                                </span>
+                            </button>
+
+                            <div class="mt-3 space-y-3" x-show="open" x-cloak>
+                                <p class="text-sm text-red-700">{{ $item['issues']->implode(' · ') }}</p>
+
+                                @if($canResolveClosure)
+                                    <div class="grid gap-3 xl:grid-cols-2">
+                                        <form method="POST" action="{{ route('academic-year-closures.students.stage', $item['student']) }}" class="grid gap-2 rounded-md bg-gray-50 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                            @csrf
+                                            @method('PATCH')
+                                            <input type="hidden" name="university_id" value="{{ $selectedUniversity?->id }}">
+                                            <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
+                                            <div>
+                                                <label class="block text-xs font-semibold uppercase text-gray-500">Current Stage</label>
+                                                <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" required>
+                                                    <option value="">Select stage</option>
+                                                    @foreach($item['stage_options'] as $stage)
+                                                        <option value="{{ $stage->id }}" @selected(($item['inferred_stage']?->id ?? null) === $stage->id)>{{ $stage->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100">Assign Stage</button>
+                                        </form>
+
+                                        <form method="POST" action="{{ route('academic-year-closures.exceptions.store') }}" class="grid gap-2 rounded-md bg-amber-50 p-3 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-end">
+                                            @csrf
+                                            <input type="hidden" name="university_id" value="{{ $selectedUniversity?->id }}">
+                                            <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
+                                            <input type="hidden" name="student_id" value="{{ $item['student']->id }}">
+                                            <div>
+                                                <label class="block text-xs font-semibold uppercase text-amber-800">Exception</label>
+                                                <select name="status" class="mt-1 block w-full rounded-md border-amber-300 text-sm shadow-sm" required>
+                                                    <option value="incomplete">Incomplete</option>
+                                                    <option value="deferred">Deferred</option>
+                                                    <option value="withdrawn">Withdrawn</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs font-semibold uppercase text-amber-800">Required Reason</label>
+                                                <input name="reason" minlength="10" maxlength="2000" class="mt-1 block w-full rounded-md border-amber-300 text-sm shadow-sm" placeholder="Document the approved reason" required>
+                                            </div>
+                                            <button class="rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Approve</button>
+                                        </form>
+                                    </div>
+                                @endif
                             </div>
-
-                            @if($canResolveClosure)
-                                <div class="grid gap-4 xl:grid-cols-2">
-                                    <form method="POST" action="{{ route('academic-year-closures.students.stage', $item['student']) }}" class="grid gap-3 rounded-md bg-gray-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                                        @csrf
-                                        @method('PATCH')
-                                        <input type="hidden" name="university_id" value="{{ $selectedUniversity?->id }}">
-                                        <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
-                                        <div>
-                                            <label class="block text-xs font-semibold uppercase text-gray-500">Current Stage</label>
-                                            <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm" required>
-                                                <option value="">Select stage</option>
-                                                @foreach($item['stage_options'] as $stage)
-                                                    <option value="{{ $stage->id }}" @selected(($item['inferred_stage']?->id ?? null) === $stage->id)>{{ $stage->name }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <button class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100">Assign Stage</button>
-                                    </form>
-
-                                    <form method="POST" action="{{ route('academic-year-closures.exceptions.store') }}" class="grid gap-3 rounded-md bg-amber-50 p-4 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-end">
-                                        @csrf
-                                        <input type="hidden" name="university_id" value="{{ $selectedUniversity?->id }}">
-                                        <input type="hidden" name="academic_year" value="{{ $selectedYear }}">
-                                        <input type="hidden" name="student_id" value="{{ $item['student']->id }}">
-                                        <div>
-                                            <label class="block text-xs font-semibold uppercase text-amber-800">Exception</label>
-                                            <select name="status" class="mt-1 block w-full rounded-md border-amber-300 text-sm shadow-sm" required>
-                                                <option value="incomplete">Incomplete</option>
-                                                <option value="deferred">Deferred</option>
-                                                <option value="withdrawn">Withdrawn</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label class="block text-xs font-semibold uppercase text-amber-800">Required Reason</label>
-                                            <input name="reason" minlength="10" maxlength="2000" class="mt-1 block w-full rounded-md border-amber-300 text-sm shadow-sm" placeholder="Document the approved reason" required>
-                                        </div>
-                                        <button class="rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Approve</button>
-                                    </form>
-                                </div>
-                            @endif
                         </div>
                     @empty
                         <div class="px-5 py-8 text-center text-sm font-semibold text-emerald-700">Every enrolled student has a valid progression path or approved exception.</div>

@@ -79,13 +79,13 @@
                         <details class="group" @if($classificationGroups->count() === 1) open @endif>
                             <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $collegeGroup['college'] }}</span>
-                                <span class="text-sm text-gray-500 dark:text-gray-400">{{ $collegeGroup['count'] }} courses / {{ $collegeGroup['open_sections'] }} open modules</span>
+                                <span class="text-sm text-gray-500 dark:text-gray-400">{{ $collegeGroup['count'] }} {{ Str::plural('course', $collegeGroup['count']) }} / {{ $collegeGroup['open_sections'] }} open {{ Str::plural('module', $collegeGroup['open_sections']) }}</span>
                             </summary>
                             <div class="border-t border-gray-100 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-950">
                                 @foreach($collegeGroup['departments'] as $departmentGroup)
                                     <div class="flex flex-col gap-1 border-b border-gray-200 py-3 last:border-0 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
                                         <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $departmentGroup['department'] }}</p>
-                                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ $departmentGroup['count'] }} courses / {{ $departmentGroup['open_sections'] }} open modules</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ $departmentGroup['count'] }} {{ Str::plural('course', $departmentGroup['count']) }} / {{ $departmentGroup['open_sections'] }} open {{ Str::plural('module', $departmentGroup['open_sections']) }}</p>
                                     </div>
                                 @endforeach
                             </div>

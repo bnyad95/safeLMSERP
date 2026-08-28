@@ -1264,6 +1264,9 @@ class ErpPagesTest extends TestCase
             'student_id' => $highest->id,
             'course_id' => $course->id,
             'course_section_id' => $section->id,
+            'prefinal_mark' => 45,
+            'first_trial_final_exam' => 46,
+            'final_exam' => 46,
             'final_mark' => 91,
             'submission_status' => 'approved',
             'visibility_status' => 'published',
@@ -1273,6 +1276,9 @@ class ErpPagesTest extends TestCase
             'student_id' => $ready->id,
             'course_id' => $course->id,
             'course_section_id' => $section->id,
+            'prefinal_mark' => 35,
+            'first_trial_final_exam' => 38,
+            'final_exam' => 38,
             'final_mark' => 73,
             'submission_status' => 'approved',
             'visibility_status' => 'draft',
@@ -1281,6 +1287,9 @@ class ErpPagesTest extends TestCase
             'student_id' => $lowest->id,
             'course_id' => $course->id,
             'course_section_id' => $section->id,
+            'prefinal_mark' => 20,
+            'first_trial_final_exam' => 21,
+            'final_exam' => 21,
             'final_mark' => 41,
             'submission_status' => 'approved',
             'visibility_status' => 'published',
@@ -1321,5 +1330,110 @@ class ErpPagesTest extends TestCase
         $this->assertStringContainsString('Lowest Mark Student', $csv);
         $this->assertStringContainsString('Failed', $csv);
         $this->assertStringNotContainsString('Highest Mark Student', $csv);
+    }
+
+    public function test_results_overview_does_not_count_published_marks_missing_a_final_exam_as_failed(): void
+    {
+        $user = $this->makeSuperAdmin();
+        $university = University::create(['name' => 'BND University', 'code' => 'BND']);
+        $college = College::create(['university_id' => $university->id, 'name' => 'Engineering', 'code' => 'ENG']);
+        $department = Department::create(['university_id' => $university->id, 'college_id' => $college->id, 'name' => 'Software Engineering', 'code' => 'SWE']);
+        $semester = Semester::create(['university_id' => $university->id, 'name' => 'Fall', 'academic_year' => '2026/2027']);
+        $teacher = Teacher::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'staff_id' => 'T-902',
+            'full_name' => 'Dr. Incomplete Check',
+            'email' => 'incomplete.teacher@example.com',
+            'status' => 'Active',
+        ]);
+        $course = Course::create(['department_id' => $department->id, 'code' => 'SWE403', 'name' => 'Incomplete Results', 'credits' => 3, 'status' => 'active']);
+        $section = CourseSection::create([
+            'course_id' => $course->id,
+            'semester_id' => $semester->id,
+            'teacher_id' => $teacher->id,
+            'section_code' => 'A',
+            'grade_level' => 'Stage 4',
+            'capacity' => 40,
+            'status' => 'active',
+        ]);
+
+        $noShow = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'student_id' => 'SWE-9201',
+            'full_name' => 'No Show Student',
+            'email' => 'noshow@example.com',
+            'status' => 'Active',
+        ]);
+        $realFail = Student::create([
+            'university_id' => $university->id,
+            'department_id' => $department->id,
+            'student_id' => 'SWE-9202',
+            'full_name' => 'Genuine Fail Student',
+            'email' => 'genuinefail@example.com',
+            'status' => 'Active',
+        ]);
+
+        foreach ([$noShow, $realFail] as $student) {
+            Enrollment::create([
+                'student_id' => $student->id,
+                'course_section_id' => $section->id,
+                'status' => 'enrolled',
+                'enrolled_at' => now(),
+            ]);
+        }
+
+        // Approved and published, but the final exam was never entered: final_mark
+        // defaults to 0 via Mark::recalculateFinalMark(), and must not be treated
+        // as a genuine failing score.
+        Mark::create([
+            'student_id' => $noShow->id,
+            'course_id' => $course->id,
+            'course_section_id' => $section->id,
+            'prefinal_mark' => 40,
+            'final_mark' => 0,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        // A genuine, complete failing mark: both halves entered, final mark below 50.
+        Mark::create([
+            'student_id' => $realFail->id,
+            'course_id' => $course->id,
+            'course_section_id' => $section->id,
+            'prefinal_mark' => 20,
+            'first_trial_final_exam' => 10,
+            'final_exam' => 10,
+            'final_mark' => 30,
+            'submission_status' => 'approved',
+            'visibility_status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        $query = [
+            'college_id' => $college->id,
+            'department_id' => $department->id,
+            'stage' => 'Stage 4',
+            'semester_id' => $semester->id,
+            'course_id' => $course->id,
+            'teacher_id' => $teacher->id,
+        ];
+
+        $response = $this->actingAs($user)->get(route('exams', $query));
+        $response->assertOk()
+            ->assertSee('Incomplete')
+            ->assertSee('Published, No Final Exam');
+
+        // Only the genuine fail counts toward Failed / Avg Published Mark, so the
+        // average must be the real score (30.0), not dragged down by the phantom 0.
+        $response->assertSee('30.0');
+
+        $this->actingAs($user)
+            ->get(route('exams', $query + ['result_status' => 'failed']))
+            ->assertOk()
+            ->assertSee('Genuine Fail Student')
+            ->assertDontSee('No Show Student');
     }
 }

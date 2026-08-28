@@ -30,6 +30,11 @@ class Mark extends Model
             || $this->submission_status !== 'draft';
     }
 
+    public function hasCompleteFinalMark(): bool
+    {
+        return ! is_null($this->prefinal_mark) && ! is_null($this->activeFinalExamScore());
+    }
+
     public function activeFinalExamScore(): ?float
     {
         if (! is_null($this->second_trial_final_exam)) {

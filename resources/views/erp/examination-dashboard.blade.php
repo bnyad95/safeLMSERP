@@ -3,7 +3,7 @@
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <p class="text-sm font-medium text-gray-500">Learning &amp; Results</p>
-                <h2 class="mt-1 text-2xl font-semibold text-gray-900">Examination Committee Dashboard</h2>
+                <h2 class="mt-1 text-2xl font-semibold text-gray-900">{{ $canPublish ? 'Examination Administrator Dashboard' : 'Examination Committee Dashboard' }}</h2>
                 <p class="mt-2 max-w-3xl text-sm text-gray-600">
                     Review submitted marks, request corrections, approve valid results, and track what is waiting for publication.
                 </p>
