@@ -2,15 +2,15 @@
     <x-slot name="header">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">User Management</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Manage accounts, roles, organization scope, password resets, and archived users.</p>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('User Management') }}</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">{{ __('Manage accounts, roles, organization scope, password resets, and archived users.') }}</p>
             </div>
             <div class="flex flex-col gap-2 sm:flex-row">
                 @if($abilities['archive'])
-                    <a href="{{ route('users.archived') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">Archived Users</a>
+                    <a href="{{ route('users.archived') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Archived Users') }}</a>
                 @endif
                 @if($abilities['create'])
-                    <a href="{{ route('users.create') }}" class="inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">Add User</a>
+                    <a href="{{ route('users.create') }}" class="inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">{{ __('Add User') }}</a>
                 @endif
             </div>
         </div>
