@@ -2,11 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-xl font-semibold text-gray-800">Global Search</h2>
-                <p class="text-sm text-gray-600">Find students, teachers, courses, users, and master data from one place.</p>
+                <h2 class="text-xl font-semibold text-gray-800">{{ __('Global Search') }}</h2>
+                <p class="text-sm text-gray-600">{{ __('Find students, teachers, courses, users, and master data from one place.') }}</p>
             </div>
             <a href="{{ route('dashboard') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Back to Dashboard
+                {{ __('Back to Dashboard') }}
             </a>
         </div>
     </x-slot>
@@ -19,34 +19,34 @@
                         type="text"
                         name="q"
                         value="{{ $query }}"
-                        placeholder="Search by name, email, code, id..."
+                        placeholder="{{ __('Search by name, email, code, id...') }}"
                         class="w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
                     />
                     <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black">
-                        Search
+                        {{ __('Search') }}
                     </button>
                 </form>
 
                 @if ($query === '')
                     <p class="mt-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                        Enter a keyword to search across ERP modules.
+                        {{ __('Enter a keyword to search across ERP modules.') }}
                     </p>
                 @else
                     <p class="mt-4 text-sm text-gray-600">
-                        Showing up to 10 records per module for <span class="font-semibold text-gray-900">"{{ $query }}"</span>. Found <span class="font-semibold text-gray-900">{{ $totalResults }}</span> results.
+                        {{ __('Showing up to 10 records per module for ":query". Found :count results.', ['query' => $query, 'count' => $totalResults]) }}
                     </p>
                 @endif
             </div>
 
             @if ($query !== '' && $totalResults === 0)
                 <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-                    No records found in modules you can access.
+                    {{ __('No records found in modules you can access.') }}
                 </div>
             @endif
 
             @if ($query !== '' && $canSearchStudents)
                 <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h3 class="text-lg font-semibold text-gray-900">Students</h3>
+                    <h3 class="text-lg font-semibold text-gray-900">{{ __('Students') }}</h3>
                     <div class="mt-4 space-y-2">
                         @forelse ($students as $student)
                             <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -55,10 +55,10 @@
                                 @if ($student->email)
                                     <span class="text-gray-500">• {{ $student->email }}</span>
                                 @endif
-                                <span class="text-gray-500">• {{ $student->department->name ?? 'No department' }}</span>
+                                <span class="text-gray-500">• {{ $student->department->name ?? __('No department') }}</span>
                             </div>
                         @empty
-                            <p class="text-sm text-gray-500">No student matches.</p>
+                            <p class="text-sm text-gray-500">{{ __('No student matches.') }}</p>
                         @endforelse
                     </div>
                 </div>
@@ -66,7 +66,7 @@
 
             @if ($query !== '' && $canSearchTeachers)
                 <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h3 class="text-lg font-semibold text-gray-900">Teachers</h3>
+                    <h3 class="text-lg font-semibold text-gray-900">{{ __('Teachers') }}</h3>
                     <div class="mt-4 space-y-2">
                         @forelse ($teachers as $teacher)
                             <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -80,7 +80,7 @@
                                 @endif
                             </div>
                         @empty
-                            <p class="text-sm text-gray-500">No teacher matches.</p>
+                            <p class="text-sm text-gray-500">{{ __('No teacher matches.') }}</p>
                         @endforelse
                     </div>
                 </div>
@@ -88,16 +88,16 @@
 
             @if ($query !== '' && $canSearchCourses)
                 <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h3 class="text-lg font-semibold text-gray-900">Courses</h3>
+                    <h3 class="text-lg font-semibold text-gray-900">{{ __('Courses') }}</h3>
                     <div class="mt-4 space-y-2">
                         @forelse ($courses as $course)
                             <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
                                 <span class="font-medium text-gray-900">{{ $course->name }}</span>
                                 <span class="text-gray-500">• {{ $course->code }}</span>
-                                <span class="text-gray-500">• {{ $course->department->name ?? 'No department' }}</span>
+                                <span class="text-gray-500">• {{ $course->department->name ?? __('No department') }}</span>
                             </div>
                         @empty
-                            <p class="text-sm text-gray-500">No course matches.</p>
+                            <p class="text-sm text-gray-500">{{ __('No course matches.') }}</p>
                         @endforelse
                     </div>
                 </div>
@@ -106,7 +106,7 @@
             @if ($query !== '' && $canSearchStructure)
                 <div class="grid gap-6 lg:grid-cols-2">
                     <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-900">Universities</h3>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ __('Universities') }}</h3>
                         <div class="mt-4 space-y-2">
                             @forelse ($universities as $university)
                                 <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -114,13 +114,13 @@
                                     <span class="text-gray-500">• {{ $university->code }}</span>
                                 </div>
                             @empty
-                                <p class="text-sm text-gray-500">No university matches.</p>
+                                <p class="text-sm text-gray-500">{{ __('No university matches.') }}</p>
                             @endforelse
                         </div>
                     </div>
 
                     <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-900">Colleges</h3>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ __('Colleges') }}</h3>
                         <div class="mt-4 space-y-2">
                             @forelse ($colleges as $college)
                                 <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -128,16 +128,16 @@
                                     @if ($college->code)
                                         <span class="text-gray-500">• {{ $college->code }}</span>
                                     @endif
-                                    <span class="text-gray-500">• {{ $college->university->name ?? 'N/A' }}</span>
+                                    <span class="text-gray-500">• {{ $college->university->name ?? __('N/A') }}</span>
                                 </div>
                             @empty
-                                <p class="text-sm text-gray-500">No college matches.</p>
+                                <p class="text-sm text-gray-500">{{ __('No college matches.') }}</p>
                             @endforelse
                         </div>
                     </div>
 
                     <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-900">Departments</h3>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ __('Departments') }}</h3>
                         <div class="mt-4 space-y-2">
                             @forelse ($departments as $department)
                                 <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -145,25 +145,25 @@
                                     @if ($department->code)
                                         <span class="text-gray-500">• {{ $department->code }}</span>
                                     @endif
-                                    <span class="text-gray-500">• {{ $department->university->name ?? 'N/A' }}</span>
+                                    <span class="text-gray-500">• {{ $department->university->name ?? __('N/A') }}</span>
                                 </div>
                             @empty
-                                <p class="text-sm text-gray-500">No department matches.</p>
+                                <p class="text-sm text-gray-500">{{ __('No department matches.') }}</p>
                             @endforelse
                         </div>
                     </div>
 
                     <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                        <h3 class="text-lg font-semibold text-gray-900">Semesters</h3>
+                        <h3 class="text-lg font-semibold text-gray-900">{{ __('Semesters') }}</h3>
                         <div class="mt-4 space-y-2">
                             @forelse ($semesters as $semester)
                                 <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
                                     <span class="font-medium text-gray-900">{{ $semester->name }}</span>
                                     <span class="text-gray-500">• {{ $semester->academic_year }}</span>
-                                    <span class="text-gray-500">• {{ $semester->university->name ?? 'N/A' }}</span>
+                                    <span class="text-gray-500">• {{ $semester->university->name ?? __('N/A') }}</span>
                                 </div>
                             @empty
-                                <p class="text-sm text-gray-500">No semester matches.</p>
+                                <p class="text-sm text-gray-500">{{ __('No semester matches.') }}</p>
                             @endforelse
                         </div>
                     </div>
@@ -172,7 +172,7 @@
 
             @if ($query !== '' && $canSearchUsers)
                 <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h3 class="text-lg font-semibold text-gray-900">Users</h3>
+                    <h3 class="text-lg font-semibold text-gray-900">{{ __('Users') }}</h3>
                     <div class="mt-4 space-y-2">
                         @forelse ($users as $user)
                             <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
@@ -180,7 +180,7 @@
                                 <span class="text-gray-500">• {{ $user->email }}</span>
                             </div>
                         @empty
-                            <p class="text-sm text-gray-500">No user matches.</p>
+                            <p class="text-sm text-gray-500">{{ __('No user matches.') }}</p>
                         @endforelse
                     </div>
                 </div>

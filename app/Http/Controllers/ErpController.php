@@ -255,14 +255,14 @@ class ErpController extends Controller
     {
         $students = Student::with('department')->latest()->take(8)->get();
 
-        return $this->modulePage('Student Management', 'Track admissions, registrations, and student academic status.', [
-            ['label' => 'Active students', 'value' => number_format(Student::where('status', 'Active')->count())],
-            ['label' => 'New admissions', 'value' => number_format(Student::count())],
-            ['label' => 'Graduated', 'value' => '0'],
+        return $this->modulePage(__('Student Management'), __('Track admissions, registrations, and student academic status.'), [
+            ['label' => __('Active students'), 'value' => number_format(Student::where('status', 'Active')->count())],
+            ['label' => __('New admissions'), 'value' => number_format(Student::count())],
+            ['label' => __('Graduated'), 'value' => '0'],
         ], $students->map(function ($student) {
             return [
                 'title' => $student->full_name,
-                'meta' => $student->student_id.' • '.($student->department->name ?? 'No department').' • '.$student->status,
+                'meta' => $student->student_id.' • '.($student->department->name ?? __('No department')).' • '.$student->status,
             ];
         })->all());
     }
@@ -271,14 +271,14 @@ class ErpController extends Controller
     {
         $teachers = Teacher::with('department')->latest()->take(8)->get();
 
-        return $this->modulePage('Teacher & Staff Management', 'Coordinate teacher profiles, teaching loads, and leave requests.', [
-            ['label' => 'Active teachers', 'value' => number_format(Teacher::where('status', 'Active')->count())],
-            ['label' => 'Pending leave', 'value' => '0'],
-            ['label' => 'Courses assigned', 'value' => number_format(Course::count())],
+        return $this->modulePage(__('Teacher & Staff Management'), __('Coordinate teacher profiles, teaching loads, and leave requests.'), [
+            ['label' => __('Active teachers'), 'value' => number_format(Teacher::where('status', 'Active')->count())],
+            ['label' => __('Pending leave'), 'value' => '0'],
+            ['label' => __('Courses assigned'), 'value' => number_format(Course::count())],
         ], $teachers->map(function ($teacher) {
             return [
                 'title' => $teacher->full_name,
-                'meta' => $teacher->title.' • '.($teacher->department->name ?? 'No department'),
+                'meta' => $teacher->title.' • '.($teacher->department->name ?? __('No department')),
             ];
         })->all());
     }
@@ -1187,31 +1187,31 @@ class ErpController extends Controller
         $estimatedPayroll = $activeTeachers * 1200000;
 
         return view('erp.operations', [
-            'title' => 'Accounting & Finance',
-            'description' => 'Monitor tuition estimates, fee collection tasks, payroll exposure, and finance approvals.',
-            'badge' => 'Finance workspace',
+            'title' => __('Accounting & Finance'),
+            'description' => __('Monitor tuition estimates, fee collection tasks, payroll exposure, and finance approvals.'),
+            'badge' => __('Finance workspace'),
             'stats' => [
-                ['label' => 'Active Fee Accounts', 'value' => number_format($activeStudents), 'detail' => 'Active students'],
-                ['label' => 'Estimated Tuition', 'value' => number_format($estimatedTuition).' IQD', 'detail' => 'Based on active enrollment'],
-                ['label' => 'Payroll Exposure', 'value' => number_format($estimatedPayroll).' IQD', 'detail' => 'Estimated monthly staff payroll'],
-                ['label' => 'Approval Queues', 'value' => '0', 'detail' => 'No finance records table yet'],
+                ['label' => __('Active Fee Accounts'), 'value' => number_format($activeStudents), 'detail' => __('Active students')],
+                ['label' => __('Estimated Tuition'), 'value' => number_format($estimatedTuition).' IQD', 'detail' => __('Based on active enrollment')],
+                ['label' => __('Payroll Exposure'), 'value' => number_format($estimatedPayroll).' IQD', 'detail' => __('Estimated monthly staff payroll')],
+                ['label' => __('Approval Queues'), 'value' => '0', 'detail' => __('No finance records table yet')],
             ],
             'actions' => collect([
-                ['label' => 'Review Students', 'route' => 'students.index', 'style' => 'primary', 'can' => auth()->user()?->hasRole('super_administrator') || auth()->user()?->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive'])],
-                ['label' => 'Review Teachers', 'route' => 'teachers.index', 'style' => 'secondary', 'can' => auth()->user()?->hasRole('super_administrator') || auth()->user()?->hasPermission('teachers.view')],
+                ['label' => __('Review Students'), 'route' => 'students.index', 'style' => 'primary', 'can' => auth()->user()?->hasRole('super_administrator') || auth()->user()?->hasAnyPermission(['students.view', 'students.create', 'students.update', 'students.archive'])],
+                ['label' => __('Review Teachers'), 'route' => 'teachers.index', 'style' => 'secondary', 'can' => auth()->user()?->hasRole('super_administrator') || auth()->user()?->hasPermission('teachers.view')],
             ])->where('can')->values()->all(),
-            'itemsTitle' => 'Finance Controls',
+            'itemsTitle' => __('Finance Controls'),
             'items' => collect([
-                ['title' => 'Tuition ledger', 'meta' => 'Use active student records as the current fee base.', 'status' => 'Ready'],
-                ['title' => 'Payroll planning', 'meta' => 'Use active teacher records for monthly payroll estimates.', 'status' => 'Ready'],
-                ['title' => 'Invoices and payments', 'meta' => 'Dedicated finance transaction tables can be added next.', 'status' => 'Planned'],
+                ['title' => __('Tuition ledger'), 'meta' => __('Use active student records as the current fee base.'), 'status' => __('Ready')],
+                ['title' => __('Payroll planning'), 'meta' => __('Use active teacher records for monthly payroll estimates.'), 'status' => __('Ready')],
+                ['title' => __('Invoices and payments'), 'meta' => __('Dedicated finance transaction tables can be added next.'), 'status' => __('Planned')],
             ]),
-            'emptyText' => 'No finance controls are configured.',
-            'workflowTitle' => 'Finance Workflow',
+            'emptyText' => __('No finance controls are configured.'),
+            'workflowTitle' => __('Finance Workflow'),
             'workflow' => [
-                ['label' => 'Invoice', 'description' => 'Create tuition and service invoices from student records.'],
-                ['label' => 'Collect', 'description' => 'Record payments, discounts, scholarships, and refunds.'],
-                ['label' => 'Approve', 'description' => 'Review expenses and payment adjustments before reporting.'],
+                ['label' => __('Invoice'), 'description' => __('Create tuition and service invoices from student records.')],
+                ['label' => __('Collect'), 'description' => __('Record payments, discounts, scholarships, and refunds.')],
+                ['label' => __('Approve'), 'description' => __('Review expenses and payment adjustments before reporting.')],
             ],
         ]);
 
@@ -1465,12 +1465,12 @@ class ErpController extends Controller
         $dueTodayAssessments = collect();
         $unreadMessages = collect();
         $attendanceSummary = [
-            'value' => 'No records',
-            'detail' => 'Attendance has not been recorded yet',
+            'value' => __('No records'),
+            'detail' => __('Attendance has not been recorded yet'),
         ];
         $financeSummary = [
-            'value' => 'No balance',
-            'detail' => 'No unpaid tuition charges',
+            'value' => __('No balance'),
+            'detail' => __('No unpaid tuition charges'),
         ];
 
         if ($student) {
@@ -1564,7 +1564,7 @@ class ErpController extends Controller
 
                 $attendanceSummary = [
                     'value' => number_format($rate, 1).'%',
-                    'detail' => $absences.' absent / '.$attendanceRecords->count().' records',
+                    'detail' => __(':absences absent / :total records', ['absences' => $absences, 'total' => $attendanceRecords->count()]),
                 ];
             }
 
@@ -1572,11 +1572,11 @@ class ErpController extends Controller
         }
 
         $stats = $student ? [
-            ['label' => 'Published Results', 'value' => number_format($publishedResultsCount)],
-            ['label' => 'Average Final Mark', 'value' => $publishedResultsCount > 0 ? number_format((float) $averageFinalMark, 2) : 'N/A'],
-            ['label' => 'Enrolled Classes', 'value' => number_format($enrolledSections->count())],
-            ['label' => 'Attendance Status', 'value' => $attendanceSummary['value'], 'detail' => $attendanceSummary['detail']],
-            ['label' => 'Finance Balance', 'value' => $financeSummary['value'], 'detail' => $financeSummary['detail']],
+            ['label' => __('Published Results'), 'value' => number_format($publishedResultsCount)],
+            ['label' => __('Average Final Mark'), 'value' => $publishedResultsCount > 0 ? number_format((float) $averageFinalMark, 2) : __('N/A')],
+            ['label' => __('Enrolled Classes'), 'value' => number_format($enrolledSections->count())],
+            ['label' => __('Attendance Status'), 'value' => $attendanceSummary['value'], 'detail' => $attendanceSummary['detail']],
+            ['label' => __('Finance Balance'), 'value' => $financeSummary['value'], 'detail' => $financeSummary['detail']],
         ] : [];
 
         return view('erp.student-portal', compact(
@@ -1623,8 +1623,8 @@ class ErpController extends Controller
 
         if ($balances->isEmpty()) {
             return [
-                'value' => 'No balance',
-                'detail' => $nextDue ? 'Next due '.$nextDue->due_date->format('M j, Y') : 'No unpaid tuition charges',
+                'value' => __('No balance'),
+                'detail' => $nextDue ? __('Next due :date', ['date' => $nextDue->due_date->format('M j, Y')]) : __('No unpaid tuition charges'),
             ];
         }
 
@@ -1635,7 +1635,7 @@ class ErpController extends Controller
 
         return [
             'value' => $value,
-            'detail' => $nextDue ? 'Next due '.$nextDue->due_date->format('M j, Y') : 'No due date set',
+            'detail' => $nextDue ? __('Next due :date', ['date' => $nextDue->due_date->format('M j, Y')]) : __('No due date set'),
         ];
     }
 
@@ -1684,12 +1684,12 @@ class ErpController extends Controller
         $missingTuitionRateCount = max(0, ($departmentCount * $academicYearCount * 2) - $tuitionRateCount);
 
         $structureStats = [
-            ['label' => 'Universities', 'value' => number_format($universityCount), 'detail' => 'Institution records in scope'],
-            ['label' => 'Colleges', 'value' => number_format($collegeCount), 'detail' => 'College definitions'],
-            ['label' => 'Departments', 'value' => number_format($departmentCount), 'detail' => 'Academic departments'],
-            ['label' => 'Semesters', 'value' => number_format($semesterCount), 'detail' => 'Academic periods'],
-            ['label' => 'Course Catalog', 'value' => number_format($courseCount), 'detail' => 'Catalog definitions'],
-            ['label' => 'Modules', 'value' => number_format($moduleCount), 'detail' => 'Course sections by stage'],
+            ['label' => __('Universities'), 'value' => number_format($universityCount), 'detail' => __('Institution records in scope')],
+            ['label' => __('Colleges'), 'value' => number_format($collegeCount), 'detail' => __('College definitions')],
+            ['label' => __('Departments'), 'value' => number_format($departmentCount), 'detail' => __('Academic departments')],
+            ['label' => __('Semesters'), 'value' => number_format($semesterCount), 'detail' => __('Academic periods')],
+            ['label' => __('Course Catalog'), 'value' => number_format($courseCount), 'detail' => __('Catalog definitions')],
+            ['label' => __('Modules'), 'value' => number_format($moduleCount), 'detail' => __('Course sections by stage')],
         ];
 
         $activeEnrollmentCounts = Enrollment::query()
@@ -1757,7 +1757,7 @@ class ErpController extends Controller
                 'university' => $stage->university,
                 'college' => $stage->college,
                 'department' => $stage->department,
-                'stage' => $stage->stage,
+                'stage' => $stage->stage === 'Stage not specified' ? __('Stage not specified') : $stage->stage,
                 'modules' => (int) $stage->modules,
                 'courses' => (int) $stage->courses,
                 'semesters' => (int) $stage->semesters,
@@ -1769,11 +1769,11 @@ class ErpController extends Controller
             ->limit(12)
             ->get()
             ->map(fn (CourseSection $section) => [
-                'module' => trim(($section->course?->code ?? 'Course').' '.$section->section_code),
-                'course' => $section->course?->name ?? 'No course',
-                'stage' => $section->stage?->name ?? ($section->grade_level ?: 'Stage not specified'),
-                'semester' => trim(($section->semester?->name ?? 'No semester').' '.($section->semester?->academic_year ?? '')),
-                'teacher' => $section->teacher?->full_name ?? 'Unassigned teacher',
+                'module' => trim(($section->course?->code ?? __('Course')).' '.$section->section_code),
+                'course' => $section->course?->name ?? __('No course'),
+                'stage' => $section->stage?->name ?? ($section->grade_level ?: __('Stage not specified')),
+                'semester' => trim(($section->semester?->name ?? __('No semester')).' '.($section->semester?->academic_year ?? '')),
+                'teacher' => $section->teacher?->full_name ?? __('No teacher assigned'),
                 'students' => $section->active_enrollments_count,
                 'credits' => $section->course?->credits ?? 0,
             ]);
@@ -1828,47 +1828,47 @@ class ErpController extends Controller
 
         $curriculumSignals = collect([
             [
-                'label' => 'Institution semester rule mismatch',
+                'label' => __('Institution semester rule mismatch'),
                 'value' => $institutionSemesterRuleViolations,
-                'detail' => 'Each academic year must match its institution semester target; one optional summer semester is allowed.',
+                'detail' => __('Each academic year must match its institution semester target; one optional summer semester is allowed.'),
             ],
             [
-                'label' => 'Institution stage rule mismatch',
+                'label' => __('Institution stage rule mismatch'),
                 'value' => $institutionStageRuleViolations,
-                'detail' => 'Departments must define the number of program stages configured for their institution.',
+                'detail' => __('Departments must define the number of program stages configured for their institution.'),
             ],
             [
-                'label' => 'Missing stage',
+                'label' => __('Missing stage'),
                 'value' => (clone $sectionsQuery)
                     ->reorder()
                     ->whereNull('stage_id')
                     ->count(),
-                'detail' => 'Modules should be assigned to a stage.',
+                'detail' => __('Modules should be assigned to a stage.'),
             ],
             [
-                'label' => 'Missing semester',
+                'label' => __('Missing semester'),
                 'value' => (clone $sectionsQuery)->reorder()->whereNull('semester_id')->count(),
-                'detail' => 'Modules should be attached to an academic period.',
+                'detail' => __('Modules should be attached to an academic period.'),
             ],
             [
-                'label' => 'Unassigned teacher',
+                'label' => __('Unassigned teacher'),
                 'value' => (clone $sectionsQuery)->reorder()->whereNull('teacher_id')->count(),
-                'detail' => 'Every active module should have an instructor.',
+                'detail' => __('Every active module should have an instructor.'),
             ],
             [
-                'label' => 'Inactive courses',
+                'label' => __('Inactive courses'),
                 'value' => $inactiveCourseCount,
-                'detail' => 'Review inactive catalog definitions.',
+                'detail' => __('Review inactive catalog definitions.'),
             ],
             [
-                'label' => 'Missing credit policy',
+                'label' => __('Missing credit policy'),
                 'value' => $missingCreditPolicyCount,
-                'detail' => 'Every institution should define semester, progression, and graduation credit requirements.',
+                'detail' => __('Every institution should define semester, progression, and graduation credit requirements.'),
             ],
             [
-                'label' => 'Missing tuition rate',
+                'label' => __('Missing tuition rate'),
                 'value' => $missingTuitionRateCount,
-                'detail' => 'Every department should have a per-credit tuition rate defined per academic year and currency before charges can be generated.',
+                'detail' => __('Every department should have a per-credit tuition rate defined per academic year and currency before charges can be generated.'),
             ],
         ]);
         $canManageAcademicSetup = $user->hasAnyRole(['super_administrator', 'administrator'])
@@ -1881,16 +1881,16 @@ class ErpController extends Controller
             || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
 
         $setupCards = [
-            ['title' => 'Universities', 'description' => 'Institution records and official codes.', 'route' => route('universities.index'), 'count' => $universityCount, 'enabled' => true],
-            ['title' => 'Colleges', 'description' => 'College definitions under each university.', 'route' => route('colleges.index'), 'count' => $collegeCount, 'enabled' => true],
-            ['title' => 'Departments', 'description' => 'Departments mapped to colleges and universities.', 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
-            ['title' => 'Stages', 'description' => 'Reusable study stages defined for each department.', 'route' => route('stages.index'), 'count' => $stageCount, 'enabled' => true],
-            ['title' => 'Semester Credit Policy', 'description' => 'Review semester ECTS/credits and passing credits required.', 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => true],
-            ['title' => 'Course Catalog', 'description' => 'Catalog definitions, credits, and status.', 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
-            ['title' => 'Academic Years', 'description' => 'Manage upcoming, active, closed, and archived academic periods.', 'route' => route('academic-years.index'), 'count' => $academicYearCount, 'enabled' => true],
-            ['title' => 'Tuition Rates', 'description' => 'Set each department\'s per-credit rate for a new academic year before activating it.', 'route' => route('bologna-definition.tuition-rates'), 'count' => $tuitionRateCount, 'enabled' => true],
-            ['title' => 'Semesters', 'description' => 'Define regular and optional summer periods inside each academic year.', 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
-            ['title' => 'Module Offerings', 'description' => 'Open catalog courses by academic year, semester, stage, group, and teacher.', 'route' => route('module-offerings.index'), 'count' => $moduleCount, 'enabled' => $canViewModuleOfferings],
+            ['title' => __('Universities'), 'description' => __('Institution records and official codes.'), 'route' => route('universities.index'), 'count' => $universityCount, 'enabled' => true],
+            ['title' => __('Colleges'), 'description' => __('College definitions under each university.'), 'route' => route('colleges.index'), 'count' => $collegeCount, 'enabled' => true],
+            ['title' => __('Departments'), 'description' => __('Departments mapped to colleges and universities.'), 'route' => route('departments.index'), 'count' => $departmentCount, 'enabled' => true],
+            ['title' => __('Stages'), 'description' => __('Reusable study stages defined for each department.'), 'route' => route('stages.index'), 'count' => $stageCount, 'enabled' => true],
+            ['title' => __('Semester Credit Policy'), 'description' => __('Review semester ECTS/credits and passing credits required.'), 'route' => route('bologna-definition.semester-credit-policy'), 'count' => $semesterCreditPolicyCount, 'enabled' => true],
+            ['title' => __('Course Catalog'), 'description' => __('Catalog definitions, credits, and status.'), 'route' => route('course-records.index'), 'count' => $courseCount, 'enabled' => $canViewCourseCatalog],
+            ['title' => __('Academic Years'), 'description' => __('Manage upcoming, active, closed, and archived academic periods.'), 'route' => route('academic-years.index'), 'count' => $academicYearCount, 'enabled' => true],
+            ['title' => __('Tuition Rates'), 'description' => __('Set each department\'s per-credit rate for a new academic year before activating it.'), 'route' => route('bologna-definition.tuition-rates'), 'count' => $tuitionRateCount, 'enabled' => true],
+            ['title' => __('Semesters'), 'description' => __('Define regular and optional summer periods inside each academic year.'), 'route' => route('semesters.index'), 'count' => $semesterCount, 'enabled' => true],
+            ['title' => __('Module Offerings'), 'description' => __('Open catalog courses by academic year, semester, stage, group, and teacher.'), 'route' => route('module-offerings.index'), 'count' => $moduleCount, 'enabled' => $canViewModuleOfferings],
         ];
 
         return view('erp.bologna-definition', compact(
@@ -1959,7 +1959,7 @@ class ErpController extends Controller
 
             if ($academicYear->isLocked()) {
                 return back()->withInput()->withErrors([
-                    "policies.{$academicYear->id}" => "{$academicYear->name}: policies for closed or archived years are read-only.",
+                    "policies.{$academicYear->id}" => __(':year: policies for closed or archived years are read-only.', ['year' => $academicYear->name]),
                 ]);
             }
 
@@ -1971,19 +1971,19 @@ class ErpController extends Controller
 
             if ($semesterCredits < 1 || $semesterCredits > 120) {
                 return back()->withInput()->withErrors([
-                    "policies.{$academicYear->id}.semester_credits" => "{$university->name} {$academicYear->name}: semester credits must be between 1 and 120.",
+                    "policies.{$academicYear->id}.semester_credits" => __(':university :year: semester credits must be between 1 and 120.', ['university' => $university->name, 'year' => $academicYear->name]),
                 ]);
             }
 
             if ($passingCredits < 1 || $passingCredits > $semesterCredits) {
                 return back()->withInput()->withErrors([
-                    "policies.{$academicYear->id}.passing_credits" => "{$university->name} {$academicYear->name}: passing credits must be between 1 and semester credits.",
+                    "policies.{$academicYear->id}.passing_credits" => __(':university :year: passing credits must be between 1 and semester credits.', ['university' => $university->name, 'year' => $academicYear->name]),
                 ]);
             }
 
             if ($graduationCredits < $semesterCredits || $graduationCredits > 2000) {
                 return back()->withInput()->withErrors([
-                    "policies.{$academicYear->id}.graduation_credits" => "{$university->name} {$academicYear->name}: graduation credits must be at least one semester and no more than 2000.",
+                    "policies.{$academicYear->id}.graduation_credits" => __(':university :year: graduation credits must be at least one semester and no more than 2000.', ['university' => $university->name, 'year' => $academicYear->name]),
                 ]);
             }
 
@@ -1999,7 +1999,7 @@ class ErpController extends Controller
 
         return redirect()
             ->route('bologna-definition.semester-credit-policy')
-            ->with('success', 'Semester credit policy updated successfully.');
+            ->with('success', __('Semester credit policy updated successfully.'));
     }
 
     public function tuitionRates()
@@ -2030,7 +2030,7 @@ class ErpController extends Controller
         $canViewBolognaHub = $user->hasAnyRole(['super_administrator', 'administrator'])
             || $user->hasAnyDirectPermissionGrant(['academic_setup.view', 'academic_setup.manage']);
         $backRoute = $canViewBolognaHub ? route('bologna-definition') : route('finance');
-        $backLabel = $canViewBolognaHub ? 'Back to Bologna Definition' : 'Back to Finance';
+        $backLabel = $canViewBolognaHub ? __('Back to Bologna Definition') : __('Back to Finance');
 
         return view('erp.tuition-rates', compact('departments', 'academicYears', 'rates', 'currencies', 'canManageAcademicSetup', 'backRoute', 'backLabel'));
     }
@@ -2067,7 +2067,7 @@ class ErpController extends Controller
 
                 if ($academicYear->isLocked()) {
                     return back()->withInput()->withErrors([
-                        "rates.{$departmentId}.{$academicYearId}" => "{$academicYear->name}: tuition rates for closed or archived years are read-only.",
+                        "rates.{$departmentId}.{$academicYearId}" => __(':year: tuition rates for closed or archived years are read-only.', ['year' => $academicYear->name]),
                     ]);
                 }
 
@@ -2075,7 +2075,7 @@ class ErpController extends Controller
                 if (! in_array($pricingType, [TuitionRate::PRICING_PER_CREDIT, TuitionRate::PRICING_FLAT], true)) {
                     $pricingType = TuitionRate::PRICING_PER_CREDIT;
                 }
-                $amountLabel = $pricingType === TuitionRate::PRICING_FLAT ? 'flat tuition amount' : 'rate per credit';
+                $amountLabel = $pricingType === TuitionRate::PRICING_FLAT ? __('flat tuition amount') : __('rate per credit');
 
                 foreach ($currencyValues as $currency => $value) {
                     if (! in_array($currency, ['IQD', 'USD'], true)) {
@@ -2090,7 +2090,7 @@ class ErpController extends Controller
                     $rate = (float) $value;
                     if ($rate <= 0 || $rate > 999999999.99) {
                         return back()->withInput()->withErrors([
-                            "rates.{$departmentId}.{$academicYearId}.{$currency}" => "{$department->name} {$academicYear->name} ({$currency}): {$amountLabel} must be between 0.01 and 999999999.99.",
+                            "rates.{$departmentId}.{$academicYearId}.{$currency}" => __(':department :year (:currency): :amountLabel must be between 0.01 and 999999999.99.', ['department' => $department->name, 'year' => $academicYear->name, 'currency' => $currency, 'amountLabel' => $amountLabel]),
                         ]);
                     }
 
@@ -2127,7 +2127,7 @@ class ErpController extends Controller
 
         return redirect()
             ->route('bologna-definition.tuition-rates')
-            ->with('success', 'Tuition rates updated successfully.');
+            ->with('success', __('Tuition rates updated successfully.'));
     }
 
     public function studentRankings(Request $request)
@@ -2840,10 +2840,10 @@ class ErpController extends Controller
         ] : null;
 
         $stats = [
-            ['label' => 'Roles', 'value' => $roles->count(), 'detail' => $editableRoles->count().' editable'],
-            ['label' => 'Permissions', 'value' => $allPermissions->count(), 'detail' => $permissions->count().' in view'],
-            ['label' => 'Sensitive grants', 'value' => $roles->sum(fn (Role $role) => $role->permissions->filter(fn (Permission $permission) => PermissionRiskPolicy::isSensitive($permission->name))->count()), 'detail' => 'High and critical assignments'],
-            ['label' => 'Empty roles', 'value' => $roles->filter(fn (Role $role) => $role->permissions->isEmpty())->count(), 'detail' => 'No permissions assigned'],
+            ['label' => __('Roles'), 'value' => $roles->count(), 'detail' => __(':count editable', ['count' => $editableRoles->count()])],
+            ['label' => __('Permissions'), 'value' => $allPermissions->count(), 'detail' => __(':count in view', ['count' => $permissions->count()])],
+            ['label' => __('Sensitive grants'), 'value' => $roles->sum(fn (Role $role) => $role->permissions->filter(fn (Permission $permission) => PermissionRiskPolicy::isSensitive($permission->name))->count()), 'detail' => __('High and critical assignments')],
+            ['label' => __('Empty roles'), 'value' => $roles->filter(fn (Role $role) => $role->permissions->isEmpty())->count(), 'detail' => __('No permissions assigned')],
         ];
 
         return view('erp.access-matrix', compact(
@@ -2885,7 +2885,7 @@ class ErpController extends Controller
 
             if (! hash_equals($currentSignature, $validated['permission_signature'])) {
                 throw ValidationException::withMessages([
-                    'permissions' => 'This role changed after you opened the page. Review the latest permissions before saving again.',
+                    'permissions' => __('This role changed after you opened the page. Review the latest permissions before saving again.'),
                 ]);
             }
 
@@ -2894,7 +2894,7 @@ class ErpController extends Controller
 
         return redirect()
             ->route('access-matrix', ['role_id' => $role->id, 'mode' => 'edit'])
-            ->with('status', 'Permissions updated for '.$role->display_name.'.');
+            ->with('status', __('Permissions updated for :role.', ['role' => $role->display_name]));
     }
 
     private function accessMatrixModuleForPermission(string $permissionName): array
@@ -2904,20 +2904,20 @@ class ErpController extends Controller
             : $permissionName;
 
         return match ($prefix) {
-            'students' => ['key' => 'students', 'label' => 'Students'],
-            'teachers' => ['key' => 'teachers', 'label' => 'Teachers'],
-            'courses' => ['key' => 'courses', 'label' => 'Courses'],
-            'enrollments' => ['key' => 'enrollments', 'label' => 'Enrollment'],
-            'timetable' => ['key' => 'timetable', 'label' => 'Timetable'],
-            'attendance' => ['key' => 'attendance', 'label' => 'Attendance'],
-            'classrooms', 'lms', 'assessments' => ['key' => 'learning', 'label' => 'Learning'],
-            'marks', 'exams', 'results' => ['key' => 'results', 'label' => 'Results'],
-            'finance' => ['key' => 'finance', 'label' => 'Finance'],
-            'reports', 'analytics' => ['key' => 'reports', 'label' => 'Reports & Analytics'],
-            'academic_setup' => ['key' => 'academic_setup', 'label' => 'Academic Setup'],
-            'users', 'roles', 'permissions' => ['key' => 'users', 'label' => 'Users & Access'],
-            'data', 'import', 'export' => ['key' => 'data', 'label' => 'Data Exchange'],
-            default => ['key' => 'system', 'label' => 'System'],
+            'students' => ['key' => 'students', 'label' => __('Students')],
+            'teachers' => ['key' => 'teachers', 'label' => __('Teachers')],
+            'courses' => ['key' => 'courses', 'label' => __('Courses')],
+            'enrollments' => ['key' => 'enrollments', 'label' => __('Enrollment')],
+            'timetable' => ['key' => 'timetable', 'label' => __('Timetable')],
+            'attendance' => ['key' => 'attendance', 'label' => __('Attendance')],
+            'classrooms', 'lms', 'assessments' => ['key' => 'learning', 'label' => __('Learning')],
+            'marks', 'exams', 'results' => ['key' => 'results', 'label' => __('Results')],
+            'finance' => ['key' => 'finance', 'label' => __('Finance')],
+            'reports', 'analytics' => ['key' => 'reports', 'label' => __('Reports & Analytics')],
+            'academic_setup' => ['key' => 'academic_setup', 'label' => __('Academic Setup')],
+            'users', 'roles', 'permissions' => ['key' => 'users', 'label' => __('Users & Access')],
+            'data', 'import', 'export' => ['key' => 'data', 'label' => __('Data Exchange')],
+            default => ['key' => 'system', 'label' => __('System')],
         };
     }
 

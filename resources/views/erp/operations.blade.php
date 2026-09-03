@@ -19,7 +19,7 @@
                     </a>
                 @endforeach
                 <a href="{{ route('dashboard') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                    Dashboard
+                    {{ __('Dashboard') }}
                 </a>
             </div>
         </div>
@@ -53,10 +53,10 @@
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">{{ $item['status'] }}</span>
                                     @isset($item['markRoute'])
-                                        <a href="{{ $item['markRoute'] }}" class="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-gray-800">Mark</a>
+                                        <a href="{{ $item['markRoute'] }}" class="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-gray-800">{{ __('Mark') }}</a>
                                     @endisset
                                     @isset($item['reportRoute'])
-                                        <a href="{{ $item['reportRoute'] }}" class="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Report</a>
+                                        <a href="{{ $item['reportRoute'] }}" class="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">{{ __('Report') }}</a>
                                     @endisset
                                 </div>
                             </div>

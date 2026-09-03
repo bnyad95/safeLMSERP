@@ -2,11 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Semester Credit Policy</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Define credit load and progression requirements for each academic year. Closed years remain read-only.</p>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Semester Credit Policy') }}</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">{{ __('Define credit load and progression requirements for each academic year. Closed years remain read-only.') }}</p>
             </div>
             <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
-                Back to Bologna Definition
+                {{ __('Back to Bologna Definition') }}
             </a>
         </div>
     </x-slot>
@@ -15,7 +15,7 @@
         <div class="mx-auto max-w-5xl space-y-6 px-4 sm:px-6 lg:px-8">
             @if($errors->any())
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-                    <p class="font-semibold">Please review the semester credit values.</p>
+                    <p class="font-semibold">{{ __('Please review the semester credit values.') }}</p>
                     <ul class="mt-2 list-disc space-y-1 pl-5">
                         @foreach($errors->all() as $error)
                             <li>{{ $error }}</li>
@@ -31,12 +31,12 @@
                         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                             <thead class="bg-gray-50 dark:bg-gray-950">
                                 <tr>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Institution</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Academic Year</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Type</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">ECTS/Credits Per Semester</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Credits Required To Progress</th>
-                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Credits Required To Graduate</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Institution') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Academic Year') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Type') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('ECTS/Credits Per Semester') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Credits Required To Progress') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Credits Required To Graduate') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
@@ -56,7 +56,7 @@
                                             <span class="font-semibold text-gray-900 dark:text-gray-100">{{ $academicYear->name }}</span>
                                             <span class="block text-xs capitalize text-gray-500 dark:text-gray-400">{{ $academicYear->status }}</span>
                                         </td>
-                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $university->institution_type === 'institute' ? 'Institute' : 'University' }}</td>
+                                        <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{{ $university->institution_type === 'institute' ? __('Institute') : __('University') }}</td>
                                         <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
                                             <input
                                                 type="number"
@@ -97,7 +97,7 @@
                                 @empty
                                     <tr>
                                         <td colspan="6" class="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                                            No academic years are available in your scope. Create an academic year before defining its credit policy.
+                                            {{ __('No academic years are available in your scope. Create an academic year before defining its credit policy.') }}
                                         </td>
                                     </tr>
                                 @endforelse
@@ -106,10 +106,10 @@
                     </div>
 
                     <div class="flex items-center justify-end gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
-                        <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</a>
+                        <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Cancel') }}</a>
                         @if($canManageAcademicSetup)
                             <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700" @disabled($academicYears->whereNotIn('status', ['closed', 'archived'])->isEmpty())>
-                                Save Semester Credit Policy
+                                {{ __('Save Semester Credit Policy') }}
                             </button>
                         @endif
                     </div>

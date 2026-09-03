@@ -2,8 +2,8 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Tuition Rates</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Open an academic year to set each department's tuition pricing — per-credit or a flat amount. Closed years remain read-only.</p>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Tuition Rates') }}</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">{{ __("Open an academic year to set each department's tuition pricing — per-credit or a flat amount. Closed years remain read-only.") }}</p>
             </div>
             <a href="{{ $backRoute }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 {{ $backLabel }}
@@ -15,7 +15,7 @@
         <div class="mx-auto max-w-4xl space-y-4 px-4 sm:px-6 lg:px-8">
             @if($errors->any())
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-                    <p class="font-semibold">Please review the tuition rate values.</p>
+                    <p class="font-semibold">{{ __('Please review the tuition rate values.') }}</p>
                     <ul class="mt-2 list-disc space-y-1 pl-5">
                         @foreach($errors->all() as $error)
                             <li>{{ $error }}</li>
@@ -44,15 +44,15 @@
                         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $academicYear->university?->name }}</p>
                         @if($yearDepartments->isNotEmpty())
                             <p class="mt-1 text-sm font-medium {{ $pricedCount === $yearDepartments->count() ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400' }}">
-                                {{ $pricedCount }} of {{ $yearDepartments->count() }} department(s) priced
+                                {{ __(':priced of :total department(s) priced', ['priced' => $pricedCount, 'total' => $yearDepartments->count()]) }}
                             </p>
                         @else
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">No departments in this university yet.</p>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('No departments in this university yet.') }}</p>
                         @endif
                     </div>
                     @if($yearDepartments->isNotEmpty())
                         <button type="button" x-data x-on:click="$dispatch('open-modal', 'tuition-rates-{{ $academicYear->id }}')" class="inline-flex w-full justify-center rounded-md border border-gray-900 bg-white px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 sm:w-auto dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800">
-                            {{ $readOnly ? 'View Rates' : 'Enter Rates' }}
+                            {{ $readOnly ? __('View Rates') : __('Enter Rates') }}
                         </button>
 
                         <x-modal name="tuition-rates-{{ $academicYear->id }}" max-width="4xl" :show="$reopenModal">
@@ -61,7 +61,7 @@
                                     <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">{{ $academicYear->university?->name }} &middot; {{ $academicYear->name }}</h2>
                                     <button type="button" x-on:click="$dispatch('close')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">&times;</button>
                                 </div>
-                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Set each department's pricing model and tuition amount, by currency. Per-credit charges scale with enrolled course credits. Flat amounts are the full program tuition (8 semesters for a university, 4 for an institute) — students on the automatic semester plan are billed an even share of it each semester, and students on the full-payment plan are billed the whole amount once.</p>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __("Set each department's pricing model and tuition amount, by currency. Per-credit charges scale with enrolled course credits. Flat amounts are the full program tuition (8 semesters for a university, 4 for an institute) — students on the automatic semester plan are billed an even share of it each semester, and students on the full-payment plan are billed the whole amount once.") }}</p>
 
                                 <form action="{{ route('bologna-definition.tuition-rates.store') }}" method="POST" class="mt-4" x-on:submit="stripMoneyCommas($el)">
                                     @csrf
@@ -69,8 +69,8 @@
                                         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                                             <thead class="bg-gray-50 dark:bg-gray-950">
                                                 <tr>
-                                                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Department</th>
-                                                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Pricing Model</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Department') }}</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Pricing Model') }}</th>
                                                     @foreach($currencies as $currency)
                                                         <th class="px-4 py-2 text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ $currency }}</th>
                                                     @endforeach
@@ -95,8 +95,8 @@
                                                                 class="w-52 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
                                                                 @disabled($readOnly)
                                                             >
-                                                                <option value="per_credit" @selected($initialPricingType === 'per_credit')>Per-credit</option>
-                                                                <option value="flat" @selected($initialPricingType === 'flat')>Flat, not credit-based</option>
+                                                                <option value="per_credit" @selected($initialPricingType === 'per_credit')>{{ __('Per-credit') }}</option>
+                                                                <option value="flat" @selected($initialPricingType === 'flat')>{{ __('Flat, not credit-based') }}</option>
                                                             </select>
                                                         </td>
                                                         @foreach($currencies as $currency)
@@ -115,7 +115,7 @@
                                                                     name="rates[{{ $department->id }}][{{ $academicYear->id }}][{{ $currency }}]"
                                                                     value="{{ $displayValue }}"
                                                                     x-on:input="formatMoneyInput($event)"
-                                                                    :placeholder="pricingType === 'flat' ? 'Full program amount' : 'Rate per credit'"
+                                                                    :placeholder="pricingType === 'flat' ? @js(__('Full program amount')) : @js(__('Rate per credit'))"
                                                                     class="money-input w-40 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:disabled:bg-gray-800"
                                                                     @disabled($readOnly)
                                                                 >
@@ -129,11 +129,11 @@
 
                                     <div class="mt-4 flex justify-end gap-2">
                                         <button type="button" x-on:click="$dispatch('close')" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-                                            {{ $readOnly ? 'Close' : 'Cancel' }}
+                                            {{ $readOnly ? __('Close') : __('Cancel') }}
                                         </button>
                                         @unless($readOnly)
                                             <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                                                Save Tuition Rates
+                                                {{ __('Save Tuition Rates') }}
                                             </button>
                                         @endunless
                                     </div>
@@ -144,7 +144,7 @@
                 </section>
             @empty
                 <div class="rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-                    No active or upcoming academic year is in your scope yet.
+                    {{ __('No active or upcoming academic year is in your scope yet.') }}
                 </div>
             @endforelse
         </div>
