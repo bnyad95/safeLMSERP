@@ -135,7 +135,7 @@ class TeacherDashboardController extends Controller
                 ->map(function ($sections, $grade) {
                     return [
                         'key' => $grade,
-                        'label' => $grade === '__unassigned__' ? 'Stage not specified' : $grade,
+                        'label' => $grade === '__unassigned__' ? __('Stage not specified') : $grade,
                         'class_count' => $sections->count(),
                         'student_count' => $sections->sum('enrolled_count'),
                     ];
