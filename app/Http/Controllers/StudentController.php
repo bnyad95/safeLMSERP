@@ -113,8 +113,8 @@ class StudentController extends Controller
         });
 
         $message = $accountCreated
-            ? 'Student created successfully. The student can sign in with the temporary password and will be asked to create a new password.'
-            : 'Student created successfully. The existing login account was linked to the student profile.';
+            ? __('Student created successfully. The student can sign in with the temporary password and will be asked to create a new password.')
+            : __('Student created successfully. The existing login account was linked to the student profile.');
 
         return redirect()->route('students.index')->with('success', $message);
     }
@@ -187,7 +187,7 @@ class StudentController extends Controller
             Password::sendResetLink(['email' => $student->email]);
         }
 
-        return redirect()->route('students.edit', $student)->with('success', 'Student updated successfully.');
+        return redirect()->route('students.edit', $student)->with('success', __('Student updated successfully.'));
     }
 
     public function storeGuardian(Request $request, Student $student)
@@ -204,7 +204,7 @@ class StudentController extends Controller
 
         $student->guardians()->create($validated);
 
-        return redirect()->route('students.edit', $student)->with('success', 'Guardian added to student profile.');
+        return redirect()->route('students.edit', $student)->with('success', __('Guardian added to student profile.'));
     }
 
     public function updateGuardian(Request $request, StudentGuardian $guardian)
@@ -221,7 +221,7 @@ class StudentController extends Controller
 
         $guardian->update($validated);
 
-        return redirect()->route('students.edit', $guardian->student)->with('success', 'Guardian updated.');
+        return redirect()->route('students.edit', $guardian->student)->with('success', __('Guardian updated.'));
     }
 
     public function destroyGuardian(StudentGuardian $guardian)
@@ -232,7 +232,7 @@ class StudentController extends Controller
         $student = $guardian->student;
         $guardian->delete();
 
-        return redirect()->route('students.edit', $student)->with('success', 'Guardian removed.');
+        return redirect()->route('students.edit', $student)->with('success', __('Guardian removed.'));
     }
 
     public function storeDocument(Request $request, Student $student)
@@ -263,7 +263,7 @@ class StudentController extends Controller
             'notes' => $validated['notes'] ?? null,
         ]);
 
-        return redirect()->route('students.edit', $student)->with('success', 'Document uploaded.');
+        return redirect()->route('students.edit', $student)->with('success', __('Document uploaded.'));
     }
 
     public function downloadDocument(Request $request, StudentDocument $document)
@@ -287,7 +287,7 @@ class StudentController extends Controller
 
         $document->delete();
 
-        return redirect()->route('students.edit', $student)->with('success', 'Document removed.');
+        return redirect()->route('students.edit', $student)->with('success', __('Document removed.'));
     }
 
     /**
@@ -313,7 +313,7 @@ class StudentController extends Controller
             $student->delete();
         });
 
-        return redirect()->route('students.index')->with('success', 'Student archived successfully.');
+        return redirect()->route('students.index')->with('success', __('Student archived successfully.'));
     }
 
     public function archived(Request $request)
@@ -353,7 +353,7 @@ class StudentController extends Controller
             Password::sendResetLink(['email' => $student->email]);
         }
 
-        return redirect()->route('students.archived')->with('success', 'Student restored successfully.');
+        return redirect()->route('students.archived')->with('success', __('Student restored successfully.'));
     }
 
     public function resetPassword(Request $request, Student $student)
@@ -368,14 +368,14 @@ class StudentController extends Controller
 
         $this->syncStudentUser($student);
         $account = $this->linkedUser($student);
-        abort_unless($account, 404, 'Student login account was not found.');
+        abort_unless($account, 404, __('Student login account was not found.'));
 
         if (! $request->user()->hasRole('super_administrator')) {
             $nonStudentRoles = $account->roles()
                 ->where('name', '!=', 'student')
                 ->exists();
 
-            abort_if($nonStudentRoles, 403, 'This login account has non-student roles.');
+            abort_if($nonStudentRoles, 403, __('This login account has non-student roles.'));
         }
 
         $account->update([
@@ -385,7 +385,7 @@ class StudentController extends Controller
 
         return redirect()
             ->route('students.show', $student)
-            ->with('success', 'Student password reset successfully.');
+            ->with('success', __('Student password reset successfully.'));
     }
 
     private function validateStudent(Request $request, ?Student $student): array
@@ -557,16 +557,16 @@ class StudentController extends Controller
         return $rows
             ->groupBy('college_name')
             ->map(fn ($collegeRows, string $collegeName) => [
-                'college' => $collegeName,
+                'college' => $collegeName === 'No college' ? __('No college') : $collegeName,
                 'count' => (int) $collegeRows->sum('students_count'),
                 'departments' => $collegeRows
                     ->groupBy('department_name')
                     ->map(fn ($departmentRows, string $departmentName) => [
-                        'department' => $departmentName,
+                        'department' => $departmentName === 'No department' ? __('No department') : $departmentName,
                         'count' => (int) $departmentRows->sum('students_count'),
                         'grades' => $departmentRows
                             ->map(fn ($row) => [
-                                'grade' => $row->stage_name,
+                                'grade' => $row->stage_name === 'No stage' ? __('No stage') : $row->stage_name,
                                 'count' => (int) $row->students_count,
                             ])
                             ->values(),
@@ -685,19 +685,19 @@ class StudentController extends Controller
 
         if (! $department) {
             throw ValidationException::withMessages([
-                'department_id' => 'The selected department is outside your organization scope.',
+                'department_id' => __('The selected department is outside your organization scope.'),
             ]);
         }
 
         if (! empty($validated['university_id']) && (int) $department->university_id !== (int) $validated['university_id']) {
             throw ValidationException::withMessages([
-                'department_id' => 'The selected department does not belong to the selected university.',
+                'department_id' => __('The selected department does not belong to the selected university.'),
             ]);
         }
 
         if (! empty($validated['college_id']) && (int) $department->college_id !== (int) $validated['college_id']) {
             throw ValidationException::withMessages([
-                'department_id' => 'The selected department does not belong to the selected college.',
+                'department_id' => __('The selected department does not belong to the selected college.'),
             ]);
         }
 
@@ -710,7 +710,7 @@ class StudentController extends Controller
         if (! $stageId) {
             if ($student?->enrollments()->where('status', 'enrolled')->where('is_retake', false)->exists()) {
                 throw ValidationException::withMessages([
-                    'current_stage_id' => 'A student with active regular modules must have a current stage.',
+                    'current_stage_id' => __('A student with active regular modules must have a current stage.'),
                 ]);
             }
 
@@ -725,7 +725,7 @@ class StudentController extends Controller
 
         if (! $stage) {
             throw ValidationException::withMessages([
-                'current_stage_id' => 'The selected stage does not belong to the selected department or your organization scope.',
+                'current_stage_id' => __('The selected stage does not belong to the selected department or your organization scope.'),
             ]);
         }
 
@@ -737,7 +737,7 @@ class StudentController extends Controller
                 ->where('stage_id', '!=', $stage->id))
             ->exists()) {
             throw ValidationException::withMessages([
-                'current_stage_id' => 'The selected stage conflicts with the student active regular modules.',
+                'current_stage_id' => __('The selected stage conflicts with the student active regular modules.'),
             ]);
         }
     }
@@ -754,7 +754,7 @@ class StudentController extends Controller
 
         if ($hasAcademicHistory) {
             throw ValidationException::withMessages([
-                'department_id' => 'The department cannot be changed after enrollment, marks, or stage progression records exist.',
+                'department_id' => __('The department cannot be changed after enrollment, marks, or stage progression records exist.'),
             ]);
         }
     }

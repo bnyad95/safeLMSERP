@@ -3,11 +3,11 @@
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
                 <h2 class="text-xl font-semibold text-gray-900">{{ $section->course->code }} - {{ $section->course->name }}</h2>
-                <p class="text-sm text-gray-600">{{ $section->semester->name }} {{ $section->semester->academic_year }} / {{ $section->programSemesterLabel() }} / Group {{ $section->section_code }} / {{ $section->grade_level ?: 'No stage' }}</p>
+                <p class="text-sm text-gray-600">{{ $section->semester->name }} {{ $section->semester->academic_year }} / {{ $section->programSemesterLabel() }} / {{ __('Group :code', ['code' => $section->section_code]) }} / {{ $section->grade_level ?: __('No stage') }}</p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('enrollments.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</a>
-                <a href="{{ route('course-sections.export-roster', $section) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Export Roster</a>
+                <a href="{{ route('enrollments.index') }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ __('Back') }}</a>
+                <a href="{{ route('course-sections.export-roster', $section) }}" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ __('Export Roster') }}</a>
             </div>
         </div>
     </x-slot>
@@ -23,7 +23,7 @@
                     ['label' => 'Timetable', 'value' => $section->timetables_count],
                 ] as $stat)
                     <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                        <div class="text-sm font-medium text-gray-500">{{ $stat['label'] }}</div>
+                        <div class="text-sm font-medium text-gray-500">{{ __($stat['label']) }}</div>
                         <div class="mt-1 text-2xl font-semibold text-gray-900">{{ $stat['value'] }}</div>
                     </div>
                 @endforeach
@@ -34,12 +34,12 @@
                     @if($abilities['manage'])
                         <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                             <div class="border-b border-gray-200 px-5 py-4">
-                                <h3 class="font-semibold text-gray-900">Add Students</h3>
+                                <h3 class="font-semibold text-gray-900">{{ __('Add Students') }}</h3>
                             </div>
                             <div class="space-y-5 p-5">
                                 <form method="GET" action="{{ route('course-sections.show', $section) }}" class="flex flex-col gap-3 md:flex-row">
-                                    <input name="student_q" value="{{ $studentSearch }}" class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Search name, student ID, or email">
-                                    <button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Search</button>
+                                    <input name="student_q" value="{{ $studentSearch }}" class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('Search name, student ID, or email') }}">
+                                    <button class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">{{ __('Search') }}</button>
                                 </form>
 
                                 @if($studentSearch !== '')
@@ -52,18 +52,18 @@
                                                     <input type="checkbox" name="student_ids[]" value="{{ $student->id }}" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                                                     <span>
                                                         <span class="block text-sm font-medium text-gray-900">{{ $student->full_name }}</span>
-                                                        <span class="block text-xs text-gray-500">{{ $student->student_id }} / {{ $student->email }} / {{ $student->department->name ?? 'No department' }}</span>
+                                                        <span class="block text-xs text-gray-500">{{ $student->student_id }} / {{ $student->email }} / {{ $student->department->name ?? __('No department') }}</span>
                                                     </span>
                                                 </label>
                                             @empty
-                                                <div class="px-4 py-6 text-center text-sm text-gray-500">No active students found.</div>
+                                                <div class="px-4 py-6 text-center text-sm text-gray-500">{{ __('No active students found.') }}</div>
                                             @endforelse
                                         </div>
                                         @if($studentCandidates->isNotEmpty())
                                             <div class="grid gap-3 md:grid-cols-[1fr_auto_auto]">
-                                                <input name="notes" class="rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Notes">
-                                                <button name="action" value="waitlist" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Waitlist</button>
-                                                <button name="action" value="enroll" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Enroll</button>
+                                                <input name="notes" class="rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('Notes') }}">
+                                                <button name="action" value="waitlist" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ __('Waitlist') }}</button>
+                                                <button name="action" value="enroll" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">{{ __('Enroll') }}</button>
                                             </div>
                                         @endif
                                     </form>
@@ -74,10 +74,10 @@
                                     <input type="hidden" name="enrolled_at" value="{{ now()->toDateString() }}">
                                     <input type="file" name="csv_file" accept=".csv,.txt" class="block w-full rounded-md border border-gray-300 text-sm file:mr-4 file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700" required>
                                     <select name="action" class="rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                        <option value="enroll">Enroll</option>
-                                        <option value="waitlist">Waitlist</option>
+                                        <option value="enroll">{{ __('Enroll') }}</option>
+                                        <option value="waitlist">{{ __('Waitlist') }}</option>
                                     </select>
-                                    <button class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Import CSV</button>
+                                    <button class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ __('Import CSV') }}</button>
                                 </form>
                             </div>
                         </div>
@@ -85,17 +85,17 @@
 
                     <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-5 py-4">
-                            <h3 class="font-semibold text-gray-900">Roster</h3>
+                            <h3 class="font-semibold text-gray-900">{{ __('Roster') }}</h3>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Student</th>
-                                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Enrolled</th>
+                                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">{{ __('Student') }}</th>
+                                        <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">{{ __('Enrolled') }}</th>
                                         @if($abilities['manage'])
-                                            <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Transfer</th>
-                                            <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">Remove</th>
+                                            <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">{{ __('Transfer') }}</th>
+                                            <th class="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">{{ __('Remove') }}</th>
                                         @endif
                                     </tr>
                                 </thead>
@@ -114,31 +114,31 @@
                                                             @csrf
                                                             @method('PATCH')
                                                             <select name="target_section_id" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
-                                                                <option value="">Target group</option>
+                                                                <option value="">{{ __('Target group') }}</option>
                                                                 @foreach($transferTargets as $target)
-                                                                    <option value="{{ $target->id }}">{{ $target->section_code }} / {{ $target->enrolled_count }} of {{ $target->capacity }}</option>
+                                                                    <option value="{{ $target->id }}">{{ $target->section_code }} / {{ __(':enrolled of :capacity', ['enrolled' => $target->enrolled_count, 'capacity' => $target->capacity]) }}</option>
                                                                 @endforeach
                                                             </select>
                                                             <input type="hidden" name="reason" value="Admin transfer">
-                                                            <button class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Move</button>
+                                                            <button class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ __('Move') }}</button>
                                                         </form>
                                                     @else
-                                                        <span class="text-sm text-gray-400">No target</span>
+                                                        <span class="text-sm text-gray-400">{{ __('No target') }}</span>
                                                     @endif
                                                 </td>
                                                 <td class="px-5 py-4">
                                                     <form method="POST" action="{{ route('enrollments.drop', $enrollment) }}" class="flex min-w-72 gap-2">
                                                         @csrf
                                                         @method('PATCH')
-                                                        <input name="drop_reason" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Reason" required>
-                                                        <button class="rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Remove from Module</button>
+                                                        <input name="drop_reason" class="w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="{{ __('Reason') }}" required>
+                                                        <button class="rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">{{ __('Remove from Module') }}</button>
                                                     </form>
                                                 </td>
                                             @endif
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="{{ $abilities['manage'] ? 4 : 2 }}" class="px-5 py-8 text-center text-sm text-gray-500">No enrolled students yet.</td>
+                                            <td colspan="{{ $abilities['manage'] ? 4 : 2 }}" class="px-5 py-8 text-center text-sm text-gray-500">{{ __('No enrolled students yet.') }}</td>
                                         </tr>
                                     @endforelse
                                 </tbody>
@@ -149,7 +149,7 @@
 
                     <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-5 py-4">
-                            <h3 class="font-semibold text-gray-900">Waitlist</h3>
+                            <h3 class="font-semibold text-gray-900">{{ __('Waitlist') }}</h3>
                         </div>
                         <div class="divide-y divide-gray-100">
                             @forelse($waitlist as $enrollment)
@@ -163,19 +163,19 @@
                                             <form method="POST" action="{{ route('enrollments.promote', $enrollment) }}">
                                                 @csrf
                                                 @method('PATCH')
-                                                <button class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Promote</button>
+                                                <button class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{{ __('Promote') }}</button>
                                             </form>
                                             <form method="POST" action="{{ route('enrollments.drop', $enrollment) }}" class="flex gap-2">
                                                 @csrf
                                                 @method('PATCH')
                                                 <input type="hidden" name="drop_reason" value="Removed from waitlist">
-                                                <button class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Remove</button>
+                                                <button class="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ __('Remove') }}</button>
                                             </form>
                                         </div>
                                     @endif
                                 </div>
                             @empty
-                                <div class="px-5 py-8 text-center text-sm text-gray-500">No students on the waitlist.</div>
+                                <div class="px-5 py-8 text-center text-sm text-gray-500">{{ __('No students on the waitlist.') }}</div>
                             @endforelse
                         </div>
                         <div class="border-t border-gray-100 px-5 py-4">{{ $waitlist->links() }}</div>
@@ -185,28 +185,28 @@
                 <div class="space-y-6">
                     <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-5 py-4">
-                            <h3 class="font-semibold text-gray-900">Module Details</h3>
+                            <h3 class="font-semibold text-gray-900">{{ __('Module Details') }}</h3>
                         </div>
                         <div class="space-y-4 p-5 text-sm">
                             <div>
-                                <div class="text-gray-500">College</div>
-                                <div class="font-medium text-gray-900">{{ $section->course->department->college->name ?? 'No college' }}</div>
+                                <div class="text-gray-500">{{ __('College') }}</div>
+                                <div class="font-medium text-gray-900">{{ $section->course->department->college->name ?? __('No college') }}</div>
                             </div>
                             <div>
-                                <div class="text-gray-500">Department</div>
-                                <div class="font-medium text-gray-900">{{ $section->course->department->name ?? 'No department' }}</div>
+                                <div class="text-gray-500">{{ __('Department') }}</div>
+                                <div class="font-medium text-gray-900">{{ $section->course->department->name ?? __('No department') }}</div>
                             </div>
                             <div>
-                                <div class="text-gray-500">Teacher</div>
-                                <div class="font-medium text-gray-900">{{ $section->teacher->full_name ?? 'Unassigned' }}</div>
+                                <div class="text-gray-500">{{ __('Teacher') }}</div>
+                                <div class="font-medium text-gray-900">{{ $section->teacher->full_name ?? __('Unassigned') }}</div>
                             </div>
                             <div>
-                                <div class="text-gray-500">Status</div>
-                                <div class="font-medium text-gray-900">{{ ucfirst($section->status) }}</div>
+                                <div class="text-gray-500">{{ __('Status') }}</div>
+                                <div class="font-medium text-gray-900">{{ __(ucfirst($section->status)) }}</div>
                             </div>
                             @if($section->notes)
                                 <div>
-                                    <div class="text-gray-500">Notes</div>
+                                    <div class="text-gray-500">{{ __('Notes') }}</div>
                                     <div class="font-medium text-gray-900">{{ $section->notes }}</div>
                                 </div>
                             @endif
@@ -216,13 +216,13 @@
                     @if($section->timetables->isNotEmpty())
                         <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                             <div class="border-b border-gray-200 px-5 py-4">
-                                <h3 class="font-semibold text-gray-900">Timetable</h3>
+                                <h3 class="font-semibold text-gray-900">{{ __('Timetable') }}</h3>
                             </div>
                             <div class="divide-y divide-gray-100">
                                 @foreach($section->timetables as $entry)
                                     <div class="px-5 py-4 text-sm">
                                         <div class="font-medium text-gray-900">{{ $entry->day_of_week }} / {{ substr($entry->start_time, 0, 5) }}-{{ substr($entry->end_time, 0, 5) }}</div>
-                                        <div class="text-gray-500">{{ ucfirst($entry->type) }} / {{ $entry->classroom->name ?? $entry->room_number ?? 'No room' }}</div>
+                                        <div class="text-gray-500">{{ __(ucfirst($entry->type)) }} / {{ $entry->classroom->name ?? $entry->room_number ?? __('No room') }}</div>
                                     </div>
                                 @endforeach
                             </div>
@@ -233,13 +233,13 @@
                         <form method="POST" action="{{ route('course-sections.update', $section) }}" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                             @csrf
                             @method('PATCH')
-                            <h3 class="font-semibold text-gray-900">Settings</h3>
+                            <h3 class="font-semibold text-gray-900">{{ __('Settings') }}</h3>
                             <div class="mt-4 space-y-4">
                                 @if($abilities['assign_teacher'])
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700">Teacher</label>
+                                        <label class="block text-sm font-medium text-gray-700">{{ __('Teacher') }}</label>
                                         <select name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                            <option value="">Unassigned</option>
+                                            <option value="">{{ __('Unassigned') }}</option>
                                             @foreach($teachers as $teacher)
                                                 <option value="{{ $teacher->id }}" @selected(old('teacher_id', $section->teacher_id) == $teacher->id)>{{ $teacher->full_name }} / {{ $teacher->staff_id }}</option>
                                             @endforeach
@@ -247,9 +247,9 @@
                                     </div>
                                 @endif
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Stage</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ __('Stage') }}</label>
                                     <select name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
-                                        <option value="">Select a managed stage</option>
+                                        <option value="">{{ __('Select a managed stage') }}</option>
                                         @foreach($stages as $stage)
                                             <option value="{{ $stage->id }}" @selected(old('stage_id', $section->stage_id) == $stage->id)>{{ $stage->name }}</option>
                                         @endforeach
@@ -257,50 +257,50 @@
                                 </div>
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700">Capacity</label>
+                                        <label class="block text-sm font-medium text-gray-700">{{ __('Capacity') }}</label>
                                         <input type="number" min="1" max="500" name="capacity" value="{{ old('capacity', $section->capacity) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700">Status</label>
+                                        <label class="block text-sm font-medium text-gray-700">{{ __('Status') }}</label>
                                         <select name="status" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
                                             @foreach(['planned' => 'Planned', 'active' => 'Active', 'closed' => 'Closed'] as $value => $label)
-                                                <option value="{{ $value }}" @selected(old('status', $section->status) === $value)>{{ $label }}</option>
+                                                <option value="{{ $value }}" @selected(old('status', $section->status) === $value)>{{ __($label) }}</option>
                                             @endforeach
                                         </select>
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">Notes</label>
+                                    <label class="block text-sm font-medium text-gray-700">{{ __('Notes') }}</label>
                                     <textarea name="notes" rows="3" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">{{ old('notes', $section->notes) }}</textarea>
                                 </div>
-                                <button class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Save Settings</button>
+                                <button class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">{{ __('Save Settings') }}</button>
                             </div>
                         </form>
 
                         <form method="POST" action="{{ route('course-sections.destroy', $section) }}" class="rounded-lg border border-red-200 bg-red-50 p-5">
                             @csrf
                             @method('DELETE')
-                            <h3 class="font-semibold text-red-900">Archive Module</h3>
-                            <p class="mt-1 text-sm text-red-700">Only closed modules with no active roster or waitlist can be archived.</p>
-                            <button class="mt-4 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:hover:bg-red-900/40" onclick="return confirm('Archive this module? Only closed modules with no active roster or waitlist can be archived.')">Archive</button>
+                            <h3 class="font-semibold text-red-900">{{ __('Archive Module') }}</h3>
+                            <p class="mt-1 text-sm text-red-700">{{ __('Only closed modules with no active roster or waitlist can be archived.') }}</p>
+                            <button class="mt-4 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:hover:bg-red-900/40" onclick="return confirm('Archive this module? Only closed modules with no active roster or waitlist can be archived.')">{{ __('Archive') }}</button>
                         </form>
                     @endif
 
                     <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-5 py-4">
-                            <h3 class="font-semibold text-gray-900">History</h3>
+                            <h3 class="font-semibold text-gray-900">{{ __('History') }}</h3>
                         </div>
                         <div class="divide-y divide-gray-100">
                             @forelse($history as $event)
                                 <div class="px-5 py-4 text-sm">
-                                    <div class="font-medium text-gray-900">{{ str_replace('_', ' ', ucfirst($event->action)) }}</div>
-                                    <div class="text-gray-500">{{ $event->student->full_name ?? 'Student' }} / {{ $event->actor->name ?? 'System' }} / {{ $event->occurred_at?->format('Y-m-d H:i') }}</div>
+                                    <div class="font-medium text-gray-900">{{ __(str_replace('_', ' ', ucfirst($event->action))) }}</div>
+                                    <div class="text-gray-500">{{ $event->student->full_name ?? __('Student') }} / {{ $event->actor->name ?? __('System') }} / {{ $event->occurred_at?->format('Y-m-d H:i') }}</div>
                                     @if($event->notes)
                                         <div class="mt-1 text-gray-600">{{ $event->notes }}</div>
                                     @endif
                                 </div>
                             @empty
-                                <div class="px-5 py-8 text-center text-sm text-gray-500">No enrollment history yet.</div>
+                                <div class="px-5 py-8 text-center text-sm text-gray-500">{{ __('No enrollment history yet.') }}</div>
                             @endforelse
                         </div>
                         <div class="border-t border-gray-100 px-5 py-4">{{ $history->links() }}</div>

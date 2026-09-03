@@ -106,7 +106,7 @@ class CourseRegistrationController extends Controller
 
         $student = Student::where('email', $request->user()->email)->firstOrFail();
         if (strtolower((string) $student->status) !== 'active') {
-            return back()->with('error', 'Only active students can register for courses.');
+            return back()->with('error', __('Only active students can register for courses.'));
         }
 
         $validated = $request->validate([
@@ -130,7 +130,10 @@ class CourseRegistrationController extends Controller
 
         $result = $placement['enrollment']->courseSection()->with('course')->firstOrFail();
 
-        app(NotificationService::class)->notifyStudent($student, 'Course registration confirmed', ($result->course->code ?? 'Course').' / Group '.$result->section_code, [
+        app(NotificationService::class)->notifyStudent($student, __('Course registration confirmed'), __(':course / Group :code', [
+            'course' => $result->course->code ?? __('Course'),
+            'code' => $result->section_code,
+        ]), [
             'type' => 'course_registration',
             'severity' => 'success',
             'action_url' => route('class-stream.show', $result),
@@ -138,7 +141,7 @@ class CourseRegistrationController extends Controller
         ]);
         app(NotificationService::class)->sendEnrollmentConfirmation($student, $result->course);
 
-        return redirect()->route('course-registration.index')->with('success', 'Course registration completed.');
+        return redirect()->route('course-registration.index')->with('success', __('Course registration completed.'));
     }
 
 }
