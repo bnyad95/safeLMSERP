@@ -74,7 +74,7 @@ class SemesterController extends Controller
         $this->authorizeAcademicYearScope($academicYear);
 
         if (in_array($academicYear->status, ['closed', 'archived'], true)) {
-            return redirect()->route('academic-years.index')->with('error', 'Closed academic years cannot be edited.');
+            return redirect()->route('academic-years.index')->with('error', __('Closed academic years cannot be edited.'));
         }
 
         return view('academic-years.edit', compact('academicYear'));
@@ -147,7 +147,7 @@ class SemesterController extends Controller
 
         if ($validated['status'] === 'active' && empty($validated['generate_semesters'])) {
             throw ValidationException::withMessages([
-                'generate_semesters' => 'Generate the regular semesters, or create the year as upcoming and configure its semesters before activation.',
+                'generate_semesters' => __('Generate the regular semesters, or create the year as upcoming and configure its semesters before activation.'),
             ]);
         }
 
@@ -199,16 +199,16 @@ class SemesterController extends Controller
         });
 
         $message = $created > 0
-            ? "{$created} academic year record(s) created for {$validated['academic_year']}."
-            : "No new academic year records were created for {$validated['academic_year']}; they already exist.";
+            ? __(':count academic year record(s) created for :year.', ['count' => $created, 'year' => $validated['academic_year']])
+            : __('No new academic year records were created for :year; they already exist.', ['year' => $validated['academic_year']]);
 
         if ($skipped > 0) {
-            $message .= " {$skipped} existing records were skipped.";
+            $message .= ' '.__(':count existing records were skipped.', ['count' => $skipped]);
         }
 
         return redirect()
             ->route('academic-years.index')
-            ->with('success', $message.' Use Semesters to define the periods inside the year.');
+            ->with('success', $message.' '.__('Use Semesters to define the periods inside the year.'));
     }
 
     public function updateAcademicYear(Request $request, AcademicYear $academicYear)
@@ -217,7 +217,7 @@ class SemesterController extends Controller
         $this->authorizeAcademicYearScope($academicYear);
 
         if (in_array($academicYear->status, ['closed', 'archived'], true)) {
-            return redirect()->route('academic-years.index')->with('error', 'Closed academic years cannot be edited.');
+            return redirect()->route('academic-years.index')->with('error', __('Closed academic years cannot be edited.'));
         }
 
         $validated = $request->validate([
@@ -242,7 +242,7 @@ class SemesterController extends Controller
         );
         if ($academicYear->status === 'active' && $validated['status'] === 'upcoming') {
             throw ValidationException::withMessages([
-                'status' => 'An active academic year cannot return to upcoming. Close it through Academic Year Closing.',
+                'status' => __('An active academic year cannot return to upcoming. Close it through Academic Year Closing.'),
             ]);
         }
         if ($validated['status'] === 'active') {
@@ -254,7 +254,7 @@ class SemesterController extends Controller
         $oldName = $academicYear->name;
         if ($oldName !== $validated['name'] && $academicYear->semesters()->exists()) {
             throw ValidationException::withMessages([
-                'name' => 'The academic year name is locked after semesters have been created. Dates and status can still be updated.',
+                'name' => __('The academic year name is locked after semesters have been created. Dates and status can still be updated.'),
             ]);
         }
         $academicYear->update($validated);
@@ -262,7 +262,7 @@ class SemesterController extends Controller
             $academicYear->semesters()->update(['academic_year' => $academicYear->name]);
         }
 
-        return redirect()->route('academic-years.index')->with('success', 'Academic year updated successfully.');
+        return redirect()->route('academic-years.index')->with('success', __('Academic year updated successfully.'));
     }
 
     public function store(Request $request)
@@ -287,7 +287,7 @@ class SemesterController extends Controller
         $tuitionCharges->autoGenerateFlatChargesForNewSemester($semester, $request->user());
         $tuitionCharges->autoGenerateFullChargesForNewSemester($semester, $request->user());
 
-        return redirect()->route('semesters.index')->with('success', 'Semester created successfully.');
+        return redirect()->route('semesters.index')->with('success', __('Semester created successfully.'));
     }
 
     public function edit(Semester $semester)
@@ -297,7 +297,7 @@ class SemesterController extends Controller
         $semester->load('academicYear');
 
         if ($semester->isLocked()) {
-            return redirect()->route('academic-years.show', $semester->academicYear)->with('error', 'Semesters in closed academic years are read-only.');
+            return redirect()->route('academic-years.show', $semester->academicYear)->with('error', __('Semesters in closed academic years are read-only.'));
         }
 
         $universities = $this->scopedUniversities()->get();
@@ -325,7 +325,7 @@ class SemesterController extends Controller
                 || (int) $semester->sequence !== (int) $validated['sequence']
                 || $semester->term_type !== $validated['term_type'])) {
             throw ValidationException::withMessages([
-                'academic_year_id' => 'A semester with module offerings cannot change academic year, institution, type, or sequence. Dates and display details can still be updated.',
+                'academic_year_id' => __('A semester with module offerings cannot change academic year, institution, type, or sequence. Dates and display details can still be updated.'),
             ]);
         }
 
@@ -338,7 +338,7 @@ class SemesterController extends Controller
 
         $semester->update($validated);
 
-        return redirect()->route('semesters.index')->with('success', 'Semester updated successfully.');
+        return redirect()->route('semesters.index')->with('success', __('Semester updated successfully.'));
     }
 
     public function destroy(Semester $semester)
@@ -349,12 +349,12 @@ class SemesterController extends Controller
         $this->ensureAcademicYearWritable($semester->academicYear);
 
         if ($semester->courseSections()->withTrashed()->exists()) {
-            return back()->with('error', 'This semester has modules and historical records. Close its academic year instead of deleting it.');
+            return back()->with('error', __('This semester has modules and historical records. Close its academic year instead of deleting it.'));
         }
 
         $semester->delete();
 
-        return redirect()->route('semesters.index')->with('success', 'Semester deleted successfully.');
+        return redirect()->route('semesters.index')->with('success', __('Semester deleted successfully.'));
     }
 
     private function scopedUniversities()
@@ -436,13 +436,13 @@ class SemesterController extends Controller
         $query = $academicYear->semesters()->when($ignoredSemesterId, fn ($query) => $query->whereKeyNot($ignoredSemesterId));
 
         if ((clone $query)->where('sequence', $sequence)->exists()) {
-            throw ValidationException::withMessages(['sequence' => 'That semester sequence is already used in this academic year.']);
+            throw ValidationException::withMessages(['sequence' => __('That semester sequence is already used in this academic year.')]);
         }
 
         if ($termType === 'regular') {
             if ($sequence > $expectedSemesters || (clone $query)->where('term_type', 'regular')->count() >= $expectedSemesters) {
                 throw ValidationException::withMessages([
-                    'term_type' => "{$academicYear->university->name} supports {$expectedSemesters} regular semesters per academic year.",
+                    'term_type' => __(':name supports :count regular semesters per academic year.', ['name' => $academicYear->university->name, 'count' => $expectedSemesters]),
                 ]);
             }
 
@@ -450,11 +450,11 @@ class SemesterController extends Controller
         }
 
         if ((clone $query)->where('term_type', 'summer')->exists()) {
-            throw ValidationException::withMessages(['term_type' => 'Only one optional summer semester is allowed per academic year.']);
+            throw ValidationException::withMessages(['term_type' => __('Only one optional summer semester is allowed per academic year.')]);
         }
 
         if ($sequence !== $expectedSemesters + 1) {
-            throw ValidationException::withMessages(['sequence' => 'The summer semester must follow the regular semesters.']);
+            throw ValidationException::withMessages(['sequence' => __('The summer semester must follow the regular semesters.')]);
         }
     }
 
@@ -470,7 +470,7 @@ class SemesterController extends Controller
         [$firstYear, $secondYear] = array_map('intval', explode('/', $academicYear));
         if ($secondYear !== $firstYear + 1) {
             throw ValidationException::withMessages([
-                $field => 'Use consecutive years in YYYY/YYYY format, for example 2027/2028.',
+                $field => __('Use consecutive years in YYYY/YYYY format, for example 2027/2028.'),
             ]);
         }
     }
@@ -488,7 +488,7 @@ class SemesterController extends Controller
 
         if ($overlaps) {
             throw ValidationException::withMessages([
-                'starts_on' => 'The academic-year dates overlap an existing year for one of the selected institutions.',
+                'starts_on' => __('The academic-year dates overlap an existing year for one of the selected institutions.'),
             ]);
         }
     }
@@ -503,7 +503,7 @@ class SemesterController extends Controller
 
         if ($activeYear) {
             throw ValidationException::withMessages([
-                'status' => "{$activeYear->name} is already active for this university. Close it before activating another year.",
+                'status' => __(':name is already active for this university. Close it before activating another year.', ['name' => $activeYear->name]),
             ]);
         }
     }
@@ -512,7 +512,7 @@ class SemesterController extends Controller
     {
         if (! $academicYear || $academicYear->isLocked()) {
             throw ValidationException::withMessages([
-                'academic_year_id' => 'Closed and archived academic years are read-only.',
+                'academic_year_id' => __('Closed and archived academic years are read-only.'),
             ]);
         }
     }
@@ -529,7 +529,7 @@ class SemesterController extends Controller
 
         if ($regularSemesters->count() !== $expected) {
             throw ValidationException::withMessages([
-                'status' => "Define exactly {$expected} regular semesters before activating this academic year.",
+                'status' => __('Define exactly :count regular semesters before activating this academic year.', ['count' => $expected]),
             ]);
         }
 
@@ -537,7 +537,7 @@ class SemesterController extends Controller
         $actualSequences = $regularSemesters->pluck('sequence')->map(fn ($sequence) => (int) $sequence)->sort()->values()->all();
         if ($actualSequences !== $expectedSequences) {
             throw ValidationException::withMessages([
-                'status' => 'Regular semester sequences must be complete and start at 1 before activation.',
+                'status' => __('Regular semester sequences must be complete and start at 1 before activation.'),
             ]);
         }
 
@@ -545,7 +545,7 @@ class SemesterController extends Controller
         foreach ($semesters as $semester) {
             if ($previousSemester && $semester->start_date->lte($previousSemester->end_date)) {
                 throw ValidationException::withMessages([
-                    'status' => 'Semester dates must not overlap before the academic year can be activated.',
+                    'status' => __('Semester dates must not overlap before the academic year can be activated.'),
                 ]);
             }
 
@@ -579,11 +579,11 @@ class SemesterController extends Controller
         $names = $missingDepartments->pluck('name');
         $list = $names->take(5)->implode(', ');
         if ($names->count() > 5) {
-            $list .= ', and '.($names->count() - 5).' more';
+            $list .= ', '.__('and :count more', ['count' => $names->count() - 5]);
         }
 
         throw ValidationException::withMessages([
-            'status' => "Set a tuition rate for every department before activating this academic year. Missing a rate: {$list}.",
+            'status' => __('Set a tuition rate for every department before activating this academic year. Missing a rate: :list.', ['list' => $list]),
         ]);
     }
 
@@ -598,7 +598,7 @@ class SemesterController extends Controller
 
         if ($outsideRange) {
             throw ValidationException::withMessages([
-                'starts_on' => 'The new academic-year dates would place an existing semester outside the year.',
+                'starts_on' => __('The new academic-year dates would place an existing semester outside the year.'),
             ]);
         }
     }
@@ -615,7 +615,7 @@ class SemesterController extends Controller
 
         if ($overlap) {
             throw ValidationException::withMessages([
-                'start_date' => 'The semester dates overlap another semester in this academic year.',
+                'start_date' => __('The semester dates overlap another semester in this academic year.'),
             ]);
         }
     }
@@ -659,11 +659,11 @@ class SemesterController extends Controller
         }
 
         if (! empty($semesterData['start_date']) && $semesterData['start_date'] < $academicYear->starts_on->toDateString()) {
-            throw ValidationException::withMessages(['start_date' => 'The semester cannot start before its academic year.']);
+            throw ValidationException::withMessages(['start_date' => __('The semester cannot start before its academic year.')]);
         }
 
         if (! empty($semesterData['end_date']) && $semesterData['end_date'] > $academicYear->ends_on->toDateString()) {
-            throw ValidationException::withMessages(['end_date' => 'The semester cannot end after its academic year.']);
+            throw ValidationException::withMessages(['end_date' => __('The semester cannot end after its academic year.')]);
         }
     }
 

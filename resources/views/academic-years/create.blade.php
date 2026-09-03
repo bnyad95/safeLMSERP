@@ -2,11 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Add Academic Year</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Open a reusable academic period for one or more institutions, then manage its semesters from the year workspace.</p>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Add Academic Year') }}</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">{{ __('Open a reusable academic period for one or more institutions, then manage its semesters from the year workspace.') }}</p>
             </div>
             <a href="{{ route('bologna-definition') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
-                Bologna Definition
+                {{ __('Bologna Definition') }}
             </a>
         </div>
     </x-slot>
@@ -15,7 +15,7 @@
         <div class="mx-auto max-w-4xl space-y-6 px-4 sm:px-6 lg:px-8">
             @if($errors->any())
                 <div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-                    <p class="font-semibold">Please check the academic year details.</p>
+                    <p class="font-semibold">{{ __('Please check the academic year details.') }}</p>
                     <ul class="mt-2 list-disc space-y-1 pl-5">
                         @foreach($errors->all() as $error)
                             <li>{{ $error }}</li>
@@ -26,14 +26,14 @@
 
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">New Academic Year</h3>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Only one academic year can be active per institution.</p>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('New Academic Year') }}</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Only one academic year can be active per institution.') }}</p>
                 </div>
                 <form method="POST" action="{{ route('academic-years.store') }}" class="space-y-5 p-5">
                     @csrf
                     <div class="grid gap-4 md:grid-cols-2">
                         <div>
-                            <label for="academic_year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Academic Year</label>
+                            <label for="academic_year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Academic Year') }}</label>
                             <input
                                 id="academic_year"
                                 name="academic_year"
@@ -45,24 +45,24 @@
                             >
                         </div>
                         <div>
-                            <label for="status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                            <label for="status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Status') }}</label>
                             <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
-                                <option value="upcoming" @selected(old('status', 'upcoming') === 'upcoming')>Upcoming</option>
-                                <option value="active" @selected(old('status') === 'active')>Active</option>
+                                <option value="upcoming" @selected(old('status', 'upcoming') === 'upcoming')>{{ __('Upcoming') }}</option>
+                                <option value="active" @selected(old('status') === 'active')>{{ __('Active') }}</option>
                             </select>
                         </div>
                         <div>
-                            <label for="starts_on" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Start date</label>
+                            <label for="starts_on" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Start date') }}</label>
                             <input id="starts_on" name="starts_on" type="date" value="{{ old('starts_on') }}" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                         </div>
                         <div>
-                            <label for="ends_on" class="block text-sm font-medium text-gray-700 dark:text-gray-300">End date</label>
+                            <label for="ends_on" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('End date') }}</label>
                             <input id="ends_on" name="ends_on" type="date" value="{{ old('ends_on') }}" required class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
                         </div>
                     </div>
 
                     <div>
-                        <p class="block text-sm font-medium text-gray-700 dark:text-gray-300">Universities</p>
+                        <p class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Universities') }}</p>
                         <div class="mt-2 grid gap-2 sm:grid-cols-2">
                             @forelse($universities as $university)
                                 <label class="flex items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 dark:text-gray-200">
@@ -76,7 +76,7 @@
                                     <span>{{ $university->name }}</span>
                                 </label>
                             @empty
-                                <p class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Create a university before opening an academic year.</p>
+                                <p class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{{ __('Create a university before opening an academic year.') }}</p>
                             @endforelse
                         </div>
                     </div>
@@ -85,15 +85,15 @@
                         <input type="hidden" name="generate_semesters" value="0">
                         <input type="checkbox" name="generate_semesters" value="1" @checked(old('generate_semesters', true)) class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                         <span>
-                            <span class="block text-sm font-semibold text-gray-900 dark:text-gray-100">Generate regular semesters</span>
-                            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">Creates the institution's configured number of ordered semesters and divides the academic-year date range between them. Dates can be adjusted before modules are opened.</span>
+                            <span class="block text-sm font-semibold text-gray-900 dark:text-gray-100">{{ __('Generate regular semesters') }}</span>
+                            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ __("Creates the institution's configured number of ordered semesters and divides the academic-year date range between them. Dates can be adjusted before modules are opened.") }}</span>
                         </span>
                     </label>
 
                     <div class="flex flex-col gap-3 border-t border-gray-100 pt-5 dark:border-gray-800 sm:flex-row sm:justify-end">
-                        <a href="{{ route('academic-years.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</a>
+                        <a href="{{ route('academic-years.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-center text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Cancel') }}</a>
                         <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500" @disabled($universities->isEmpty())>
-                            Create Academic Year
+                            {{ __('Create Academic Year') }}
                         </button>
                     </div>
                 </form>
