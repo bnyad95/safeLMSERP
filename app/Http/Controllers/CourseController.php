@@ -266,12 +266,12 @@ class CourseController extends Controller
         return $rows
             ->groupBy('college')
             ->map(fn ($collegeRows, string $collegeName) => [
-                'college' => $collegeName,
+                'college' => $collegeName === 'No college' ? __('No college') : $collegeName,
                 'count' => $collegeRows->sum(fn ($row) => (int) $row->courses_count),
                 'open_sections' => $collegeRows->sum(fn ($row) => (int) $row->open_sections_count),
                 'departments' => $collegeRows
                     ->map(fn ($row) => [
-                        'department' => $row->department,
+                        'department' => $row->department === 'No department' ? __('No department') : $row->department,
                         'count' => (int) $row->courses_count,
                         'open_sections' => (int) $row->open_sections_count,
                     ])

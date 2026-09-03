@@ -367,12 +367,12 @@ class TeacherController extends Controller
         return $rows
             ->groupBy('college_name')
             ->map(fn ($collegeRows, string $collegeName) => [
-                'college' => $collegeName,
+                'college' => $collegeName === 'No college' ? __('No college') : $collegeName,
                 'count' => (int) $collegeRows->sum('teachers_count'),
                 'active_classes' => (int) $collegeRows->sum('active_classes_count'),
                 'departments' => $collegeRows
                     ->map(fn ($row) => [
-                        'department' => $row->department_name,
+                        'department' => $row->department_name === 'No department' ? __('No department') : $row->department_name,
                         'count' => (int) $row->teachers_count,
                         'active_classes' => (int) $row->active_classes_count,
                     ])

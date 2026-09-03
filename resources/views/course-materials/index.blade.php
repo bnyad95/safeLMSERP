@@ -2,13 +2,13 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-200">Course Materials</h2>
-                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - Group '.$section->section_code : '' }}</p>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-200">{{ __('Course Materials') }}</h2>
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - '.__('Group :code', ['code' => $section->section_code]) : '' }}</p>
             </div>
             @if(auth()->user()->hasAnyRole(['teacher', 'super_administrator']))
                 <a href="{{ route('materials.create', ['course' => $course->id, 'section_id' => $section?->id]) }}"
                    class="inline-flex justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-                    + Upload Material
+                    + {{ __('Upload Material') }}
                 </a>
             @endif
         </div>
@@ -34,7 +34,7 @@
                             <span class="text-xs text-gray-400">{{ strtoupper($material->file_type) }}</span>
                             @if(auth()->user()->hasAnyRole(['teacher', 'super_administrator']))
                                 <span class="text-xs px-2 py-0.5 rounded-full {{ $material->visibility === 'published' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-200' : 'bg-yellow-100 text-yellow-700' }}">
-                                    {{ ucfirst($material->visibility) }}
+                                    {{ $material->visibility === 'published' ? __('Published') : __('Draft') }}
                                 </span>
                             @endif
                         </div>
@@ -44,32 +44,32 @@
                     @if($material->file_path)
                         <a href="{{ route('materials.download', ['course' => $course->id, 'material' => $material->id, 'section_id' => $section?->id]) }}"
                            class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm">
-                            Download
+                            {{ __('Download') }}
                         </a>
                     @endif
                     @if(auth()->user()->hasAnyRole(['teacher', 'super_administrator']) && $material->uploaded_by === auth()->id())
                         @if($material->visibility === 'draft')
                             <form method="POST" action="{{ route('materials.publish', ['course' => $course->id, 'material' => $material->id, 'section_id' => $section?->id]) }}">
                                 @csrf
-                                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm">Publish</button>
+                                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm">{{ __('Publish') }}</button>
                             </form>
                         @else
                             <form method="POST" action="{{ route('materials.unpublish', ['course' => $course->id, 'material' => $material->id, 'section_id' => $section?->id]) }}">
                                 @csrf
-                                <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm">Unpublish</button>
+                                <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-sm">{{ __('Unpublish') }}</button>
                             </form>
                         @endif
                         <form method="POST" action="{{ route('materials.destroy', ['course' => $course->id, 'material' => $material->id, 'section_id' => $section?->id]) }}">
                             @csrf @method('DELETE')
-                            <button type="submit" onclick="return confirm('Delete this material?')"
-                                    class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">Delete</button>
+                            <button type="submit" onclick="return confirm('{{ __('Delete this material?') }}')"
+                                    class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">{{ __('Delete') }}</button>
                         </form>
                     @endif
                 </div>
             </div>
         @empty
             <div class="p-8 text-center text-gray-500">
-                No materials available for this course yet.
+                {{ __('No materials available for this course yet.') }}
             </div>
         @endforelse
     </div>
