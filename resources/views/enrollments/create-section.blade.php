@@ -2,10 +2,10 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">Add Module Offering</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400">Module Offerings</p>
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Add Module Offering') }}</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">{{ __('Module Offerings') }}</p>
             </div>
-            <a href="{{ route('module-offerings.index') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">Back</a>
+            <a href="{{ route('module-offerings.index') }}" class="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{{ __('Back') }}</a>
         </div>
     </x-slot>
 
@@ -15,14 +15,14 @@
                 <div class="rounded-lg border border-amber-300 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-950/40">
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                            <h3 class="font-semibold text-amber-950 dark:text-amber-100">Academic setup is incomplete</h3>
+                            <h3 class="font-semibold text-amber-950 dark:text-amber-100">{{ __('Academic setup is incomplete') }}</h3>
                             <ul class="mt-2 space-y-1 text-sm text-amber-900 dark:text-amber-200">
                                 @foreach($setupIssues as $issue)
                                     <li>{{ $issue }}</li>
                                 @endforeach
                             </ul>
                         </div>
-                        <a href="{{ route('bologna-definition') }}" class="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-400 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-100 dark:hover:bg-gray-800">Academic Setup</a>
+                        <a href="{{ route('bologna-definition') }}" class="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-400 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-100 dark:hover:bg-gray-800">{{ __('Academic Setup') }}</a>
                     </div>
                 </div>
             @endif
@@ -32,13 +32,13 @@
                 <input type="hidden" name="open_section" value="1">
 
                 <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-700 sm:px-6">
-                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">Academic period</h3>
+                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">{{ __('Academic period') }}</h3>
                 </div>
                 <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3">
                     <div>
-                        <label for="module-university" class="block text-sm font-medium text-gray-700 dark:text-gray-300">University</label>
+                        <label for="module-university" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('University') }}</label>
                         <select id="module-university" name="university_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select university</option>
+                            <option value="">{{ __('Select university') }}</option>
                             @foreach($universities as $university)
                                 <option value="{{ $university->id }}" data-regular-semesters="{{ $university->expectedSemesterCount() }}" @selected(old('university_id', $filters['university_id']) == $university->id)>{{ $university->name }}{{ $university->code ? ' / '.$university->code : '' }}</option>
                             @endforeach
@@ -47,20 +47,20 @@
                     </div>
 
                     <div>
-                        <label for="module-academic-year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Academic Year</label>
+                        <label for="module-academic-year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Academic Year') }}</label>
                         <select id="module-academic-year" name="academic_year_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select academic year</option>
+                            <option value="">{{ __('Select academic year') }}</option>
                             @foreach($academicYears as $academicYear)
-                                <option value="{{ $academicYear->id }}" data-university-id="{{ $academicYear->university_id }}" @selected(old('academic_year_id', $filters['academic_year_id']) == $academicYear->id)>{{ $academicYear->name }} / {{ ucfirst($academicYear->status) }}</option>
+                                <option value="{{ $academicYear->id }}" data-university-id="{{ $academicYear->university_id }}" @selected(old('academic_year_id', $filters['academic_year_id']) == $academicYear->id)>{{ $academicYear->name }} / {{ __(ucfirst($academicYear->status)) }}</option>
                             @endforeach
                         </select>
                         @error('academic_year_id') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                     </div>
 
                     <div>
-                        <label for="module-semester" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Semester</label>
+                        <label for="module-semester" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Semester') }}</label>
                         <select id="module-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select semester</option>
+                            <option value="">{{ __('Select semester') }}</option>
                             @foreach($semesters as $semester)
                                 <option
                                     value="{{ $semester->id }}"
@@ -78,13 +78,13 @@
                 </div>
 
                 <div class="border-y border-gray-200 px-5 py-4 dark:border-gray-700 sm:px-6">
-                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">Academic structure</h3>
+                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">{{ __('Academic Structure') }}</h3>
                 </div>
                 <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3">
                     <div>
-                        <label for="module-college" class="block text-sm font-medium text-gray-700 dark:text-gray-300">College</label>
+                        <label for="module-college" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('College') }}</label>
                         <select id="module-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select college</option>
+                            <option value="">{{ __('Select college') }}</option>
                             @foreach($colleges as $college)
                                 <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected(old('college_id', $filters['college_id']) == $college->id)>{{ $college->name }}{{ $college->code ? ' / '.$college->code : '' }}</option>
                             @endforeach
@@ -93,9 +93,9 @@
                     </div>
 
                     <div>
-                        <label for="module-department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                        <label for="module-department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Department') }}</label>
                         <select id="module-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select department</option>
+                            <option value="">{{ __('Select department') }}</option>
                             @foreach($departments as $department)
                                 <option value="{{ $department->id }}" data-university-id="{{ $department->university_id }}" data-college-id="{{ $department->college_id }}" @selected(old('department_id', $filters['department_id']) == $department->id)>{{ $department->name }}{{ $department->code ? ' / '.$department->code : '' }}</option>
                             @endforeach
@@ -104,14 +104,14 @@
                     </div>
 
                     <div>
-                        <label for="module-course-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Course Search</label>
-                        <input id="module-course-search" type="search" value="{{ $filters['q'] }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="Code or course name">
+                        <label for="module-course-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Course Search') }}</label>
+                        <input id="module-course-search" type="search" value="{{ $filters['q'] }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="{{ __('Code or course name') }}">
                     </div>
 
                     <div class="sm:col-span-2">
-                        <label for="module-course" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Catalog Course</label>
+                        <label for="module-course" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Catalog Course') }}</label>
                         <select id="module-course" name="course_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select active catalog course</option>
+                            <option value="">{{ __('Select active catalog course') }}</option>
                             @foreach($courses as $course)
                                 <option
                                     value="{{ $course->id }}"
@@ -127,9 +127,9 @@
                     </div>
 
                     <div>
-                        <label for="module-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label>
+                        <label for="module-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Stage') }}</label>
                         <select id="module-stage" name="stage_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
-                            <option value="">Select stage</option>
+                            <option value="">{{ __('Select stage') }}</option>
                             @foreach($stages as $stage)
                                 <option value="{{ $stage->id }}" data-university-id="{{ $stage->university_id }}" data-department-id="{{ $stage->department_id }}" data-sequence="{{ $stage->sequence }}" @selected(old('stage_id') == $stage->id)>{{ $stage->name }}</option>
                             @endforeach
@@ -139,25 +139,25 @@
                 </div>
 
                 <div class="border-y border-gray-200 px-5 py-4 dark:border-gray-700 sm:px-6">
-                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">Offering details</h3>
+                    <h3 class="font-semibold text-gray-900 dark:text-gray-100">{{ __('Offering details') }}</h3>
                 </div>
                 <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3">
                     <div>
-                        <label for="module-group" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Group</label>
+                        <label for="module-group" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Group') }}</label>
                         <input id="module-group" name="section_code" value="{{ old('section_code', 'A') }}" maxlength="50" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
                         @error('section_code') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                     </div>
 
                     @if($canAssignTeachers)
                         <div>
-                            <label for="module-teacher-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Teacher Search</label>
-                            <input id="module-teacher-search" type="search" value="{{ $filters['teacher_q'] }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="Name or staff ID">
+                            <label for="module-teacher-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Teacher Search') }}</label>
+                            <input id="module-teacher-search" type="search" value="{{ $filters['teacher_q'] }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" placeholder="{{ __('Name or staff ID') }}">
                         </div>
 
                         <div>
-                            <label for="module-teacher" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Teacher</label>
+                            <label for="module-teacher" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Teacher') }}</label>
                             <select id="module-teacher" name="teacher_id" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">
-                                <option value="">Unassigned</option>
+                                <option value="">{{ __('Unassigned') }}</option>
                                 @foreach($teachers as $teacher)
                                     <option
                                         value="{{ $teacher->id }}"
@@ -173,37 +173,37 @@
                     @endif
 
                     <div>
-                        <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">Program Semester</span>
+                        <span class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Program Semester') }}</span>
                         <div id="program-semester-preview" class="mt-1 flex min-h-10 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
-                            Select a stage and semester
+                            {{ __('Select a stage and semester') }}
                         </div>
                     </div>
 
                     <div>
-                        <label for="module-capacity" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Capacity</label>
+                        <label for="module-capacity" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Capacity') }}</label>
                         <input id="module-capacity" type="number" min="1" max="500" name="capacity" value="{{ old('capacity', 40) }}" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
                         @error('capacity') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                     </div>
 
                     <div>
-                        <label for="module-status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                        <label for="module-status" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Status') }}</label>
                         <select id="module-status" name="status" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" required>
                             @foreach(['planned' => 'Planned', 'active' => 'Active', 'closed' => 'Closed'] as $value => $label)
-                                <option value="{{ $value }}" @selected(old('status', 'active') === $value)>{{ $label }}</option>
+                                <option value="{{ $value }}" @selected(old('status', 'active') === $value)>{{ __($label) }}</option>
                             @endforeach
                         </select>
                         @error('status') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="sm:col-span-2 lg:col-span-3">
-                        <label for="module-notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
+                        <label for="module-notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Notes') }}</label>
                         <textarea id="module-notes" name="notes" rows="3" class="mt-1 block w-full rounded-md border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100">{{ old('notes') }}</textarea>
                         @error('notes') <p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                     </div>
                 </div>
 
                 <div class="flex justify-end border-t border-gray-200 bg-gray-50 px-5 py-4 dark:border-gray-700 dark:bg-gray-800/60 sm:px-6">
-                    <button @disabled($setupIssues->isNotEmpty()) class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:disabled:bg-gray-600">Create Offering</button>
+                    <button @disabled($setupIssues->isNotEmpty()) class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 dark:disabled:bg-gray-600">{{ __('Create Offering') }}</button>
                 </div>
             </form>
         </div>

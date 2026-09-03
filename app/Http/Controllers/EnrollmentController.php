@@ -202,13 +202,13 @@ class EnrollmentController extends Controller
             : collect();
 
         $setupIssues = collect([
-            $universities->isEmpty() ? 'Define an accessible university.' : null,
-            $academicYears->isEmpty() ? 'Add an active or upcoming academic year.' : null,
-            $semesters->isEmpty() ? 'Generate semesters for the academic year.' : null,
-            $colleges->isEmpty() ? 'Define a college.' : null,
-            $departments->isEmpty() ? 'Define a department.' : null,
-            $courses->isEmpty() ? 'Add an active course to the Course Catalog.' : null,
-            $stages->isEmpty() ? 'Define stages for the department.' : null,
+            $universities->isEmpty() ? __('Define an accessible university.') : null,
+            $academicYears->isEmpty() ? __('Add an active or upcoming academic year.') : null,
+            $semesters->isEmpty() ? __('Generate semesters for the academic year.') : null,
+            $colleges->isEmpty() ? __('Define a college.') : null,
+            $departments->isEmpty() ? __('Define a department.') : null,
+            $courses->isEmpty() ? __('Add an active course to the Course Catalog.') : null,
+            $stages->isEmpty() ? __('Define stages for the department.') : null,
         ])->filter()->values();
 
         return view('enrollments.create-section', [
@@ -353,10 +353,10 @@ class EnrollmentController extends Controller
         $validated['grade_level'] = $stage?->name ?? ($validated['grade_level'] ?? null);
 
         if ($course->status !== 'active') {
-            throw ValidationException::withMessages(['course_id' => 'Only active catalog courses can receive new modules.']);
+            throw ValidationException::withMessages(['course_id' => __('Only active catalog courses can receive new modules.')]);
         }
         if ($teacher && $teacher->status !== 'Active') {
-            throw ValidationException::withMessages(['teacher_id' => 'Only active teachers can be assigned to a module.']);
+            throw ValidationException::withMessages(['teacher_id' => __('Only active teachers can be assigned to a module.')]);
         }
 
         unset($validated['university_id'], $validated['academic_year_id'], $validated['college_id'], $validated['department_id']);
@@ -365,7 +365,7 @@ class EnrollmentController extends Controller
             ? route('course-sections.show', $section)
             : route('module-offerings.index');
 
-        return redirect($destination)->with('success', 'Course module created.');
+        return redirect($destination)->with('success', __('Course module created.'));
     }
 
     public function updateSection(Request $request, CourseSection $courseSection)
@@ -389,7 +389,7 @@ class EnrollmentController extends Controller
             && (int) $validated['stage_id'] !== (int) $courseSection->stage_id
             && (Enrollment::withTrashed()->where('course_section_id', $courseSection->id)->exists()
                 || Mark::withTrashed()->where('course_section_id', $courseSection->id)->exists())) {
-            return back()->with('error', 'The module stage cannot be changed after enrollment or mark records exist.');
+            return back()->with('error', __('The module stage cannot be changed after enrollment or mark records exist.'));
         }
         $teacher = ! empty($validated['teacher_id']) ? $this->scopedTeacher((int) $validated['teacher_id'], $request->user()) : null;
         $course = $courseSection->course()->with('department')->firstOrFail();
@@ -402,15 +402,15 @@ class EnrollmentController extends Controller
         $validated['grade_level'] = $stage?->name ?? ($validated['grade_level'] ?? null);
 
         if ($teacher && $teacher->status !== 'Active') {
-            throw ValidationException::withMessages(['teacher_id' => 'Only active teachers can be assigned to a module.']);
+            throw ValidationException::withMessages(['teacher_id' => __('Only active teachers can be assigned to a module.')]);
         }
         if ($validated['capacity'] < $courseSection->activeEnrollments()->count()) {
-            return back()->with('error', 'Capacity cannot be lower than the current enrolled student count.');
+            return back()->with('error', __('Capacity cannot be lower than the current enrolled student count.'));
         }
 
         $courseSection->update($validated);
 
-        return redirect()->route('course-sections.show', $courseSection)->with('success', 'Course module updated.');
+        return redirect()->route('course-sections.show', $courseSection)->with('success', __('Course module updated.'));
     }
 
     public function enrollStudent(Request $request)
@@ -462,9 +462,9 @@ class EnrollmentController extends Controller
             }
         }
 
-        $message = "{$success} student(s) processed successfully.";
+        $message = __(':count student(s) processed successfully.', ['count' => $success]);
         if ($failures) {
-            $message .= ' '.count($failures).' skipped: '.collect($failures)->take(3)->implode(' ');
+            $message .= ' '.__(':count skipped: :details', ['count' => count($failures), 'details' => collect($failures)->take(3)->implode(' ')]);
         }
 
         return redirect()->route('course-sections.show', $courseSection)
@@ -484,7 +484,7 @@ class EnrollmentController extends Controller
         $headers = fgetcsv($handle);
 
         if ($headers === false) {
-            return back()->with('error', 'The roster file is empty.');
+            return back()->with('error', __('The roster file is empty.'));
         }
 
         $headers = array_map(fn ($header) => strtolower(trim((string) $header)), $headers);
@@ -522,7 +522,7 @@ class EnrollmentController extends Controller
         fclose($handle);
 
         return redirect()->route('course-sections.show', $courseSection)
-            ->with('success', "Roster import complete: {$success} processed, {$failures} skipped.");
+            ->with('success', __('Roster import complete: :success processed, :failures skipped.', ['success' => $success, 'failures' => $failures]));
     }
 
     public function exportRoster(CourseSection $courseSection): StreamedResponse
@@ -591,7 +591,7 @@ class EnrollmentController extends Controller
             'published' => $published->count(),
             'passed' => $rows->where('result', 'Passed')->count(),
             'failed' => $rows->where('result', 'Failed')->count(),
-            'average' => $publishedFinalMarks->isNotEmpty() ? number_format($publishedFinalMarks->avg(), 1) : 'N/A',
+            'average' => $publishedFinalMarks->isNotEmpty() ? number_format($publishedFinalMarks->avg(), 1) : __('N/A'),
         ];
 
         return view('enrollments.class-report', [
@@ -609,7 +609,7 @@ class EnrollmentController extends Controller
         $result = $this->enrollmentService->drop($enrollment, $validated['drop_reason'], $request->user());
 
         return redirect()->route('course-sections.show', $enrollment->course_section_id)
-            ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? 'Student removed from the module.' : $result['message']);
+            ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? __('Student removed from the module.') : $result['message']);
     }
 
     public function promoteWaitlist(Request $request, Enrollment $enrollment)
@@ -626,7 +626,7 @@ class EnrollmentController extends Controller
         );
 
         return redirect()->route('course-sections.show', $enrollment->course_section_id)
-            ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? 'Student promoted from the waitlist.' : $result['message']);
+            ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? __('Student promoted from the waitlist.') : $result['message']);
     }
 
     public function transferEnrollment(Request $request, Enrollment $enrollment)
@@ -641,7 +641,7 @@ class EnrollmentController extends Controller
         $result = $this->enrollmentService->transfer($enrollment, $targetSection, $validated['reason'], $request->user());
 
         return redirect()->route('course-sections.show', $enrollment->course_section_id)
-            ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? 'Student transferred successfully.' : $result['message']);
+            ->with($result['ok'] ? 'success' : 'error', $result['ok'] ? __('Student transferred successfully.') : $result['message']);
     }
 
     public function destroySection(CourseSection $courseSection)
@@ -652,15 +652,15 @@ class EnrollmentController extends Controller
         $this->ensureSemesterWritable($courseSection->semester);
 
         if ($courseSection->status !== 'closed') {
-            return back()->with('error', 'Close the module before archiving it.');
+            return back()->with('error', __('Close the module before archiving it.'));
         }
         if ($courseSection->enrollments()->whereIn('status', ['enrolled', 'waitlisted'])->exists()) {
-            return back()->with('error', 'Remove or transfer all enrolled and waitlisted students before archiving the module.');
+            return back()->with('error', __('Remove or transfer all enrolled and waitlisted students before archiving the module.'));
         }
 
         $courseSection->delete();
 
-        return redirect()->route('module-offerings.index')->with('success', 'Course module archived.');
+        return redirect()->route('module-offerings.index')->with('success', __('Course module archived.'));
     }
 
     public function archived(Request $request)
@@ -693,7 +693,7 @@ class EnrollmentController extends Controller
         $this->ensureSemesterWritable($section->semester);
         $section->restore();
 
-        return redirect()->route('course-sections.archived')->with('success', 'Course module restored.');
+        return redirect()->route('course-sections.archived')->with('success', __('Course module restored.'));
     }
 
     private function placementResponse(Request $request, int $sectionId, array $result)
@@ -706,7 +706,7 @@ class EnrollmentController extends Controller
             return redirect($destination)->withInput()->with('error', $result['message']);
         }
 
-        $message = $result['status'] === 'waitlisted' ? 'Student added to the waitlist.' : 'Student enrolled in module.';
+        $message = $result['status'] === 'waitlisted' ? __('Student added to the waitlist.') : __('Student enrolled in module.');
 
         return redirect($destination)->with('success', $message);
     }
@@ -829,7 +829,7 @@ class EnrollmentController extends Controller
         return $rows
             ->groupBy('college')
             ->map(fn ($collegeRows, string $collegeName) => [
-                'college' => $collegeName,
+                'college' => $collegeName === 'No college' ? __('No college') : $collegeName,
                 'count' => $collegeRows->sum(fn ($row) => (int) $row->modules_count),
                 'active' => $collegeRows->sum(fn ($row) => (int) $row->active_count),
                 'students' => $collegeRows->sum(fn ($row) => (int) $row->students_count),
@@ -837,12 +837,12 @@ class EnrollmentController extends Controller
                 'departments' => $collegeRows
                     ->groupBy('department')
                     ->map(fn ($departmentRows, string $departmentName) => [
-                        'department' => $departmentName,
+                        'department' => $departmentName === 'No department' ? __('No department') : $departmentName,
                         'count' => $departmentRows->sum(fn ($row) => (int) $row->modules_count),
                         'students' => $departmentRows->sum(fn ($row) => (int) $row->students_count),
                         'grades' => $departmentRows
                             ->map(fn ($row) => [
-                                'grade' => $row->grade,
+                                'grade' => $row->grade === 'No stage' ? __('No stage') : $row->grade,
                                 'count' => (int) $row->modules_count,
                             ])
                             ->values(),
@@ -924,7 +924,7 @@ class EnrollmentController extends Controller
     {
         if (! $semester || $semester->academicYear?->isLocked()) {
             throw ValidationException::withMessages([
-                'semester_id' => 'Closed and archived academic years are read-only.',
+                'semester_id' => __('Closed and archived academic years are read-only.'),
             ]);
         }
     }
@@ -996,10 +996,10 @@ class EnrollmentController extends Controller
     {
         $universityId = $course->department->university_id;
         if ($semester->university_id !== $universityId) {
-            throw ValidationException::withMessages(['semester_id' => 'The selected semester and course must belong to the same university.']);
+            throw ValidationException::withMessages(['semester_id' => __('The selected semester and course must belong to the same university.')]);
         }
         if ($teacher && $teacher->university_id !== $universityId) {
-            throw ValidationException::withMessages(['teacher_id' => 'The selected teacher and course must belong to the same university.']);
+            throw ValidationException::withMessages(['teacher_id' => __('The selected teacher and course must belong to the same university.')]);
         }
     }
 
@@ -1011,7 +1011,7 @@ class EnrollmentController extends Controller
             $university = $this->scopedUniversity((int) $validated['university_id'], $user);
             if ((int) $university->id !== $courseUniversityId || (int) $semester->university_id !== (int) $university->id) {
                 throw ValidationException::withMessages([
-                    'university_id' => 'The selected university must match the course and semester.',
+                    'university_id' => __('The selected university must match the course and semester.'),
                 ]);
             }
         }
@@ -1020,20 +1020,20 @@ class EnrollmentController extends Controller
             $academicYear = $this->scopedAcademicYear((int) $validated['academic_year_id'], $user);
             if ((int) $academicYear->university_id !== $courseUniversityId || (int) $semester->academic_year_id !== (int) $academicYear->id) {
                 throw ValidationException::withMessages([
-                    'academic_year_id' => 'The selected academic year must contain the selected semester and course university.',
+                    'academic_year_id' => __('The selected academic year must contain the selected semester and course university.'),
                 ]);
             }
         }
 
         if (! empty($validated['college_id']) && (int) $course->department->college_id !== (int) $validated['college_id']) {
             throw ValidationException::withMessages([
-                'college_id' => 'The selected college must contain the course department.',
+                'college_id' => __('The selected college must contain the course department.'),
             ]);
         }
 
         if (! empty($validated['department_id']) && (int) $course->department_id !== (int) $validated['department_id']) {
             throw ValidationException::withMessages([
-                'department_id' => 'The selected department must own the catalog course.',
+                'department_id' => __('The selected department must own the catalog course.'),
             ]);
         }
     }
@@ -1042,21 +1042,21 @@ class EnrollmentController extends Controller
     {
         if (! $stage) {
             throw ValidationException::withMessages([
-                'stage_id' => 'Select a managed stage so the program semester can be calculated.',
+                'stage_id' => __('Select a managed stage so the program semester can be calculated.'),
             ]);
         }
 
         $university = $semester->university;
         if (! $university || (int) $stage->university_id !== (int) $university->id) {
             throw ValidationException::withMessages([
-                'stage_id' => 'The selected stage and semester must belong to the same university.',
+                'stage_id' => __('The selected stage and semester must belong to the same university.'),
             ]);
         }
 
         $stageSequence = (int) $stage->sequence;
         if ($stageSequence < 1 || $stageSequence > $university->expectedStageCount()) {
             throw ValidationException::withMessages([
-                'stage_id' => 'The selected stage is outside the university program structure.',
+                'stage_id' => __('The selected stage is outside the university program structure.'),
             ]);
         }
 
@@ -1069,7 +1069,7 @@ class EnrollmentController extends Controller
 
         if (! $validSequence) {
             throw ValidationException::withMessages([
-                'semester_id' => 'The selected semester sequence does not match the university semester structure.',
+                'semester_id' => __('The selected semester sequence does not match the university semester structure.'),
             ]);
         }
     }
