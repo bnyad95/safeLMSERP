@@ -1,8 +1,8 @@
 <x-app-layout>
     <x-slot name="header">
         <div>
-            <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Add Semester</h2>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Add an ordered regular or summer semester inside an open academic year.</p>
+            <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">{{ __('Add Semester') }}</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ __('Add an ordered regular or summer semester inside an open academic year.') }}</p>
         </div>
     </x-slot>
 

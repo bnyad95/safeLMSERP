@@ -50,7 +50,7 @@ class UniversityController extends Controller
 
         University::create($validated);
 
-        return redirect()->route('universities.index')->with('success', 'University created successfully.');
+        return redirect()->route('universities.index')->with('success', __('University created successfully.'));
     }
 
     public function edit(University $university)
@@ -78,7 +78,7 @@ class UniversityController extends Controller
         if ($university->institution_type !== $validated['institution_type']
             && $university->stages()->where('sequence', '>', $structure['expected_stage_count'])->exists()) {
             throw ValidationException::withMessages([
-                'institution_type' => "This organization has stages beyond Stage {$structure['expected_stage_count']}. Remove or reassign their module offerings before changing the institution type.",
+                'institution_type' => __('This organization has stages beyond Stage :stage. Remove or reassign their module offerings before changing the institution type.', ['stage' => $structure['expected_stage_count']]),
             ]);
         }
         $identityChanged = $university->name !== $validated['name']
@@ -87,7 +87,7 @@ class UniversityController extends Controller
         if ($identityChanged && $this->hasOperationalData($university)) {
             $field = $university->institution_type !== $validated['institution_type'] ? 'institution_type' : 'name';
             throw ValidationException::withMessages([
-                $field => 'The institution name, code, and type are locked after academic or user records exist. Contact details can still be updated.',
+                $field => __('The institution name, code, and type are locked after academic or user records exist. Contact details can still be updated.'),
             ]);
         }
 
@@ -95,7 +95,7 @@ class UniversityController extends Controller
 
         $university->update($validated);
 
-        return redirect()->route('universities.index')->with('success', 'University updated successfully.');
+        return redirect()->route('universities.index')->with('success', __('University updated successfully.'));
     }
 
     public function destroy(University $university)
@@ -104,12 +104,12 @@ class UniversityController extends Controller
         $this->authorizeUniversityScope($university);
 
         if ($this->hasOperationalData($university)) {
-            return back()->with('error', 'This university contains academic or historical records and cannot be deleted.');
+            return back()->with('error', __('This university contains academic or historical records and cannot be deleted.'));
         }
 
         $university->delete();
 
-        return redirect()->route('universities.index')->with('success', 'University deleted successfully.');
+        return redirect()->route('universities.index')->with('success', __('University deleted successfully.'));
     }
 
     private function hasOperationalData(University $university): bool

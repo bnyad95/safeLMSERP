@@ -447,16 +447,16 @@ class AcademicYearClosureController extends Controller
             'marks' => $filteredMarksCount ?: ($snapshotFilteredMarksCount ?: ((! $hasActiveFilters && $usingSnapshotFallback) ? (int) ($closureSummary['entered_marks'] ?? $closureSummary['published_marks'] ?? 0) : 0)),
         ];
         $snapshotCoverage = [
-            ['label' => 'Modules', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'modules', $request->user())],
-            ['label' => 'Roster Rows', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'enrollments', $request->user())],
-            ['label' => 'Marks', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'marks', $request->user())],
-            ['label' => 'Assessments', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'assessments', $request->user())],
-            ['label' => 'Attendance', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'attendance', $request->user())],
-            ['label' => 'Timetable', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'timetable', $request->user())],
-            ['label' => 'Materials', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'materials', $request->user())],
-            ['label' => 'Stream Posts', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'stream_posts', $request->user())],
-            ['label' => 'Class Messages', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'class_messages', $request->user())],
-            ['label' => 'Finance Records', 'value' => $this->snapshotCountForUser($archiveSnapshot, 'finance_transactions', $request->user())],
+            ['label' => __('Modules'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'modules', $request->user())],
+            ['label' => __('Roster Rows'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'enrollments', $request->user())],
+            ['label' => __('Marks'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'marks', $request->user())],
+            ['label' => __('Assessments'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'assessments', $request->user())],
+            ['label' => __('Attendance'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'attendance', $request->user())],
+            ['label' => __('Timetable'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'timetable', $request->user())],
+            ['label' => __('Materials'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'materials', $request->user())],
+            ['label' => __('Stream Posts'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'stream_posts', $request->user())],
+            ['label' => __('Class Messages'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'class_messages', $request->user())],
+            ['label' => __('Finance Records'), 'value' => $this->snapshotCountForUser($archiveSnapshot, 'finance_transactions', $request->user())],
         ];
 
         return [
@@ -564,7 +564,7 @@ class AcademicYearClosureController extends Controller
         if ($summary['blockers_count'] > 0) {
             return back()
                 ->withInput()
-                ->with('error', 'Academic year cannot be closed until missing and unpublished results are completed.');
+                ->with('error', __('Academic year cannot be closed until missing and unpublished results are completed.'));
         }
 
         $progressionReport = null;
@@ -626,7 +626,7 @@ class AcademicYearClosureController extends Controller
                 'university_id' => $university->id,
                 'academic_year' => $validated['academic_year'],
             ])
-            ->with('success', 'Academic year closed and archived. Current rosters were completed, waitlists were cleared, and year records were moved to archive history.');
+            ->with('success', __('Academic year closed and archived. Current rosters were completed, waitlists were cleared, and year records were moved to archive history.'));
     }
 
     public function storeProgressionException(Request $request)
@@ -655,7 +655,7 @@ class AcademicYearClosureController extends Controller
             'university_id' => $student->university_id,
             'academic_year' => $validated['academic_year'],
         ])
-            ->with('success', 'The student exception was approved and recorded for year closing.');
+            ->with('success', __('The student exception was approved and recorded for year closing.'));
     }
 
     public function destroyProgressionException(Request $request, StudentProgressionException $exception)
@@ -670,7 +670,7 @@ class AcademicYearClosureController extends Controller
             'university_id' => $student->university_id,
             'academic_year' => $academicYear,
         ])
-            ->with('success', 'The progression exception was removed. The student must now receive a normal decision or another approved exception.');
+            ->with('success', __('The progression exception was removed. The student must now receive a normal decision or another approved exception.'));
     }
 
     public function assignStudentStage(Request $request, Student $student)
@@ -693,7 +693,7 @@ class AcademicYearClosureController extends Controller
             'university_id' => $student->university_id,
             'academic_year' => $validated['academic_year'],
         ])
-            ->with('success', 'The student current stage was assigned.');
+            ->with('success', __('The student current stage was assigned.'));
     }
 
     private function buildSummary(string $academicYear, int $universityId, ?User $user = null, bool $includeArchiveSnapshot = false): array
@@ -756,47 +756,47 @@ class AcademicYearClosureController extends Controller
 
         $blockers = collect([
             [
-                'label' => 'Modules without a stage',
+                'label' => __('Modules without a stage'),
                 'count' => $readiness['sections_without_stage_count'],
-                'detail' => 'Every module offering must be assigned to a stage before closure.',
+                'detail' => __('Every module offering must be assigned to a stage before closure.'),
             ],
             [
-                'label' => 'Missing result rows',
+                'label' => __('Missing result rows'),
                 'count' => $missingMarks,
-                'detail' => 'Every non-exempt enrolled student/module needs a result record before closure.',
+                'detail' => __('Every non-exempt enrolled student/module needs a result record before closure.'),
             ],
             [
-                'label' => 'Unpublished marks',
+                'label' => __('Unpublished marks'),
                 'count' => $unpublishedMarks,
-                'detail' => 'Draft or incomplete marks must be completed and published, or the student needs an approved exception.',
+                'detail' => __('Draft or incomplete marks must be completed and published, or the student needs an approved exception.'),
             ],
             [
-                'label' => 'Students without a current stage',
+                'label' => __('Students without a current stage'),
                 'count' => $readiness['missing_current_stage_count'],
-                'detail' => 'Assign the student current stage before calculating progression.',
+                'detail' => __('Assign the student current stage before calculating progression.'),
             ],
             [
-                'label' => 'Student stage mismatches',
+                'label' => __('Student stage mismatches'),
                 'count' => $readiness['current_stage_mismatch_count'],
-                'detail' => 'The student current stage must match ordinary module enrollments. Earlier-stage retakes remain allowed.',
+                'detail' => __('The student current stage must match ordinary module enrollments. Earlier-stage retakes remain allowed.'),
             ],
             [
-                'label' => 'Conflicting student stages',
+                'label' => __('Conflicting student stages'),
                 'count' => $readiness['conflicting_stage_count'],
-                'detail' => 'Ordinary module enrollments for the same year must use one stage. Retake modules are allowed at an earlier stage.',
+                'detail' => __('Ordinary module enrollments for the same year must use one stage. Retake modules are allowed at an earlier stage.'),
             ],
         ])->filter(fn (array $blocker) => $blocker['count'] > 0)->values();
 
         $warnings = collect([
             [
-                'label' => 'Open tuition invoices',
+                'label' => __('Open tuition invoices'),
                 'count' => $openFinanceInvoices,
-                'detail' => 'These balances will be archived with the closed academic year records.',
+                'detail' => __('These balances will be archived with the closed academic year records.'),
             ],
             [
-                'label' => 'Open modules',
+                'label' => __('Open modules'),
                 'count' => $sections->filter(fn (CourseSection $section) => ! $section->trashed() && in_array($section->status, ['planned', 'active'], true))->count(),
-                'detail' => 'Closing will mark planned and active modules as closed, then move them to archived modules.',
+                'detail' => __('Closing will mark planned and active modules as closed, then move them to archived modules.'),
             ],
         ])->filter(fn (array $warning) => $warning['count'] > 0)->values();
 
@@ -1334,7 +1334,7 @@ class AcademicYearClosureController extends Controller
     {
         if (AcademicYearClosure::where('university_id', $universityId)->where('academic_year', $academicYear)->exists()) {
             throw ValidationException::withMessages([
-                'academic_year' => 'Progression decisions cannot be changed after the academic year is closed.',
+                'academic_year' => __('Progression decisions cannot be changed after the academic year is closed.'),
             ]);
         }
     }
@@ -1857,9 +1857,9 @@ class AcademicYearClosureController extends Controller
                 return [
                     'student_id' => $marks->first()['student_id'] ?? null,
                     'student_number' => $marks->first()['student_number'] ?? null,
-                    'student_name' => $marks->first()['student_name'] ?? 'Unknown student',
-                    'college' => $marks->first()['college'] ?? 'No college',
-                    'department' => $marks->first()['department'] ?? 'No department',
+                    'student_name' => $marks->first()['student_name'] ?? __('Unknown student'),
+                    'college' => $marks->first()['college'] ?? __('No college'),
+                    'department' => $marks->first()['department'] ?? __('No department'),
                     'modules_count' => $marks->count(),
                     'passed_modules' => $passedModules,
                     'failed_modules' => $failedModules,

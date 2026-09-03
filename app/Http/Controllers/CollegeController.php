@@ -49,7 +49,7 @@ class CollegeController extends Controller
 
         College::create($validated);
 
-        return redirect()->route('colleges.index')->with('success', 'College created successfully.');
+        return redirect()->route('colleges.index')->with('success', __('College created successfully.'));
     }
 
     public function edit(College $college)
@@ -77,12 +77,12 @@ class CollegeController extends Controller
         if ((int) $college->university_id !== (int) $validated['university_id']
             && ($college->departments()->withTrashed()->exists()
                 || User::withTrashed()->where('college_id', $college->id)->exists())) {
-            return back()->withInput()->with('error', 'A college with departments or assigned users cannot be moved to another institution.');
+            return back()->withInput()->with('error', __('A college with departments or assigned users cannot be moved to another institution.'));
         }
 
         $college->update($validated);
 
-        return redirect()->route('colleges.index')->with('success', 'College updated successfully.');
+        return redirect()->route('colleges.index')->with('success', __('College updated successfully.'));
     }
 
     public function destroy(College $college)
@@ -92,12 +92,12 @@ class CollegeController extends Controller
 
         if ($college->departments()->withTrashed()->exists()
             || User::withTrashed()->where('college_id', $college->id)->exists()) {
-            return back()->with('error', 'This college contains departments or assigned users and cannot be deleted.');
+            return back()->with('error', __('This college contains departments or assigned users and cannot be deleted.'));
         }
 
         $college->delete();
 
-        return redirect()->route('colleges.index')->with('success', 'College deleted successfully.');
+        return redirect()->route('colleges.index')->with('success', __('College deleted successfully.'));
     }
 
     private function scopedUniversities()

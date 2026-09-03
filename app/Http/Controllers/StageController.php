@@ -56,7 +56,7 @@ class StageController extends Controller
 
         Stage::create($validated + ['university_id' => $department->university_id]);
 
-        return redirect()->route('stages.index')->with('success', 'Stage created successfully.');
+        return redirect()->route('stages.index')->with('success', __('Stage created successfully.'));
     }
 
     public function edit(Stage $stage)
@@ -79,7 +79,7 @@ class StageController extends Controller
         if ($stage->courseSections()->withTrashed()->exists()
             && ((int) $stage->department_id !== $department->id
                 || (int) $stage->sequence !== (int) $validated['sequence'])) {
-            return back()->withInput()->with('error', 'A stage used by module offerings cannot change department or sequence. Its name and code can still be updated.');
+            return back()->withInput()->with('error', __('A stage used by module offerings cannot change department or sequence. Its name and code can still be updated.'));
         }
 
         unset($validated['college_id']);
@@ -88,7 +88,7 @@ class StageController extends Controller
             $stage->courseSections()->withTrashed()->update(['grade_level' => $stage->name]);
         });
 
-        return redirect()->route('stages.index')->with('success', 'Stage updated successfully.');
+        return redirect()->route('stages.index')->with('success', __('Stage updated successfully.'));
     }
 
     public function destroy(Stage $stage)
@@ -97,12 +97,12 @@ class StageController extends Controller
         $this->authorizeStage($stage);
 
         if ($stage->courseSections()->withTrashed()->exists()) {
-            return back()->with('error', 'This stage is used by modules and cannot be deleted.');
+            return back()->with('error', __('This stage is used by modules and cannot be deleted.'));
         }
 
         $stage->delete();
 
-        return redirect()->route('stages.index')->with('success', 'Stage deleted successfully.');
+        return redirect()->route('stages.index')->with('success', __('Stage deleted successfully.'));
     }
 
     private function validateStage(Request $request, ?Stage $stage = null): array
@@ -166,7 +166,9 @@ class StageController extends Controller
 
         if ($sequence > $maxStages) {
             throw ValidationException::withMessages([
-                'sequence' => "{$university->name} is configured as ".($university->isInstitute() ? 'an institute' : 'a university')." and supports only {$maxStages} stages.",
+                'sequence' => $university->isInstitute()
+                    ? __(':name is configured as an institute and supports only :max stages.', ['name' => $university->name, 'max' => $maxStages])
+                    : __(':name is configured as a university and supports only :max stages.', ['name' => $university->name, 'max' => $maxStages]),
             ]);
         }
     }

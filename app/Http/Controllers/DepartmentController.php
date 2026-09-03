@@ -53,7 +53,7 @@ class DepartmentController extends Controller
 
         Department::create($validated);
 
-        return redirect()->route('departments.index')->with('success', 'Department created successfully.');
+        return redirect()->route('departments.index')->with('success', __('Department created successfully.'));
     }
 
     public function edit(Department $department)
@@ -84,12 +84,12 @@ class DepartmentController extends Controller
         $parentChanged = (int) $department->university_id !== (int) $validated['university_id']
             || (int) $department->college_id !== (int) $validated['college_id'];
         if ($parentChanged && $this->hasOperationalData($department)) {
-            return back()->withInput()->with('error', 'A department with academic records or assigned users cannot be moved to another college or institution.');
+            return back()->withInput()->with('error', __('A department with academic records or assigned users cannot be moved to another college or institution.'));
         }
 
         $department->update($validated);
 
-        return redirect()->route('departments.index')->with('success', 'Department updated successfully.');
+        return redirect()->route('departments.index')->with('success', __('Department updated successfully.'));
     }
 
     public function destroy(Department $department)
@@ -98,12 +98,12 @@ class DepartmentController extends Controller
         $this->authorizeDepartmentScope($department);
 
         if ($this->hasOperationalData($department)) {
-            return back()->with('error', 'This department contains academic or historical records and cannot be archived.');
+            return back()->with('error', __('This department contains academic or historical records and cannot be archived.'));
         }
 
         $department->delete();
 
-        return redirect()->route('departments.index')->with('success', 'Department deleted successfully.');
+        return redirect()->route('departments.index')->with('success', __('Department deleted successfully.'));
     }
 
     private function hasOperationalData(Department $department): bool
