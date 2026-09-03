@@ -2,8 +2,8 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Accounting &amp; Finance</p>
-                <h2 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">Finance Dashboard</h2>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('Accounting & Finance') }}</p>
+                <h2 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Finance Dashboard') }}</h2>
                 <p class="mt-1 truncate text-sm text-gray-600 dark:text-gray-400">{{ $scopeLabel }}</p>
             </div>
             <x-dashboard-clock />
@@ -32,20 +32,20 @@
 
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Priority Work</h3>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Items requiring attention in the current finance scope.</p>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Priority Work') }}</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Items requiring attention in the current finance scope.') }}</p>
                 </div>
                 <div class="grid divide-y divide-gray-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0 dark:divide-gray-800">
                     <a href="{{ route('finance', ['payment_status' => 'overdue']) }}" class="px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Overdue invoices</p>
+                        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('Overdue invoices') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-red-700 dark:text-red-300">{{ number_format($operationalStats['overdueInvoices']) }}</p>
                     </a>
                     <a href="{{ route('finance.tuition-reminders.index', ['date_from' => today()->format('Y-m-d'), 'date_to' => today()->addDays(30)->format('Y-m-d')]) }}" class="px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Due within 30 days</p>
+                        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('Due within 30 days') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ number_format($operationalStats['dueSoon']) }}</p>
                     </a>
                     <a href="{{ route('finance.tuition-reminders.index') }}" class="px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Reminders sent in 7 days</p>
+                        <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('Reminders sent in 7 days') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ number_format($operationalStats['remindersLastSevenDays']) }}</p>
                     </a>
                 </div>
@@ -55,12 +55,12 @@
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <button type="button" x-on:click="chartsOpen = ! chartsOpen" class="flex items-center gap-1.5 text-lg font-semibold text-gray-900 dark:text-gray-100">
-                            <span>Finance Charts</span>
+                            <span>{{ __('Finance Charts') }}</span>
                             <svg class="h-4 w-4 transition-transform" :class="{ '-rotate-90': ! chartsOpen }" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                 <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
                             </svg>
                         </button>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Select a currency to keep every financial comparison consistent.</p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Select a currency to keep every financial comparison consistent.') }}</p>
                     </div>
                     <div class="inline-flex self-start rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900" role="group" aria-label="Chart currency">
                         @foreach($chartData['currencies'] as $currency)
@@ -73,23 +73,23 @@
 
                 <div x-show="chartsOpen" class="grid min-w-0 gap-6 xl:grid-cols-2">
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Collections Trend</h4>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Posted payments over the last 30 days.</p>
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Collections Trend') }}</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Posted payments over the last 30 days.') }}</p>
                         <div class="mt-5 h-72 min-w-0"><canvas id="finance-collections-chart"></canvas></div>
                     </article>
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Outstanding Balance by Department</h4>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Top departments by unpaid posted balance.</p>
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Outstanding Balance by Department') }}</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Top departments by unpaid posted balance.') }}</p>
                         <div class="mt-5 h-72 min-w-0"><canvas id="finance-department-chart"></canvas></div>
                     </article>
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Invoice Status</h4>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Paid, partial, open, and overdue invoice counts.</p>
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Invoice Status') }}</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Paid, partial, open, and overdue invoice counts.') }}</p>
                         <div class="mt-5 h-72 min-w-0"><canvas id="finance-status-chart"></canvas></div>
                     </article>
                     <article class="min-w-0 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">Overdue Aging</h4>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Remaining overdue balances grouped by age.</p>
+                        <h4 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Overdue Aging') }}</h4>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Remaining overdue balances grouped by age.') }}</p>
                         <div class="mt-5 h-72 min-w-0"><canvas id="finance-aging-chart"></canvas></div>
                     </article>
                 </div>
@@ -100,50 +100,50 @@
             <div x-data="{ dueView: 'overdue' }">
                 <div class="rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="grid grid-cols-2 gap-2">
-                        <button type="button" x-on:click="dueView = 'overdue'" x-bind:class="dueView === 'overdue' ? 'bg-gray-900 text-white dark:bg-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Overdue Tuition ({{ $overdueInvoices->count() }})</button>
-                        <button type="button" x-on:click="dueView = 'upcoming'" x-bind:class="dueView === 'upcoming' ? 'bg-gray-900 text-white dark:bg-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">Upcoming Due Dates ({{ $upcomingInvoices->count() }})</button>
+                        <button type="button" x-on:click="dueView = 'overdue'" x-bind:class="dueView === 'overdue' ? 'bg-gray-900 text-white dark:bg-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">{{ __(':label (:count)', ['label' => __('Overdue Tuition'), 'count' => $overdueInvoices->count()]) }}</button>
+                        <button type="button" x-on:click="dueView = 'upcoming'" x-bind:class="dueView === 'upcoming' ? 'bg-gray-900 text-white dark:bg-blue-600' : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'" class="rounded-md px-3 py-2 text-sm font-semibold">{{ __(':label (:count)', ['label' => __('Upcoming Due Dates'), 'count' => $upcomingInvoices->count()]) }}</button>
                     </div>
                 </div>
 
                 <section x-show="dueView === 'overdue'" class="mt-4 min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="flex items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                         <div>
-                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Overdue Tuition</h3>
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Oldest overdue invoices first.</p>
+                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Overdue Tuition') }}</h3>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Oldest overdue invoices first.') }}</p>
                         </div>
                         @if($canSendTuitionReminder)
-                            <a href="{{ route('finance.tuition-reminders.index', ['payment_status' => 'overdue']) }}" class="shrink-0 text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">Remind</a>
+                            <a href="{{ route('finance.tuition-reminders.index', ['payment_status' => 'overdue']) }}" class="shrink-0 text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">{{ __('Remind') }}</a>
                         @endif
                     </div>
                     <div class="divide-y divide-gray-100 dark:divide-gray-800">
                         @forelse($overdueInvoices as $invoice)
                             <a href="{{ route('finance.students.show', $invoice->student_id) }}" class="flex flex-col gap-2 px-5 py-4 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-gray-800/60">
                                 <div class="min-w-0">
-                                    <p class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $invoice->student?->full_name ?? 'Unknown student' }}</p>
-                                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ $invoice->student?->student_id }} / {{ $invoice->invoice_number ?? 'Invoice' }}</p>
+                                    <p class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $invoice->student?->full_name ?? __('Unknown student') }}</p>
+                                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ $invoice->student?->student_id }} / {{ $invoice->invoice_number ?? __('Invoice') }}</p>
                                 </div>
                                 <div class="shrink-0 sm:text-right">
                                     <p class="text-sm font-semibold text-red-700 dark:text-red-300">{{ money($invoice->remaining_amount, $invoice->currency) }} {{ $invoice->currency }}</p>
-                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Due {{ $invoice->due_date?->format('Y-m-d') ?? 'not set' }}</p>
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ __('Due :date', ['date' => $invoice->due_date?->format('Y-m-d') ?? __('not set')]) }}</p>
                                 </div>
                             </a>
                         @empty
-                            <p class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No overdue tuition invoices.</p>
+                            <p class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{{ __('No overdue tuition invoices.') }}</p>
                         @endforelse
                     </div>
                 </section>
 
                 <section x-show="dueView === 'upcoming'" x-cloak class="mt-4 min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Upcoming Due Dates</h3>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Open installments due in the next 30 days.</p>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Upcoming Due Dates') }}</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Open installments due in the next 30 days.') }}</p>
                     </div>
                     <div class="divide-y divide-gray-100 dark:divide-gray-800">
                         @forelse($upcomingInvoices as $invoice)
                             <a href="{{ route('finance.students.show', $invoice->student_id) }}" class="flex flex-col gap-2 px-5 py-4 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-gray-800/60">
                                 <div class="min-w-0">
-                                    <p class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $invoice->student?->full_name ?? 'Unknown student' }}</p>
-                                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ $invoice->invoice_number ?? 'Invoice' }}</p>
+                                    <p class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $invoice->student?->full_name ?? __('Unknown student') }}</p>
+                                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ $invoice->invoice_number ?? __('Invoice') }}</p>
                                 </div>
                                 <div class="shrink-0 sm:text-right">
                                     <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ money($invoice->remaining_amount, $invoice->currency) }} {{ $invoice->currency }}</p>
@@ -151,7 +151,7 @@
                                 </div>
                             </a>
                         @empty
-                            <p class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No tuition installments are due in the next 30 days.</p>
+                            <p class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{{ __('No tuition installments are due in the next 30 days.') }}</p>
                         @endforelse
                     </div>
                 </section>
@@ -160,29 +160,29 @@
             <div class="grid min-w-0 gap-6 xl:grid-cols-[1.5fr_0.7fr]">
                 <section class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="flex items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Recent Finance Activity</h3>
-                        <a href="{{ route('finance') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">View ledger</a>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Recent Finance Activity') }}</h3>
+                        <a href="{{ route('finance') }}" class="text-sm font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">{{ __('View ledger') }}</a>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
                             <thead class="bg-gray-50 dark:bg-gray-950/50">
                                 <tr class="text-left text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                                    <th class="px-5 py-3">Student</th>
-                                    <th class="px-5 py-3">Record</th>
-                                    <th class="px-5 py-3">Amount</th>
-                                    <th class="px-5 py-3">Status</th>
+                                    <th class="px-5 py-3">{{ __('Student') }}</th>
+                                    <th class="px-5 py-3">{{ __('Record') }}</th>
+                                    <th class="px-5 py-3">{{ __('Amount') }}</th>
+                                    <th class="px-5 py-3">{{ __('Status') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                                 @forelse($recentTransactions as $transaction)
                                     <tr>
-                                        <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-900 dark:text-gray-100">{{ $transaction->student?->full_name ?? 'Unknown student' }}</td>
-                                        <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{{ ucfirst($transaction->type) }}<span class="block text-xs text-gray-500 dark:text-gray-400">{{ $transaction->documentNumber() ?? $transaction->reference ?? $transaction->transaction_date?->format('Y-m-d') }}</span></td>
+                                        <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-900 dark:text-gray-100">{{ $transaction->student?->full_name ?? __('Unknown student') }}</td>
+                                        <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{{ __(ucfirst($transaction->type)) }}<span class="block text-xs text-gray-500 dark:text-gray-400">{{ $transaction->documentNumber() ?? $transaction->reference ?? $transaction->transaction_date?->format('Y-m-d') }}</span></td>
                                         <td class="whitespace-nowrap px-5 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ money($transaction->amount, $transaction->currency) }} {{ $transaction->currency }}</td>
-                                        <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{{ ucfirst($transaction->posting_status) }}</td>
+                                        <td class="whitespace-nowrap px-5 py-3 text-sm text-gray-600 dark:text-gray-300">{{ __(ucfirst($transaction->posting_status)) }}</td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="4" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">No finance activity has been recorded.</td></tr>
+                                    <tr><td colspan="4" class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{{ __('No finance activity has been recorded.') }}</td></tr>
                                 @endforelse
                             </tbody>
                         </table>
@@ -191,31 +191,31 @@
 
                 <aside class="space-y-6">
                     <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Quick Actions</h3>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Quick Actions') }}</h3>
                         <div class="mt-4 grid gap-3">
-                            <a href="{{ route('finance') }}" class="inline-flex justify-center rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-blue-600 dark:hover:bg-blue-500">Find a student</a>
+                            <a href="{{ route('finance') }}" class="inline-flex justify-center rounded-md bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-blue-600 dark:hover:bg-blue-500">{{ __('Find a student') }}</a>
                             @if($canCreateRecord)
-                                <a href="{{ route('finance') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Add finance record</a>
+                                <a href="{{ route('finance') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Add finance record') }}</a>
                             @endif
                             @if($canApproveFinance)
-                                <a href="{{ route('finance.approvals.index') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Review approvals</a>
+                                <a href="{{ route('finance.approvals.index') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Review approvals') }}</a>
                             @endif
                             @if($canSendTuitionReminder)
-                                <a href="{{ route('finance.tuition-reminders.index') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Send tuition reminder</a>
+                                <a href="{{ route('finance.tuition-reminders.index') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Send tuition reminder') }}</a>
                             @endif
-                            <a href="{{ route('finance.export') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">Export finance report</a>
+                            <a href="{{ route('finance.export') }}" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Export finance report') }}</a>
                         </div>
                     </section>
 
                     <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Account Holds</h3>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Account Holds') }}</h3>
                         <p class="mt-3 text-3xl font-semibold text-gray-900 dark:text-gray-100">{{ number_format($operationalStats['blockedAccounts']) }}</p>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Student accounts currently blocked for finance reasons.</p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Student accounts currently blocked for finance reasons.') }}</p>
                     </section>
 
                     @if($recentReminders->isNotEmpty())
                         <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Recent Reminders</h3>
+                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Recent Reminders') }}</h3>
                             <div class="mt-3 divide-y divide-gray-100 dark:divide-gray-800">
                                 @foreach($recentReminders as $reminder)
                                     <div class="py-3 first:pt-0 last:pb-0">

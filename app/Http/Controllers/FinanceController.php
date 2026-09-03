@@ -91,21 +91,21 @@ class FinanceController extends Controller
             ->get();
 
         $scopeLabel = match (true) {
-            $this->hasGlobalFinanceScope($user) => 'All institutions',
-            filled($user->department_id) => $user->department?->name ?? 'Assigned department',
-            filled($user->college_id) => $user->college?->name ?? 'Assigned college',
-            filled($user->university_id) => $user->university?->name ?? 'Assigned university',
-            default => 'No organization assigned',
+            $this->hasGlobalFinanceScope($user) => __('All institutions'),
+            filled($user->department_id) => $user->department?->name ?? __('Assigned department'),
+            filled($user->college_id) => $user->college?->name ?? __('Assigned college'),
+            filled($user->university_id) => $user->university?->name ?? __('Assigned university'),
+            default => __('No organization assigned'),
         };
 
         return view('finance.dashboard', [
             'scopeLabel' => $scopeLabel,
             'chartData' => $this->financeDashboardChartData($financeQuery, $overdueQuery),
             'stats' => [
-                ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($outstanding, 'balance'), 'detail' => 'Posted balance in your organization scope', 'tone' => 'blue'],
-                ['label' => 'Collected Today', 'value' => $this->formatCurrencyTotals($collectedToday, 'amount'), 'detail' => 'Posted student payments today', 'tone' => 'emerald'],
-                ['label' => 'Overdue Students', 'value' => number_format((clone $overdueQuery)->distinct()->count('student_id')), 'detail' => number_format((clone $overdueQuery)->count()).' overdue invoice(s)', 'tone' => 'red'],
-                ['label' => 'Pending Approvals', 'value' => number_format((clone $pendingQuery)->count()), 'detail' => 'Finance records waiting for approval', 'tone' => 'amber'],
+                ['label' => __('Outstanding Tuition'), 'value' => $this->formatCurrencyTotals($outstanding, 'balance'), 'detail' => __('Posted balance in your organization scope'), 'tone' => 'blue'],
+                ['label' => __('Collected Today'), 'value' => $this->formatCurrencyTotals($collectedToday, 'amount'), 'detail' => __('Posted student payments today'), 'tone' => 'emerald'],
+                ['label' => __('Overdue Students'), 'value' => number_format((clone $overdueQuery)->distinct()->count('student_id')), 'detail' => __(':count overdue invoice(s)', ['count' => number_format((clone $overdueQuery)->count())]), 'tone' => 'red'],
+                ['label' => __('Pending Approvals'), 'value' => number_format((clone $pendingQuery)->count()), 'detail' => __('Finance records waiting for approval'), 'tone' => 'amber'],
             ],
             'operationalStats' => [
                 'overdueInvoices' => (clone $overdueQuery)->count(),
@@ -188,16 +188,16 @@ class FinanceController extends Controller
             'transactions' => $transactions,
             'filters' => $filters,
             'types' => collect([
-                'payment' => 'Payment',
-                'discount' => 'Discount',
-                'scholarship' => 'Scholarship',
-                'refund' => 'Refund',
+                'payment' => __('Payment'),
+                'discount' => __('Discount'),
+                'scholarship' => __('Scholarship'),
+                'refund' => __('Refund'),
             ])->only($types),
             'stats' => [
-                ['label' => 'Waiting for Approval', 'value' => number_format((clone $pendingQuery)->count()), 'detail' => 'Pending records in your organization scope'],
-                ['label' => 'Ready for You', 'value' => number_format($user->hasRole('super_administrator') ? (clone $pendingQuery)->count() : (clone $pendingQuery)->where('recorded_by', '!=', $user->id)->count()), 'detail' => 'Records you are allowed to approve'],
-                ['label' => 'Recorded by You', 'value' => number_format((clone $pendingQuery)->where('recorded_by', $user->id)->count()), 'detail' => 'Must be approved by another user'],
-                ['label' => 'Filtered Amount', 'value' => $this->formatCurrencyTotals($amountsByCurrency, 'amount'), 'detail' => 'Pending value by currency'],
+                ['label' => __('Waiting for Approval'), 'value' => number_format((clone $pendingQuery)->count()), 'detail' => __('Pending records in your organization scope')],
+                ['label' => __('Ready for You'), 'value' => number_format($user->hasRole('super_administrator') ? (clone $pendingQuery)->count() : (clone $pendingQuery)->where('recorded_by', '!=', $user->id)->count()), 'detail' => __('Records you are allowed to approve')],
+                ['label' => __('Recorded by You'), 'value' => number_format((clone $pendingQuery)->where('recorded_by', $user->id)->count()), 'detail' => __('Must be approved by another user')],
+                ['label' => __('Filtered Amount'), 'value' => $this->formatCurrencyTotals($amountsByCurrency, 'amount'), 'detail' => __('Pending value by currency')],
             ],
         ]);
     }
@@ -241,7 +241,7 @@ class FinanceController extends Controller
             ->filter(fn ($row) => (float) $row->balance > 0)
             ->map(fn ($row) => [
                 'department_id' => (int) $row->department_id,
-                'department' => $row->department,
+                'department' => $row->department === 'Unassigned department' ? __('Unassigned department') : $row->department,
                 'currency' => $row->currency ?: 'IQD',
                 'balance' => (float) $row->balance,
             ])
@@ -371,25 +371,19 @@ class FinanceController extends Controller
             'selectedStudent' => $selectedStudent,
             'transactions' => $transactions,
             'stats' => [
-                ['label' => 'Total Charges', 'value' => $this->formatCurrencyTotals($scopeBalances, 'charges'), 'detail' => 'Invoices by currency'],
-                ['label' => 'Total Credits', 'value' => $this->formatCurrencyTotals($scopeBalances, 'credits'), 'detail' => 'Payments, discounts, scholarships, net of refunds'],
-                ['label' => 'Outstanding Balance', 'value' => $this->formatCurrencyTotals($scopeBalances, 'balance'), 'detail' => 'Scoped balances by currency'],
-                ['label' => 'Filtered Balance', 'value' => $this->formatCurrencyTotals($filteredBalances, 'balance'), 'detail' => $selectedStudent ? 'Selected filters for this student' : 'Current filters'],
+                ['label' => __('Total Charges'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'charges'), 'detail' => __('Invoices by currency')],
+                ['label' => __('Total Credits'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'credits'), 'detail' => __('Payments, discounts, scholarships, net of refunds')],
+                ['label' => __('Outstanding Balance'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'balance'), 'detail' => __('Scoped balances by currency')],
+                ['label' => __('Filtered Balance'), 'value' => $this->formatCurrencyTotals($filteredBalances, 'balance'), 'detail' => $selectedStudent ? __('Selected filters for this student') : __('Current filters')],
             ],
             'selectedBalances' => $selectedBalances,
             'selectedBalance' => $selectedBalance,
             'selectedPaymentStatus' => $selectedPaymentStatus,
             'invoiceOptions' => $selectedStudent ? $this->invoiceOptions($selectedStudent) : collect(),
             'filterOptions' => $this->financeFilterOptions($user),
-            'types' => [
-                'invoice' => 'Invoice / Tuition Charge',
-                'payment' => 'Payment',
-                'discount' => 'Discount',
-                'scholarship' => 'Scholarship',
-                'refund' => 'Refund',
-            ],
-            'statuses' => ['pending' => 'Pending', 'paid' => 'Paid', 'partial' => 'Partial', 'approved' => 'Approved', 'cancelled' => 'Cancelled'],
-            'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'paid' => 'Paid', 'overdue' => 'Overdue', 'cancelled' => 'Cancelled'],
+            'types' => $this->financeEntryTypeLabels(),
+            'statuses' => ['pending' => __('Pending'), 'paid' => __('Paid'), 'partial' => __('Partial'), 'approved' => __('Approved'), 'cancelled' => __('Cancelled')],
+            'paymentStatuses' => ['open' => __('Open'), 'partial' => __('Partial'), 'paid' => __('Paid'), 'overdue' => __('Overdue'), 'cancelled' => __('Cancelled')],
             'canCreateInvoice' => $user->hasRole('super_administrator') || $user->hasPermission('finance.create_invoice'),
             'canRecordPayment' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.record_payment', 'finance.record_expense', 'finance.refund']),
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
@@ -445,7 +439,7 @@ class FinanceController extends Controller
             : [
                 'allowedEntryTypes' => [],
                 'autoBilledPlan' => $this->studentHasAutomaticFlatBilling($student),
-                'creationStatuses' => ['pending' => 'Pending approval'],
+                'creationStatuses' => ['pending' => __('Pending approval')],
                 'canCollectPayment' => false,
                 'canPostImmediately' => false,
                 'invoiceOptions' => collect(),
@@ -459,11 +453,11 @@ class FinanceController extends Controller
             'selectedStudent' => $student,
             'transactions' => $transactions,
             'stats' => [
-                ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($selectedBalances, 'balance'), 'detail' => 'Remaining balance by currency'],
-                ['label' => 'Cash Paid', 'value' => $this->formatCurrencyTotals($selectedBalances, 'cash_paid'), 'detail' => 'Payments received, net of refunds'],
-                ['label' => 'Discounts & Scholarships', 'value' => $this->formatCurrencyTotals($selectedBalances, 'non_cash_credits'), 'detail' => 'Non-cash credits applied to invoices'],
-                ['label' => 'Next Due', 'value' => $nextDueInvoice ? money($this->remainingInvoiceAmount($nextDueInvoice), $nextDueInvoice->currency).' '.$nextDueInvoice->currency : 'No due invoices', 'detail' => $nextDueInvoice ? 'Due '.$nextDueInvoice->due_date->format('Y-m-d') : 'No open invoice due date'],
-                ['label' => 'Payment Status', 'value' => ucfirst($selectedPaymentStatus), 'detail' => $paymentPlanSummary['total'] > 0 ? $paymentPlanSummary['label'] : 'No semester payment plan'],
+                ['label' => __('Outstanding Tuition'), 'value' => $this->formatCurrencyTotals($selectedBalances, 'balance'), 'detail' => __('Remaining balance by currency')],
+                ['label' => __('Cash Paid'), 'value' => $this->formatCurrencyTotals($selectedBalances, 'cash_paid'), 'detail' => __('Payments received, net of refunds')],
+                ['label' => __('Discounts & Scholarships'), 'value' => $this->formatCurrencyTotals($selectedBalances, 'non_cash_credits'), 'detail' => __('Non-cash credits applied to invoices')],
+                ['label' => __('Next Due'), 'value' => $nextDueInvoice ? money($this->remainingInvoiceAmount($nextDueInvoice), $nextDueInvoice->currency).' '.$nextDueInvoice->currency : __('No due invoices'), 'detail' => $nextDueInvoice ? __('Due :date', ['date' => $nextDueInvoice->due_date->format('Y-m-d')]) : __('No open invoice due date')],
+                ['label' => __('Payment Status'), 'value' => __(ucfirst($selectedPaymentStatus)), 'detail' => $paymentPlanSummary['total'] > 0 ? $paymentPlanSummary['label'] : __('No semester payment plan')],
             ],
             'selectedBalances' => $selectedBalances,
             'filteredBalanceText' => $this->formatCurrencyTotals($filteredBalances, 'balance'),
@@ -473,8 +467,8 @@ class FinanceController extends Controller
             'tuitionAgreements' => $tuitionAgreements,
             'installmentPlanOverflowWarning' => $installmentPlanOverflowWarning,
             'types' => $this->financeEntryTypeLabels(),
-            'statuses' => ['pending' => 'Pending', 'paid' => 'Paid', 'partial' => 'Partial', 'approved' => 'Approved', 'cancelled' => 'Cancelled'],
-            'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'paid' => 'Paid', 'overdue' => 'Overdue', 'cancelled' => 'Cancelled'],
+            'statuses' => ['pending' => __('Pending'), 'paid' => __('Paid'), 'partial' => __('Partial'), 'approved' => __('Approved'), 'cancelled' => __('Cancelled')],
+            'paymentStatuses' => ['open' => __('Open'), 'partial' => __('Partial'), 'paid' => __('Paid'), 'overdue' => __('Overdue'), 'cancelled' => __('Cancelled')],
             'canCreateInvoice' => $canCreateInvoice,
             'canRecordPayment' => $canRecordPayment,
             'canApproveFinance' => $user->hasRole('super_administrator') || $user->hasAnyPermission(['finance.approve_payment', 'finance.approve_expense']),
@@ -511,11 +505,11 @@ class FinanceController extends Controller
     private function financeEntryTypeLabels(): array
     {
         return [
-            'invoice' => 'Invoice / Tuition Charge',
-            'payment' => 'Payment',
-            'discount' => 'Discount',
-            'scholarship' => 'Scholarship',
-            'refund' => 'Refund',
+            'invoice' => __('Invoice / Tuition Charge'),
+            'payment' => __('Payment'),
+            'discount' => __('Discount'),
+            'scholarship' => __('Scholarship'),
+            'refund' => __('Refund'),
         ];
     }
 
@@ -552,8 +546,8 @@ class FinanceController extends Controller
             'allowedEntryTypes' => $allowedEntryTypes,
             'autoBilledPlan' => $autoBilledPlan,
             'creationStatuses' => $canPostImmediately
-                ? ['pending' => 'Pending approval', 'paid' => 'Post immediately']
-                : ['pending' => 'Pending approval'],
+                ? ['pending' => __('Pending approval'), 'paid' => __('Post immediately')]
+                : ['pending' => __('Pending approval')],
             'canCollectPayment' => $canPostImmediately || $user->hasPermission('finance.record_payment'),
             'canPostImmediately' => $canPostImmediately,
             'invoiceOptions' => $this->invoiceOptions($student),
@@ -650,11 +644,11 @@ class FinanceController extends Controller
             'reminderRows' => $reminderRows,
             'reminderPaginator' => $studentPaginator,
             'stats' => [
-                ['label' => 'Matching Students', 'value' => (string) $studentPaginator->total(), 'detail' => 'Filtered students with unpaid tuition'],
-                ['label' => 'Outstanding Tuition', 'value' => $this->formatCurrencyTotals($balanceTotals, 'balance'), 'detail' => 'Open balances by currency'],
-                ['label' => 'Reminder Scope', 'value' => $filters['q'] !== '' ? 'Filtered' : 'All unpaid', 'detail' => 'Use filters to narrow recipients'],
+                ['label' => __('Matching Students'), 'value' => (string) $studentPaginator->total(), 'detail' => __('Filtered students with unpaid tuition')],
+                ['label' => __('Outstanding Tuition'), 'value' => $this->formatCurrencyTotals($balanceTotals, 'balance'), 'detail' => __('Open balances by currency')],
+                ['label' => __('Reminder Scope'), 'value' => $filters['q'] !== '' ? __('Filtered') : __('All unpaid'), 'detail' => __('Use filters to narrow recipients')],
             ],
-            'paymentStatuses' => ['open' => 'Open', 'partial' => 'Partial', 'overdue' => 'Overdue'],
+            'paymentStatuses' => ['open' => __('Open'), 'partial' => __('Partial'), 'overdue' => __('Overdue')],
         ]);
     }
 
@@ -697,7 +691,7 @@ class FinanceController extends Controller
 
             if ($validated['type'] === 'invoice' && $this->studentHasAutomaticFlatBilling($lockedStudent)) {
                 throw ValidationException::withMessages([
-                    'type' => 'This student is on an automatically billed tuition plan. Tuition invoices are generated automatically; manual invoices are disabled to prevent conflicts.',
+                    'type' => __('This student is on an automatically billed tuition plan. Tuition invoices are generated automatically; manual invoices are disabled to prevent conflicts.'),
                 ]);
             }
 
@@ -717,7 +711,7 @@ class FinanceController extends Controller
 
                 if ((float) $validated['amount'] > $refundable) {
                     throw ValidationException::withMessages([
-                        'amount' => 'The refund exceeds the amount available to refund ('.money($refundable, $validated['currency']).' '.$validated['currency'].').',
+                        'amount' => __('The refund exceeds the amount available to refund (:amount).', ['amount' => money($refundable, $validated['currency']).' '.$validated['currency']]),
                     ]);
                 }
             }
@@ -727,7 +721,7 @@ class FinanceController extends Controller
 
                 if ((float) $validated['amount'] > $outstanding) {
                     throw ValidationException::withMessages([
-                        'amount' => 'The discount exceeds the student\'s outstanding balance of '.money($outstanding, $validated['currency']).' '.$validated['currency'].'.',
+                        'amount' => __("The discount exceeds the student's outstanding balance of :amount.", ['amount' => money($outstanding, $validated['currency']).' '.$validated['currency']]),
                     ]);
                 }
             }
@@ -774,12 +768,12 @@ class FinanceController extends Controller
 
         if ($financeTransaction->status !== 'pending' || $financeTransaction->posting_status !== 'pending') {
             return $this->financeApprovalRedirect($request, $financeTransaction)
-                ->with('error', 'This finance record is no longer waiting for approval.');
+                ->with('error', __('This finance record is no longer waiting for approval.'));
         }
 
         if (! $request->user()->hasRole('super_administrator') && $financeTransaction->recorded_by === $request->user()->id) {
             return $this->financeApprovalRedirect($request, $financeTransaction)
-                ->with('error', 'A finance record must be approved by a different authorized user.');
+                ->with('error', __('A finance record must be approved by a different authorized user.'));
         }
 
         $approved = DB::transaction(function () use ($request, $financeTransaction) {
@@ -799,7 +793,7 @@ class FinanceController extends Controller
 
                 if ($alreadyPosted + (float) $financeTransaction->amount > (float) $invoice->amount) {
                     throw ValidationException::withMessages([
-                        'amount' => 'This approval would exceed the remaining invoice balance.',
+                        'amount' => __('This approval would exceed the remaining invoice balance.'),
                     ]);
                 }
             }
@@ -825,11 +819,11 @@ class FinanceController extends Controller
 
         if (! $approved) {
             return $this->financeApprovalRedirect($request, $financeTransaction)
-                ->with('error', 'This finance record was already processed by another user.');
+                ->with('error', __('This finance record was already processed by another user.'));
         }
 
         return $this->financeApprovalRedirect($request, $financeTransaction)
-            ->with('success', 'Finance record approved.');
+            ->with('success', __('Finance record approved.'));
     }
 
     public function void(Request $request, FinanceTransaction $financeTransaction)
@@ -855,7 +849,7 @@ class FinanceController extends Controller
                     ->exists();
                 if ($hasAllocations) {
                     throw ValidationException::withMessages([
-                        'transaction' => 'Reverse the payments and credits allocated to this invoice before voiding it.',
+                        'transaction' => __('Reverse the payments and credits allocated to this invoice before voiding it.'),
                     ]);
                 }
 
@@ -867,7 +861,7 @@ class FinanceController extends Controller
                         ->exists();
                 if ($hasInstallmentSchedule) {
                     throw ValidationException::withMessages([
-                        'transaction' => 'A semester installment cannot be voided by itself because it would break the tuition agreement schedule.',
+                        'transaction' => __('A semester installment cannot be voided by itself because it would break the tuition agreement schedule.'),
                     ]);
                 }
             }
@@ -933,7 +927,7 @@ class FinanceController extends Controller
 
         return redirect()
             ->route('finance.students.show', $financeTransaction->student_id)
-            ->with('success', 'Finance record voided with a reversal entry.');
+            ->with('success', __('Finance record voided with a reversal entry.'));
     }
 
     public function blockStudentAccount(Request $request, Student $student)
@@ -943,13 +937,13 @@ class FinanceController extends Controller
 
         $student->load(['user.roles']);
         $account = $student->user;
-        abort_unless($account, 404, 'Student login account was not found.');
-        abort_unless($account->roles()->where('name', 'student')->exists(), 403, 'Only student login accounts can be blocked from finance.');
+        abort_unless($account, 404, __('Student login account was not found.'));
+        abort_unless($account->roles()->where('name', 'student')->exists(), 403, __('Only student login accounts can be blocked from finance.'));
 
         if ($account->account_blocked_at && $account->account_block_type !== 'finance') {
             return redirect()
                 ->route('finance.students.show', $student)
-                ->with('error', 'This account has a non-finance hold. Finance cannot replace it.');
+                ->with('error', __('This account has a non-finance hold. Finance cannot replace it.'));
         }
 
         $ledger = app(FinanceLedgerService::class);
@@ -958,7 +952,7 @@ class FinanceController extends Controller
         if (! $overdueInvoices) {
             return redirect()
                 ->route('finance.students.show', $student)
-                ->with('error', 'This student has no overdue tuition installment to justify a finance block.');
+                ->with('error', __('This student has no overdue tuition installment to justify a finance block.'));
         }
 
         $validated = $request->validate([
@@ -974,7 +968,7 @@ class FinanceController extends Controller
 
         return redirect()
             ->route('finance.students.show', $student)
-            ->with('success', 'Student account blocked until the tuition balance is resolved.');
+            ->with('success', __('Student account blocked until the tuition balance is resolved.'));
     }
 
     public function unblockStudentAccount(Request $request, Student $student)
@@ -984,12 +978,12 @@ class FinanceController extends Controller
 
         $student->load('user');
         $account = $student->user;
-        abort_unless($account, 404, 'Student login account was not found.');
+        abort_unless($account, 404, __('Student login account was not found.'));
 
         if ($account->account_block_type !== 'finance') {
             return redirect()
                 ->route('finance.students.show', $student)
-                ->with('error', 'Only a finance hold can be removed from this workspace.');
+                ->with('error', __('Only a finance hold can be removed from this workspace.'));
         }
 
         $account->update([
@@ -1001,7 +995,7 @@ class FinanceController extends Controller
 
         return redirect()
             ->route('finance.students.show', $student)
-            ->with('success', 'Student account unblocked.');
+            ->with('success', __('Student account unblocked.'));
     }
 
     public function sendTuitionReminders(Request $request)
@@ -1017,11 +1011,11 @@ class FinanceController extends Controller
         ]);
 
         if ($validated['scope'] === 'selected' && empty($validated['student_id'])) {
-            return $this->redirectToFinance($request)->with('error', 'Select a student before sending a tuition reminder.');
+            return $this->redirectToFinance($request)->with('error', __('Select a student before sending a tuition reminder.'));
         }
 
         if ($validated['scope'] === 'selected_students' && empty($validated['student_ids'])) {
-            return $this->redirectToFinance($request)->with('error', 'Choose at least one student before sending a tuition reminder.');
+            return $this->redirectToFinance($request)->with('error', __('Choose at least one student before sending a tuition reminder.'));
         }
 
         $studentIds = match ($validated['scope']) {
@@ -1672,7 +1666,7 @@ class FinanceController extends Controller
             'paid' => $paid,
             'open' => $open,
             'overdue' => $overdue,
-            'label' => $total > 0 ? "{$paid} paid / {$open} open / {$overdue} overdue" : 'No semester payment plan',
+            'label' => $total > 0 ? __(':paid paid / :open open / :overdue overdue', ['paid' => $paid, 'open' => $open, 'overdue' => $overdue]) : __('No semester payment plan'),
         ];
     }
 
@@ -1700,7 +1694,7 @@ class FinanceController extends Controller
             return null;
         }
 
-        return "This student's {$completedPlan->installment_count}-installment tuition plan is fully invoiced, but they have an active enrollment in a semester beyond that plan — likely a retake or extended duration. Use \"Generate Tuition Charge\" below to bill the additional semester.";
+        return __("This student's :count-installment tuition plan is fully invoiced, but they have an active enrollment in a semester beyond that plan — likely a retake or extended duration. Use \"Generate Tuition Charge\" below to bill the additional semester.", ['count' => $completedPlan->installment_count]);
     }
 
     private function paymentPlanSummaryQuery(Student $student): array
@@ -1730,7 +1724,7 @@ class FinanceController extends Controller
             'paid' => $paid,
             'open' => $open,
             'overdue' => $overdue,
-            'label' => $total > 0 ? "{$paid} paid / {$open} open / {$overdue} overdue" : 'No semester payment plan',
+            'label' => $total > 0 ? __(':paid paid / :open open / :overdue overdue', ['paid' => $paid, 'open' => $open, 'overdue' => $overdue]) : __('No semester payment plan'),
         ];
     }
 
@@ -1865,13 +1859,13 @@ class FinanceController extends Controller
     {
         if ($transactions->count() > 1 && $transactions->every(fn (FinanceTransaction $transaction) => $transaction->type === 'invoice')) {
             $schedule = $transactions
-                ->map(fn (FinanceTransaction $transaction) => money($transaction->amount, $transaction->currency).' '.$transaction->currency.' due '.($transaction->due_date?->format('Y-m-d') ?? 'no due date'))
+                ->map(fn (FinanceTransaction $transaction) => money($transaction->amount, $transaction->currency).' '.$transaction->currency.' '.__('due :date', ['date' => $transaction->due_date?->format('Y-m-d') ?? __('no due date')]))
                 ->implode('; ');
 
-            return $transactions->count().' semester invoices created: '.$schedule.'.';
+            return __(':count semester invoices created: :schedule.', ['count' => $transactions->count(), 'schedule' => $schedule]);
         }
 
-        return 'Finance record saved successfully.';
+        return __('Finance record saved successfully.');
     }
 
     private function createSemesterTuitionInvoices(array $validated, $semesters, TuitionAgreement $agreement, float $installmentAmount)
