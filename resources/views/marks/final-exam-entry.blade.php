@@ -1,9 +1,9 @@
 <x-app-layout>
     <x-slot name="header">
         <div>
-            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Learning &amp; Results</p>
-            <h2 class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ $canEnterFinalExam ? 'Final Exam Entry' : 'Final Exam Corrections' }}</h2>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $canEnterFinalExam ? 'Enter final exam trials by academic year, college, department, stage, semester, and course.' : 'Open published courses and correct mistaken final exam scores with an audit reason.' }}</p>
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ __('Learning & Results') }}</p>
+            <h2 class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ $canEnterFinalExam ? __('Final Exam Entry') : __('Final Exam Corrections') }}</h2>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $canEnterFinalExam ? __('Enter final exam trials by academic year, college, department, stage, semester, and course.') : __('Open published courses and correct mistaken final exam scores with an audit reason.') }}</p>
         </div>
     </x-slot>
 
@@ -18,9 +18,9 @@
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <form method="GET" action="{{ route('marks.final-exam.index') }}" class="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                     <div>
-                        <label for="final-academic-year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Academic year</label>
+                        <label for="final-academic-year" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Academic year') }}</label>
                         <select id="final-academic-year" name="academic_year" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All years</option>
+                            <option value="">{{ __('All years') }}</option>
                             @foreach($filterOptions['academic_years'] as $academicYear)
                                 <option value="{{ $academicYear }}" @selected($filters['academic_year'] === $academicYear)>{{ $academicYear }}</option>
                             @endforeach
@@ -28,9 +28,9 @@
                     </div>
 
                     <div>
-                        <label for="final-college" class="block text-sm font-medium text-gray-700 dark:text-gray-300">College</label>
+                        <label for="final-college" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('College') }}</label>
                         <select id="final-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All colleges</option>
+                            <option value="">{{ __('All colleges') }}</option>
                             @foreach($filterOptions['colleges'] as $college)
                                 <option value="{{ $college->id }}" @selected($filters['college_id'] === $college->id)>{{ $college->name }}</option>
                             @endforeach
@@ -38,9 +38,9 @@
                     </div>
 
                     <div>
-                        <label for="final-department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Department</label>
+                        <label for="final-department" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Department') }}</label>
                         <select id="final-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All departments</option>
+                            <option value="">{{ __('All departments') }}</option>
                             @foreach($filterOptions['departments'] as $department)
                                 <option value="{{ $department->id }}" @selected($filters['department_id'] === $department->id)>{{ $department->name }}</option>
                             @endforeach
@@ -48,9 +48,9 @@
                     </div>
 
                     <div>
-                        <label for="final-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Stage</label>
+                        <label for="final-stage" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Stage') }}</label>
                         <select id="final-stage" name="stage" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All stages</option>
+                            <option value="">{{ __('All stages') }}</option>
                             @foreach($filterOptions['stages'] as $stage)
                                 <option value="{{ $stage['key'] }}" @selected((string) $filters['stage'] === (string) $stage['key'])>{{ $stage['label'] }}</option>
                             @endforeach
@@ -58,9 +58,9 @@
                     </div>
 
                     <div>
-                        <label for="final-semester" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Semester</label>
+                        <label for="final-semester" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Semester') }}</label>
                         <select id="final-semester" name="semester_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                            <option value="">All semesters</option>
+                            <option value="">{{ __('All semesters') }}</option>
                             @foreach($filterOptions['semesters'] as $semester)
                                 <option value="{{ $semester->id }}" @selected($filters['semester_id'] === $semester->id)>{{ $semester->name }} {{ $semester->academic_year }}</option>
                             @endforeach
@@ -68,14 +68,14 @@
                     </div>
 
                     <div>
-                        <label for="final-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
-                        <input id="final-search" name="q" value="{{ $filters['q'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" placeholder="Student, ID, course">
+                        <label for="final-search" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Search') }}</label>
+                        <input id="final-search" name="q" value="{{ $filters['q'] }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" placeholder="{{ __('Student, ID, course') }}">
                     </div>
 
                     <div class="flex flex-wrap items-end gap-3 xl:col-span-6">
-                        <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">Apply</button>
-                        <a href="{{ route('marks.final-exam.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Reset</a>
-                        <a href="{{ route('marks.submission-queue') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Back to Mark Queue</a>
+                        <button type="submit" class="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 dark:bg-indigo-600 dark:hover:bg-indigo-500">{{ __('Apply') }}</button>
+                        <a href="{{ route('marks.final-exam.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Reset') }}</a>
+                        <a href="{{ route('marks.submission-queue') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Back to Mark Queue') }}</a>
                     </div>
                 </form>
             </section>
@@ -83,15 +83,15 @@
             @if($canEnterFinalExam)
                 <section class="grid gap-3 md:grid-cols-3">
                     <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                        <p class="text-sm text-blue-800 dark:text-blue-200">Waiting first trial</p>
+                        <p class="text-sm text-blue-800 dark:text-blue-200">{{ __('Waiting first trial') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-blue-950 dark:text-blue-100">{{ $finalExamStats['waiting_first_trial'] }}</p>
                     </div>
                     <div class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
-                        <p class="text-sm text-red-800 dark:text-red-200">Eligible second trial</p>
+                        <p class="text-sm text-red-800 dark:text-red-200">{{ __('Eligible second trial') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-red-950 dark:text-red-100">{{ $finalExamStats['waiting_second_trial'] }}</p>
                     </div>
                     <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
-                        <p class="text-sm text-emerald-800 dark:text-emerald-200">Ready for review</p>
+                        <p class="text-sm text-emerald-800 dark:text-emerald-200">{{ __('Ready for review') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-emerald-950 dark:text-emerald-100">{{ $finalExamStats['ready_for_review'] }}</p>
                     </div>
                 </section>
@@ -100,8 +100,8 @@
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $canEnterFinalExam ? 'Courses - Final Exam Entry & Corrections' : 'Courses - Published Mark Corrections' }}</h3>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $canEnterFinalExam ? 'Open a course to enter final exam scores, or correct a mistake in an already-published mark.' : 'Open a course to correct a mistake in an already-published mark.' }}</p>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $canEnterFinalExam ? __('Courses - Final Exam Entry & Corrections') : __('Courses - Published Mark Corrections') }}</h3>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $canEnterFinalExam ? __('Open a course to enter final exam scores, or correct a mistake in an already-published mark.') : __('Open a course to correct a mistake in an already-published mark.') }}</p>
                     </div>
                 </div>
 
@@ -115,31 +115,31 @@
                             <div class="flex items-start justify-between gap-4">
                                 <div>
                                     <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $course->code }} - {{ $course->name }}</p>
-                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $card['college']?->name ?? 'No college' }} / {{ $card['department']?->name ?? 'No department' }}</p>
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $card['college']?->name ?? __('No college') }} / {{ $card['department']?->name ?? __('No department') }}</p>
                                 </div>
-                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ $card['marks_count'] }} students</span>
+                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ $card['marks_count'] }} {{ __('students') }}</span>
                             </div>
                             <div class="mt-4 grid grid-cols-3 gap-2 text-center">
                                 <div class="rounded-md bg-blue-50 px-2 py-2 dark:bg-blue-900/20">
-                                    <p class="text-xs text-blue-800 dark:text-blue-200">First</p>
+                                    <p class="text-xs text-blue-800 dark:text-blue-200">{{ __('First') }}</p>
                                     <p class="text-sm font-semibold text-blue-950 dark:text-blue-100">{{ $card['waiting_first_trial'] }}</p>
                                 </div>
                                 <div class="rounded-md bg-red-50 px-2 py-2 dark:bg-red-900/20">
-                                    <p class="text-xs text-red-800 dark:text-red-200">Second</p>
+                                    <p class="text-xs text-red-800 dark:text-red-200">{{ __('Second') }}</p>
                                     <p class="text-sm font-semibold text-red-950 dark:text-red-100">{{ $card['waiting_second_trial'] }}</p>
                                 </div>
                                 <div class="rounded-md bg-gray-50 px-2 py-2 dark:bg-gray-800">
-                                    <p class="text-xs text-gray-600 dark:text-gray-400">Classes</p>
+                                    <p class="text-xs text-gray-600 dark:text-gray-400">{{ __('Classes') }}</p>
                                     <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $card['section_count'] }}</p>
                                 </div>
                             </div>
                             @if($card['published_count'] > 0)
                                 <div class="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-center dark:bg-amber-900/20">
-                                    <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">{{ $card['published_count'] }} published &mdash; open to correct a mistake</p>
+                                    <p class="text-xs font-semibold text-amber-800 dark:text-amber-200">{{ __(':count published — open to correct a mistake', ['count' => $card['published_count']]) }}</p>
                                 </div>
                             @endif
                             <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                                {{ $card['semesters']->map(fn ($semester) => trim($semester->name.' '.$semester->academic_year))->implode(', ') ?: 'No semester' }}
+                                {{ $card['semesters']->map(fn ($semester) => trim($semester->name.' '.$semester->academic_year))->implode(', ') ?: __('No semester') }}
                                 @if($card['stages']->isNotEmpty())
                                     / {{ $card['stages']->implode(', ') }}
                                 @endif
@@ -147,7 +147,7 @@
                         </a>
                     @empty
                         <div class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3 dark:border-gray-700 dark:text-gray-400">
-                            No courses have final exam entries or published marks in your scope.
+                            {{ __('No courses have final exam entries or published marks in your scope.') }}
                         </div>
                     @endforelse
                 </div>
