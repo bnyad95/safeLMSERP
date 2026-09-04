@@ -42,7 +42,7 @@
         x-show="open"
         x-transition
         x-cloak
-        class="absolute right-0 z-50 mt-2 w-64 origin-top-right rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        class="absolute end-0 z-50 mt-2 w-64 origin-top-right rtl:origin-top-left rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
     >
         <div class="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
             <p class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ Auth::user()->name }}</p>

@@ -84,7 +84,7 @@
                             <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 sm:px-5">
                                 <span class="min-w-0">
                                     <span class="block truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $collegeGroup['college'] }}</span>
-                                    <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ __(':count departments', ['count' => $collegeGroup['departments']->count()]) }}</span>
+                                    <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ $collegeGroup['departments']->count() === 1 ? __('1 department') : __(':count departments', ['count' => $collegeGroup['departments']->count()]) }}</span>
                                 </span>
                                 <span class="shrink-0 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">{{ __(':count students', ['count' => $collegeGroup['count']]) }}</span>
                             </summary>

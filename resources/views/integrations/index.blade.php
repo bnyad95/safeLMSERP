@@ -124,7 +124,7 @@
                                             <h3 class="text-base font-semibold text-gray-900">{{ $dataset['title'] }}</h3>
                                             <p class="mt-1 text-sm text-gray-500">{{ $dataset['description'] }}</p>
                                         </div>
-                                        <a href="{{ $dataset['sampleRoute'] }}" class="text-sm font-semibold text-blue-700 hover:underline">Download sample CSV</a>
+                                        <a href="{{ $dataset['sampleRoute'] }}" class="text-sm font-semibold text-blue-700 hover:underline">{{ __('Download sample CSV') }}</a>
                                     </div>
 
                                     @if($dataset['enabled'])
@@ -134,10 +134,10 @@
                                             <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">Import CSV</button>
                                         </form>
                                     @else
-                                        <div class="mt-5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500">Import permission is not assigned.</div>
+                                        <div class="mt-5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500">{{ __('Import permission is not assigned.') }}</div>
                                     @endif
 
-                                    <pre class="mt-4 max-h-40 overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">{{ $dataset['sample'] }}</pre>
+                                    <pre class="mt-4 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md bg-gray-950 p-3 text-xs text-gray-100">{{ $dataset['sample'] }}</pre>
                                 </section>
                             @endforeach
                         </div>

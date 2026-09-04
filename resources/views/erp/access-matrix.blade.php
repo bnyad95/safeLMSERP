@@ -111,10 +111,16 @@
 
             @if ($permissionGroups->isNotEmpty())
                 <nav class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="{{ __('Jump to module') }}">
-                    <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Jump to module') }}</p>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Jump to module') }}</p>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="document.querySelectorAll('details[id^=module-]').forEach(d => d.open = true)" class="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{{ __('Expand all') }}</button>
+                            <button type="button" onclick="document.querySelectorAll('details[id^=module-]').forEach(d => d.open = false)" class="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{{ __('Collapse all') }}</button>
+                        </div>
+                    </div>
                     <div class="mt-2 flex flex-wrap gap-2">
                         @foreach ($permissionGroups as $moduleLabel => $groupPermissions)
-                            <a href="#module-{{ Str::slug($moduleLabel) }}" class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">{{ $moduleLabel }}</a>
+                            <a href="#module-{{ Str::slug($moduleLabel) }}" onclick="const d = document.getElementById('module-{{ Str::slug($moduleLabel) }}'); if (d) d.open = true;" class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">{{ $moduleLabel }}</a>
                         @endforeach
                     </div>
                 </nav>
@@ -171,11 +177,16 @@
                         @endforeach
 
                         @forelse ($permissionGroups as $moduleLabel => $groupPermissions)
-                            <section id="module-{{ Str::slug($moduleLabel) }}" class="scroll-mt-24 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                            <details id="module-{{ Str::slug($moduleLabel) }}" class="group scroll-mt-24 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900" @if($permissionGroups->count() === 1) open @endif>
+                                <summary class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/60">
                                     <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $moduleLabel }}</h3>
-                                    <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ __(':count permissions', ['count' => $groupPermissions->count()]) }}</span>
-                                </div>
+                                    <span class="flex items-center gap-2">
+                                        <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ __(':count permissions', ['count' => $groupPermissions->count()]) }}</span>
+                                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                        </svg>
+                                    </span>
+                                </summary>
                                 <div class="divide-y divide-gray-100 dark:divide-gray-800">
                                     @foreach ($groupPermissions as $permission)
                                         @php
@@ -199,7 +210,7 @@
                                         </label>
                                     @endforeach
                                 </div>
-                            </section>
+                            </details>
                         @empty
                             <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-5 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-100">{{ __('No permissions match the current filters.') }}</div>
                         @endforelse
@@ -221,11 +232,16 @@
                 </div>
 
                 @forelse ($permissionGroups as $moduleLabel => $groupPermissions)
-                    <section id="module-{{ Str::slug($moduleLabel) }}" class="scroll-mt-24 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                    <details id="module-{{ Str::slug($moduleLabel) }}" class="group scroll-mt-24 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900" @if($permissionGroups->count() === 1) open @endif>
+                        <summary class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-5 py-4 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/60">
                             <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ $moduleLabel }}</h3>
-                            <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ __(':count permissions', ['count' => $groupPermissions->count()]) }}</span>
-                        </div>
+                            <span class="flex items-center gap-2">
+                                <span class="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">{{ __(':count permissions', ['count' => $groupPermissions->count()]) }}</span>
+                                <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                                </svg>
+                            </span>
+                        </summary>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
                                 <thead class="bg-gray-50 dark:bg-gray-950">
@@ -294,7 +310,7 @@
                                 </tbody>
                             </table>
                         </div>
-                    </section>
+                    </details>
                 @empty
                     <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-5 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-100">{{ __('No permissions match the current filters.') }}</div>
                 @endforelse

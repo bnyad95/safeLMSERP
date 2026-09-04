@@ -34,8 +34,8 @@
     ></div>
 
     <aside
-        :class="open ? 'translate-x-0' : '-translate-x-full'"
-        class="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-gray-200 bg-white shadow-xl transition-transform duration-200 ease-out dark:border-gray-800 dark:bg-gray-900 lg:translate-x-0 lg:shadow-none"
+        :class="open ? '' : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full'"
+        class="fixed inset-y-0 start-0 z-50 flex w-72 flex-col border-e border-gray-200 bg-white shadow-xl transition-transform duration-200 ease-out dark:border-gray-800 dark:bg-gray-900 lg:shadow-none"
     >
         <div class="flex h-16 items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
             <a href="{{ route('dashboard') }}" class="flex items-center gap-3">
@@ -66,9 +66,9 @@
                         data-live-search-input
                         value="{{ request('q') }}"
                         placeholder="{{ __('Search ERP...') }}"
-                        class="w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
+                        class="w-full rounded-md border-gray-300 py-2 ps-3 pe-10 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder-gray-500"
                     />
-                    <button type="submit" aria-label="{{ __('Search') }}" class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
+                    <button type="submit" aria-label="{{ __('Search') }}" class="absolute inset-y-0 end-0 flex items-center pe-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m1.35-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>

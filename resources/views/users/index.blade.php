@@ -163,21 +163,21 @@
                                     </td>
                                     <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
                                         @if($account->account_blocked_at)
-                                            <span class="inline-flex rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-200">Account blocked</span>
+                                            <span class="inline-flex rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-200">{{ __('Account blocked') }}</span>
                                             @if($account->account_block_reason)<p class="mt-1 max-w-xs text-xs text-red-600 dark:text-red-300">{{ $account->account_block_reason }}</p>@endif
                                         @else
-                                            <p>{{ $account->email_verified_at ? 'Email verified' : 'Email not verified' }}</p>
+                                            <p>{{ $account->email_verified_at ? __('Email verified') : __('Email not verified') }}</p>
                                         @endif
-                                        @if($account->must_change_password)<p class="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">Password change required</p>@endif
-                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Created {{ $account->created_at?->format('Y-m-d') }}</p>
+                                        @if($account->must_change_password)<p class="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">{{ __('Password change required') }}</p>@endif
+                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ __('Created :date', ['date' => $account->created_at?->format('Y-m-d')]) }}</p>
                                     </td>
                                     <td class="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
                                         @if(! $tracksLastActivity)
-                                            <span class="text-gray-400 dark:text-gray-500">Unavailable for file sessions</span>
+                                            <span class="text-gray-400 dark:text-gray-500">{{ __('Not tracked') }}</span>
                                         @elseif($account->last_activity)
                                             {{ \Illuminate\Support\Carbon::createFromTimestamp($account->last_activity)->diffForHumans() }}
                                         @else
-                                            <span class="text-gray-400 dark:text-gray-500">No active session</span>
+                                            <span class="text-gray-400 dark:text-gray-500">{{ __('No active session') }}</span>
                                         @endif
                                     </td>
                                     <td class="px-5 py-4 text-right text-sm font-medium">

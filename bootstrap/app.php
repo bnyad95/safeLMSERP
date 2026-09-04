@@ -47,12 +47,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (TokenMismatchException $e, Request $request) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'Your session has expired. Please log in again.'], 419);
+                return response()->json(['message' => __('Your session has expired. Please log in again.')], 419);
             }
 
             return redirect()
                 ->guest(route('login'))
-                ->with('status', 'Your session has expired. Please log in again.');
+                ->with('status', __('Your session has expired. Please log in again.'));
         });
 
         $exceptions->respond(function (Response $response, Throwable $e, Request $request) {
@@ -62,6 +62,6 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return redirect()
                 ->guest(route('login'))
-                ->with('status', 'Your session has expired. Please log in again.');
+                ->with('status', __('Your session has expired. Please log in again.'));
         });
     })->create();

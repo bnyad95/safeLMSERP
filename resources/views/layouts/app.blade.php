@@ -36,7 +36,7 @@
         <div class="min-h-screen bg-gray-100 lg:flex dark:bg-gray-950">
             @include('layouts.navigation')
 
-            <div class="min-w-0 flex-1 lg:pl-72">
+            <div class="min-w-0 flex-1 lg:ps-72">
                 @isset($header)
                     <header class="bg-white shadow dark:bg-gray-900 dark:shadow-gray-950/40">
                         <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 py-6 sm:px-6 lg:px-8">
