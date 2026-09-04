@@ -2,11 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <h2 class="text-2xl font-semibold text-gray-900">My Finance</h2>
-                <p class="mt-1 text-sm text-gray-600">Your tuition charges, payments, balances, and payment status.</p>
+                <h2 class="text-2xl font-semibold text-gray-900">{{ __('My Finance') }}</h2>
+                <p class="mt-1 text-sm text-gray-600">{{ __('Your tuition charges, payments, balances, and payment status.') }}</p>
             </div>
             <a href="{{ route('student-portal') }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">
-                Back to Dashboard
+                {{ __('Back to Dashboard') }}
             </a>
         </div>
     </x-slot>
@@ -19,10 +19,10 @@
                         <div class="min-w-0">
                             <h3 class="text-lg font-semibold text-gray-900">{{ $student->full_name }}</h3>
                             <p class="mt-1 break-words text-sm text-gray-500">{{ $student->student_id }} / {{ $student->email }}</p>
-                            <p class="mt-1 break-words text-sm text-gray-500">{{ $student->department->name ?? 'No department' }} / {{ $student->university->name ?? 'No university' }}</p>
+                            <p class="mt-1 break-words text-sm text-gray-500">{{ $student->department->name ?? __('No department') }} / {{ $student->university->name ?? __('No university') }}</p>
                         </div>
                         <span class="self-start rounded-md {{ $paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' }} px-2.5 py-1 text-xs font-semibold">
-                            Balance: {{ ucfirst($paymentStatus) }}
+                            {{ __('Balance:') }} {{ ucfirst($paymentStatus) }}
                         </span>
                     </div>
                 </section>
@@ -30,22 +30,22 @@
                 <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     @forelse($balances as $row)
                         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p class="text-sm font-medium text-gray-500">{{ $row['currency'] }} Remaining Due</p>
+                            <p class="text-sm font-medium text-gray-500">{{ $row['currency'] }} {{ __('Remaining Due') }}</p>
                             <p class="mt-2 text-2xl font-semibold text-gray-900">{{ money($row['balance'], $row['currency']) }} {{ $row['currency'] }}</p>
-                            <p class="mt-2 text-xs text-gray-500">Charges {{ money($row['charges'], $row['currency']) }} / Credits {{ money($row['credits'], $row['currency']) }}</p>
+                            <p class="mt-2 text-xs text-gray-500">{{ __('Charges') }} {{ money($row['charges'], $row['currency']) }} / {{ __('Credits') }} {{ money($row['credits'], $row['currency']) }}</p>
                         </div>
                     @empty
                         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p class="text-sm font-medium text-gray-500">Remaining Due</p>
+                            <p class="text-sm font-medium text-gray-500">{{ __('Remaining Due') }}</p>
                             <p class="mt-2 text-2xl font-semibold text-gray-900">0 IQD</p>
-                            <p class="mt-2 text-xs text-gray-500">No finance records yet.</p>
+                            <p class="mt-2 text-xs text-gray-500">{{ __('No finance records yet.') }}</p>
                         </div>
                     @endforelse
                 </section>
 
                 <section class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                     <div class="border-b border-gray-200 px-4 py-4 sm:px-5">
-                        <h3 class="text-base font-semibold text-gray-900">Finance Records</h3>
+                        <h3 class="text-base font-semibold text-gray-900">{{ __('Finance Records') }}</h3>
                     </div>
 
                     <div class="divide-y divide-gray-100 md:hidden">
@@ -68,7 +68,7 @@
                                         <p class="break-words text-sm font-semibold text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</p>
                                         <p class="mt-1 text-xs text-gray-500">{{ $transaction->transaction_date->format('Y-m-d') }} / {{ ucfirst($transaction->type) }}</p>
                                         @if($transaction->receipt_number && $transaction->posting_status === 'posted' && $transaction->status !== 'cancelled')
-                                            <a href="{{ route('student.finance.receipt', $transaction) }}" target="_blank" class="mt-1 inline-block text-xs font-semibold text-blue-700 hover:text-blue-900">View receipt</a>
+                                            <a href="{{ route('student.finance.receipt', $transaction) }}" target="_blank" class="mt-1 inline-block text-xs font-semibold text-blue-700 hover:text-blue-900">{{ __('View receipt') }}</a>
                                         @endif
                                     </div>
                                     <div class="shrink-0 text-right">
@@ -81,17 +81,17 @@
                                 @endif
                                 <div class="grid grid-cols-2 gap-3 text-sm">
                                     <div>
-                                        <p class="text-xs font-medium uppercase text-gray-500">Status</p>
+                                        <p class="text-xs font-medium uppercase text-gray-500">{{ __('Status') }}</p>
                                         <span class="mt-1 inline-flex rounded-md px-2 py-1 text-xs font-semibold {{ $statusClasses[$transaction->payment_status] ?? 'bg-gray-100 text-gray-700' }}">{{ $transaction->paymentStatusLabel() }}</span>
                                     </div>
                                     <div>
-                                        <p class="text-xs font-medium uppercase text-gray-500">Remaining Due</p>
+                                        <p class="text-xs font-medium uppercase text-gray-500">{{ __('Remaining Due') }}</p>
                                         <p class="mt-1 font-semibold text-gray-900">{{ $transaction->balance_after !== null ? money($transaction->balance_after, $transaction->currency).' '.$transaction->currency : '-' }}</p>
                                     </div>
                                 </div>
                             </article>
                         @empty
-                            <div class="px-4 py-8 text-center text-sm text-gray-500">No finance records yet.</div>
+                            <div class="px-4 py-8 text-center text-sm text-gray-500">{{ __('No finance records yet.') }}</div>
                         @endforelse
                     </div>
 
@@ -99,13 +99,13 @@
                         <table class="min-w-full divide-y divide-gray-100">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Document</th>
-                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
-                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
-                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">Payment</th>
-                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">Remaining Due</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Date') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Document') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Type') }}</th>
+                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">{{ __('Debit') }}</th>
+                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">{{ __('Credit') }}</th>
+                                    <th class="px-5 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Payment') }}</th>
+                                    <th class="px-5 py-3 text-right text-xs font-medium uppercase text-gray-500">{{ __('Remaining Due') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
@@ -125,7 +125,7 @@
                                         <td class="px-5 py-3 text-sm">
                                             <div class="font-medium text-gray-900">{{ $transaction->documentNumber() ?? '-' }}</div>
                                             @if($transaction->receipt_number && $transaction->posting_status === 'posted' && $transaction->status !== 'cancelled')
-                                                <a href="{{ route('student.finance.receipt', $transaction) }}" target="_blank" class="text-xs font-semibold text-blue-700 hover:text-blue-900">View receipt</a>
+                                                <a href="{{ route('student.finance.receipt', $transaction) }}" target="_blank" class="text-xs font-semibold text-blue-700 hover:text-blue-900">{{ __('View receipt') }}</a>
                                             @endif
                                             @if($transaction->reference)
                                                 <div class="text-xs text-gray-500">{{ $transaction->reference }}</div>
@@ -141,7 +141,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="7" class="px-5 py-8 text-center text-sm text-gray-500">No finance records yet.</td>
+                                        <td colspan="7" class="px-5 py-8 text-center text-sm text-gray-500">{{ __('No finance records yet.') }}</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -153,8 +153,8 @@
                 </section>
             @else
                 <div class="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-                    <h3 class="text-base font-semibold text-gray-900">No student finance profile found</h3>
-                    <p class="mt-2 text-sm text-gray-500">Your account email is not connected to a student record yet.</p>
+                    <h3 class="text-base font-semibold text-gray-900">{{ __('No student finance profile found') }}</h3>
+                    <p class="mt-2 text-sm text-gray-500">{{ __('Your account email is not connected to a student record yet.') }}</p>
                 </div>
             @endif
         </div>

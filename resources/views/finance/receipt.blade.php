@@ -1,16 +1,16 @@
 @php
     $documentTitle = [
-        'payment' => 'Payment Receipt',
-        'discount' => 'Discount Voucher',
-        'scholarship' => 'Scholarship Credit',
-        'refund' => 'Refund Receipt',
-    ][$financeTransaction->type] ?? 'Payment Receipt';
+        'payment' => __('Payment Receipt'),
+        'discount' => __('Discount Voucher'),
+        'scholarship' => __('Scholarship Credit'),
+        'refund' => __('Refund Receipt'),
+    ][$financeTransaction->type] ?? __('Payment Receipt');
     $amountLabel = [
-        'payment' => 'Amount received',
-        'discount' => 'Amount discounted',
-        'scholarship' => 'Amount awarded',
-        'refund' => 'Amount refunded',
-    ][$financeTransaction->type] ?? 'Amount';
+        'payment' => __('Amount received'),
+        'discount' => __('Amount discounted'),
+        'scholarship' => __('Amount awarded'),
+        'refund' => __('Amount refunded'),
+    ][$financeTransaction->type] ?? __('Amount');
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -37,7 +37,7 @@
     </style>
 </head>
 <body>
-    <div class="actions"><button type="button" onclick="window.print()">Print Receipt</button></div>
+    <div class="actions"><button type="button" onclick="window.print()">{{ __('Print Receipt') }}</button></div>
     <main class="sheet">
         <header class="header">
             <div>
@@ -56,14 +56,14 @@
         </div>
 
         <section class="meta">
-            <div class="row"><span class="label">Student</span><strong>{{ $student->full_name }}</strong></div>
-            <div class="row"><span class="label">Student ID</span><span>{{ $student->student_id }}</span></div>
-            <div class="row"><span class="label">College / Department</span><span>{{ $student->department->college->name ?? '-' }} / {{ $student->department->name ?? '-' }}</span></div>
-            <div class="row"><span class="label">Type</span><span>{{ ucfirst($financeTransaction->type) }}</span></div>
-            <div class="row"><span class="label">Applied invoice</span><span>{{ $financeTransaction->invoice?->invoice_number ?? 'General account credit' }}</span></div>
-            <div class="row"><span class="label">Reference</span><span>{{ $financeTransaction->reference ?: '-' }}</span></div>
-            <div class="row"><span class="label">Recorded by</span><span>{{ $financeTransaction->recorder->name ?? '-' }}</span></div>
-            <div class="row"><span class="label">Approved by</span><span>{{ $financeTransaction->approver->name ?? 'Posted at entry' }}</span></div>
+            <div class="row"><span class="label">{{ __('Student') }}</span><strong>{{ $student->full_name }}</strong></div>
+            <div class="row"><span class="label">{{ __('Student ID') }}</span><span>{{ $student->student_id }}</span></div>
+            <div class="row"><span class="label">{{ __('College / Department') }}</span><span>{{ $student->department->college->name ?? '-' }} / {{ $student->department->name ?? '-' }}</span></div>
+            <div class="row"><span class="label">{{ __('Type') }}</span><span>{{ ucfirst($financeTransaction->type) }}</span></div>
+            <div class="row"><span class="label">{{ __('Applied invoice') }}</span><span>{{ $financeTransaction->invoice?->invoice_number ?? __('General account credit') }}</span></div>
+            <div class="row"><span class="label">{{ __('Reference') }}</span><span>{{ $financeTransaction->reference ?: '-' }}</span></div>
+            <div class="row"><span class="label">{{ __('Recorded by') }}</span><span>{{ $financeTransaction->recorder->name ?? '-' }}</span></div>
+            <div class="row"><span class="label">{{ __('Approved by') }}</span><span>{{ $financeTransaction->approver->name ?? __('Posted at entry') }}</span></div>
         </section>
     </main>
 </body>
