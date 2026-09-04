@@ -84,12 +84,12 @@ class UserManagementController extends Controller
         }
         $pendingDeletionAccounts = $pendingDeletionQuery->latest('deletion_requested_at')->get();
         $stats = [
-            ['label' => 'Available Accounts', 'value' => number_format($availableAccounts->whereNull('account_blocked_at')->count()), 'detail' => 'Not archived or blocked'],
-            ['label' => 'Blocked Accounts', 'value' => number_format($blockedAccounts->whereNotNull('account_blocked_at')->count()), 'detail' => 'Login currently blocked'],
-            ['label' => 'Archived Users', 'value' => number_format($archivedAccounts->count()), 'detail' => 'Soft-deleted accounts'],
-            ['label' => 'Super Admins', 'value' => number_format($superAdmins->whereHas('roles', fn ($role) => $role->where('name', 'super_administrator'))->count()), 'detail' => 'Highest access accounts'],
-            ['label' => 'Unverified Email', 'value' => number_format($unverifiedAccounts->whereNull('email_verified_at')->count()), 'detail' => 'Email not verified'],
-            ['label' => 'Pending Deletions', 'value' => number_format($pendingDeletionAccounts->count()), 'detail' => 'Self-requested, awaiting approval'],
+            ['label' => __('Available Accounts'), 'value' => number_format($availableAccounts->whereNull('account_blocked_at')->count()), 'detail' => __('Not archived or blocked')],
+            ['label' => __('Blocked Accounts'), 'value' => number_format($blockedAccounts->whereNotNull('account_blocked_at')->count()), 'detail' => __('Login currently blocked')],
+            ['label' => __('Archived Users'), 'value' => number_format($archivedAccounts->count()), 'detail' => __('Soft-deleted accounts')],
+            ['label' => __('Super Admins'), 'value' => number_format($superAdmins->whereHas('roles', fn ($role) => $role->where('name', 'super_administrator'))->count()), 'detail' => __('Highest access accounts')],
+            ['label' => __('Unverified Email'), 'value' => number_format($unverifiedAccounts->whereNull('email_verified_at')->count()), 'detail' => __('Email not verified')],
+            ['label' => __('Pending Deletions'), 'value' => number_format($pendingDeletionAccounts->count()), 'detail' => __('Self-requested, awaiting approval')],
         ];
         $abilities = $this->userManagementAbilities();
         $organizationRoleScopes = UserRolePolicy::organizationRoleScopes();
@@ -145,10 +145,10 @@ class UserManagementController extends Controller
         if (auth()->user()?->hasRole('super_administrator') && ! $user->hasRole('super_administrator')) {
             return redirect()
                 ->route('users.permissions.edit', $user)
-                ->with('success', 'User created. Review the effective permissions before finishing.');
+                ->with('success', __('User created. Review the effective permissions before finishing.'));
         }
 
-        return redirect()->route('users.index')->with('success', 'User created and role assigned successfully.');
+        return redirect()->route('users.index')->with('success', __('User created and role assigned successfully.'));
     }
 
     public function edit(User $user)
@@ -179,7 +179,7 @@ class UserManagementController extends Controller
         $this->authorizeUserManagement('users.update');
         $this->authorizeUserManagement('users.assign_roles');
         $this->authorizeCanManageUser($user);
-        abort_if($this->isProfileManagedUser($user), 403, 'Teacher and student account details are managed from their profile workspace.');
+        abort_if($this->isProfileManagedUser($user), 403, __('Teacher and student account details are managed from their profile workspace.'));
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -205,7 +205,7 @@ class UserManagementController extends Controller
             $rolePermissionService->syncUserRoles($user, $roleIds);
         });
 
-        return redirect()->route('users.index')->with('success', 'User updated successfully.');
+        return redirect()->route('users.index')->with('success', __('User updated successfully.'));
     }
 
     public function resetPassword(Request $request, User $user)
@@ -226,13 +226,13 @@ class UserManagementController extends Controller
             DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
         }
 
-        return redirect()->route('users.edit', $user)->with('success', 'Password reset successfully.');
+        return redirect()->route('users.edit', $user)->with('success', __('Password reset successfully.'));
     }
 
     public function editPermissions(User $user)
     {
         $this->authorizeSuperAdmin();
-        abort_if($user->hasRole('super_administrator'), 403, 'Super Administrator permissions are always inherited and cannot be overridden.');
+        abort_if($user->hasRole('super_administrator'), 403, __('Super Administrator permissions are always inherited and cannot be overridden.'));
 
         $user->load(['roles.permissions', 'permissionOverrides']);
         $permissions = Permission::orderBy('name')->get()->each(function (Permission $permission) {
@@ -292,7 +292,7 @@ class UserManagementController extends Controller
     public function updatePermissions(Request $request, User $user, RolePermissionService $rolePermissionService)
     {
         $this->authorizeSuperAdmin();
-        abort_if($user->hasRole('super_administrator'), 403, 'Super Administrator permissions are always inherited and cannot be overridden.');
+        abort_if($user->hasRole('super_administrator'), 403, __('Super Administrator permissions are always inherited and cannot be overridden.'));
 
         $validated = $request->validate([
             'permission_ids' => ['nullable', 'array'],
@@ -309,7 +309,7 @@ class UserManagementController extends Controller
 
             if (! hash_equals($currentSignature, $validated['permission_signature'])) {
                 throw ValidationException::withMessages([
-                    'permissions' => 'This user access record changed after you opened the page. Review the latest permissions before saving again.',
+                    'permissions' => __('This user access record changed after you opened the page. Review the latest permissions before saving again.'),
                 ]);
             }
 
@@ -339,14 +339,14 @@ class UserManagementController extends Controller
 
         return redirect()
             ->route('users.index')
-            ->with('success', 'User permissions updated successfully.');
+            ->with('success', __('User permissions updated successfully.'));
     }
 
     public function destroy(User $user)
     {
         $this->authorizeSuperAdmin();
-        abort_if($user->is(auth()->user()), 403, 'You cannot archive your own account.');
-        abort_if($this->isProfileManagedUser($user), 403, 'Archive Student and Teacher accounts from their profile workspace.');
+        abort_if($user->is(auth()->user()), 403, __('You cannot archive your own account.'));
+        abort_if($this->isProfileManagedUser($user), 403, __('Archive Student and Teacher accounts from their profile workspace.'));
         $this->ensureNotLastSuperAdmin($user, 'archive');
 
         if ($user->deletion_requested_at) {
@@ -354,7 +354,7 @@ class UserManagementController extends Controller
         }
         $user->delete();
 
-        return redirect()->route('users.index')->with('success', 'User archived successfully.');
+        return redirect()->route('users.index')->with('success', __('User archived successfully.'));
     }
 
     public function archived()
@@ -371,7 +371,7 @@ class UserManagementController extends Controller
         $user = User::onlyTrashed()->findOrFail($userId);
         $user->restore();
 
-        return redirect()->route('users.archived')->with('success', 'User restored successfully.');
+        return redirect()->route('users.archived')->with('success', __('User restored successfully.'));
     }
 
     public function approveDeletion(User $user)
@@ -386,7 +386,7 @@ class UserManagementController extends Controller
             DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
         }
 
-        return redirect()->route('users.index')->with('success', 'Account deletion approved. The account has been archived.');
+        return redirect()->route('users.index')->with('success', __('Account deletion approved. The account has been archived.'));
     }
 
     public function rejectDeletion(User $user)
@@ -396,7 +396,7 @@ class UserManagementController extends Controller
 
         $user->forceFill(['deletion_requested_at' => null])->save();
 
-        return redirect()->route('users.index')->with('success', 'Deletion request rejected. The account remains active.');
+        return redirect()->route('users.index')->with('success', __('Deletion request rejected. The account remains active.'));
     }
 
     private function authorizeSuperAdmin(): void
@@ -484,7 +484,7 @@ class UserManagementController extends Controller
         $selectedRoles = Role::whereIn('id', $roleIds)->get(['id', 'name']);
 
         if ($selectedRoles->count() !== count(array_unique($roleIds))) {
-            throw ValidationException::withMessages(['roles' => 'One or more selected roles are invalid.']);
+            throw ValidationException::withMessages(['roles' => __('One or more selected roles are invalid.')]);
         }
 
         if (auth()->user()?->hasRole('super_administrator')) {
@@ -528,7 +528,7 @@ class UserManagementController extends Controller
 
         if ($requirement === 'department') {
             if (empty($input['department_id'])) {
-                throw ValidationException::withMessages(['department_id' => 'A department is required for the selected role.']);
+                throw ValidationException::withMessages(['department_id' => __('A department is required for the selected role.')]);
             }
 
             $department = Department::withoutGlobalScopes()->with('college')->findOrFail($input['department_id']);
@@ -542,7 +542,7 @@ class UserManagementController extends Controller
 
         if ($requirement === 'college') {
             if (empty($input['college_id'])) {
-                throw ValidationException::withMessages(['college_id' => 'A college is required for a college administrator.']);
+                throw ValidationException::withMessages(['college_id' => __('A college is required for a college administrator.')]);
             }
 
             $college = College::withoutGlobalScopes()->findOrFail($input['college_id']);
@@ -556,7 +556,7 @@ class UserManagementController extends Controller
 
         if ($requirement === 'university') {
             if (empty($input['university_id'])) {
-                throw ValidationException::withMessages(['university_id' => 'A university is required for a university administrator.']);
+                throw ValidationException::withMessages(['university_id' => __('A university is required for a university administrator.')]);
             }
 
             $university = University::withoutGlobalScopes()->findOrFail($input['university_id']);
@@ -599,7 +599,7 @@ class UserManagementController extends Controller
                 ];
             }
 
-            throw ValidationException::withMessages(['university_id' => 'An organization scope is required for the selected role.']);
+            throw ValidationException::withMessages(['university_id' => __('An organization scope is required for the selected role.')]);
         }
 
         return ['university_id' => null, 'college_id' => null, 'department_id' => null];
@@ -614,7 +614,7 @@ class UserManagementController extends Controller
         $hasSuperAdmin = Role::whereIn('id', $roleIds)->where('name', 'super_administrator')->exists();
 
         if (! $hasSuperAdmin) {
-            throw ValidationException::withMessages(['roles' => 'You cannot remove your own super administrator role.']);
+            throw ValidationException::withMessages(['roles' => __('You cannot remove your own super administrator role.')]);
         }
     }
 
@@ -627,14 +627,15 @@ class UserManagementController extends Controller
         $stillSuperAdmin = Role::whereIn('id', $roleIds)->where('name', 'super_administrator')->exists();
 
         if (! $stillSuperAdmin && $user->isLastSuperAdministrator()) {
-            throw ValidationException::withMessages(['roles' => 'This is the last super administrator account. Promote another account to super administrator before removing this one.']);
+            throw ValidationException::withMessages(['roles' => __('This is the last super administrator account. Promote another account to super administrator before removing this one.')]);
         }
     }
 
     private function ensureNotLastSuperAdmin(User $user, string $action): void
     {
         if ($user->isLastSuperAdministrator()) {
-            abort(403, "You cannot {$action} the last super administrator account.");
+            $actionLabel = $action === 'archive' ? __('archive') : __('delete');
+            abort(403, __('You cannot :action the last super administrator account.', ['action' => $actionLabel]));
         }
     }
 
@@ -645,24 +646,24 @@ class UserManagementController extends Controller
 
         if (! $target && $profileRoleNames->isNotEmpty()) {
             throw ValidationException::withMessages([
-                'roles' => 'Create Student accounts from Student Records and Teacher accounts from Teachers.',
+                'roles' => __('Create Student accounts from Student Records and Teacher accounts from Teachers.'),
             ]);
         }
 
         if ($target) {
             $existingProfileRoleNames = $target->roles()->whereIn('name', UserRolePolicy::PROFILE_MANAGED_ROLES)->pluck('name');
             if ($profileRoleNames->sort()->values()->all() !== $existingProfileRoleNames->sort()->values()->all()) {
-                throw ValidationException::withMessages(['roles' => 'Student and Teacher roles are managed from their profile workspace.']);
+                throw ValidationException::withMessages(['roles' => __('Student and Teacher roles are managed from their profile workspace.')]);
             }
         }
 
         if ($roleNames->intersect(UserRolePolicy::EXCLUSIVE_ROLES)->isNotEmpty() && $roleNames->count() > 1) {
-            throw ValidationException::withMessages(['roles' => 'Portal roles cannot be combined with another role.']);
+            throw ValidationException::withMessages(['roles' => __('Portal roles cannot be combined with another role.')]);
         }
 
         if ($roleNames->intersect(UserRolePolicy::HIGH_RISK_ROLES)->count() > 1) {
             throw ValidationException::withMessages([
-                'roles' => 'Assign only one privileged operational role to each account. Use direct permissions for approved exceptions.',
+                'roles' => __('Assign only one privileged operational role to each account. Use direct permissions for approved exceptions.'),
             ]);
         }
     }
@@ -714,7 +715,7 @@ class UserManagementController extends Controller
             && (! $actor->college_id || (int) $organization['college_id'] === (int) $actor->college_id)
             && (! $actor->department_id || (int) $organization['department_id'] === (int) $actor->department_id),
             403,
-            'You cannot assign a user outside your organization scope.'
+            __('You cannot assign a user outside your organization scope.')
         );
     }
 
@@ -744,11 +745,11 @@ class UserManagementController extends Controller
     private function roleGroups($roles)
     {
         $labels = [
-            'system' => 'System',
-            'academic' => 'Academic Administration',
-            'learning' => 'Learning & Results',
-            'finance' => 'Finance',
-            'support' => 'Support & Read-only',
+            'system' => __('System'),
+            'academic' => __('Academic Administration'),
+            'learning' => __('Learning & Results'),
+            'finance' => __('Finance'),
+            'support' => __('Support & Read-only'),
         ];
 
         return $roles
@@ -765,19 +766,19 @@ class UserManagementController extends Controller
     private function permissionModuleLabel(string $permissionName): string
     {
         return match (str($permissionName)->before('.')->toString()) {
-            'students' => 'Students',
-            'teachers' => 'Teachers',
-            'courses' => 'Courses',
-            'enrollments' => 'Enrollments',
-            'timetable' => 'Timetable',
-            'attendance' => 'Attendance',
-            'marks' => 'Learning & Results',
-            'finance' => 'Finance',
-            'lms' => 'LMS',
-            'reports' => 'Reports',
-            'users' => 'Users & Access',
-            'academic_setup' => 'Academic Setup',
-            default => 'Other',
+            'students' => __('Students'),
+            'teachers' => __('Teachers'),
+            'courses' => __('Courses'),
+            'enrollments' => __('Enrollments'),
+            'timetable' => __('Timetable'),
+            'attendance' => __('Attendance'),
+            'marks' => __('Learning & Results'),
+            'finance' => __('Finance'),
+            'lms' => __('LMS'),
+            'reports' => __('Reports'),
+            'users' => __('Users & Access'),
+            'academic_setup' => __('Academic Setup'),
+            default => __('Other'),
         };
     }
 }

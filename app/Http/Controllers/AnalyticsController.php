@@ -35,25 +35,25 @@ class AnalyticsController extends Controller
         return view('analytics.index', [
             'stats' => collect([
                 [
-                    'label' => 'Attendance Risk',
+                    'label' => __('Attendance Risk'),
                     'value' => number_format($attendanceRisk->where('risk', 'High')->count()),
-                    'detail' => 'Students below 75%',
+                    'detail' => __('Students below 75%'),
                 ],
                 [
-                    'label' => 'Average GPA',
-                    'value' => $markStats['total'] > 0 ? number_format($markStats['average_gpa'], 2) : 'N/A',
-                    'detail' => 'Published marks only',
+                    'label' => __('Average GPA'),
+                    'value' => $markStats['total'] > 0 ? number_format($markStats['average_gpa'], 2) : __('N/A'),
+                    'detail' => __('Published marks only'),
                 ],
                 [
-                    'label' => 'Unpaid Balance',
+                    'label' => __('Unpaid Balance'),
                     'value' => $this->formatCurrencyTotals($unpaidBalances),
-                    'detail' => $unpaidBalances->count().' open student accounts',
+                    'detail' => __(':count open student accounts', ['count' => $unpaidBalances->count()]),
                     'finance' => true,
                 ],
                 [
-                    'label' => 'Course Pass Rate',
-                    'value' => $markStats['total'] > 0 ? number_format(($markStats['passed'] / $markStats['total']) * 100, 1).'%' : 'N/A',
-                    'detail' => 'Across published course marks',
+                    'label' => __('Course Pass Rate'),
+                    'value' => $markStats['total'] > 0 ? number_format(($markStats['passed'] / $markStats['total']) * 100, 1).'%' : __('N/A'),
+                    'detail' => __('Across published course marks'),
                 ],
             ])->reject(fn ($stat) => ($stat['finance'] ?? false) && ! $canViewFinanceAnalytics)->values(),
             'filters' => $filters,
@@ -249,7 +249,7 @@ class AnalyticsController extends Controller
             ->map(function ($row) {
                 $semester = $row->semester_id
                     ? trim($row->semester_name.' '.$row->academic_year).($row->university_name ? ' / '.$row->university_name : '')
-                    : 'Unassigned';
+                    : __('Unassigned');
 
                 return [
                     'semester' => $semester,
@@ -335,7 +335,7 @@ class AnalyticsController extends Controller
     private function formatCurrencyTotals($rows): string
     {
         if ($rows->isEmpty()) {
-            return '0 IQD';
+            return __('0 IQD');
         }
 
         return $rows

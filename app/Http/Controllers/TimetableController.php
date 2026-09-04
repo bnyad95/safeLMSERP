@@ -158,7 +158,7 @@ class TimetableController extends Controller
             ...$prepared['data'],
         ]);
 
-        return redirect()->route('timetables.index')->with('success', 'Timetable entry scheduled.');
+        return redirect()->route('timetables.index')->with('success', __('Timetable entry scheduled.'));
     }
 
     public function update(Request $request, Timetable $timetable)
@@ -167,7 +167,7 @@ class TimetableController extends Controller
 
         $timetable->load('courseSection.semester.academicYear');
         if ($timetable->courseSection?->semester?->academicYear?->isLocked()) {
-            return back()->with('error', 'Timetable entries in a closed academic year are read-only.');
+            return back()->with('error', __('Timetable entries in a closed academic year are read-only.'));
         }
 
         $prepared = $this->prepareTimetableData($request, $timetable);
@@ -177,7 +177,7 @@ class TimetableController extends Controller
 
         $timetable->update($prepared['data']);
 
-        return redirect()->route('timetables.index')->with('success', 'Timetable entry updated.');
+        return redirect()->route('timetables.index')->with('success', __('Timetable entry updated.'));
     }
 
     public function storeRoom(Request $request)
@@ -200,7 +200,7 @@ class TimetableController extends Controller
             ?: (University::count() === 1 ? University::value('id') : null);
         if (! $universityId) {
             throw ValidationException::withMessages([
-                'university_id' => 'Choose the university that owns this room.',
+                'university_id' => __('Choose the university that owns this room.'),
             ]);
         }
 
@@ -210,13 +210,13 @@ class TimetableController extends Controller
             ->exists();
         if ($duplicate) {
             throw ValidationException::withMessages([
-                'name' => 'This university already has a room with that name.',
+                'name' => __('This university already has a room with that name.'),
             ]);
         }
 
         Classroom::create(array_merge($validated, ['university_id' => $university->id]));
 
-        return redirect()->route('timetables.index')->with('success', 'Room added.');
+        return redirect()->route('timetables.index')->with('success', __('Room added.'));
     }
 
     public function destroy(Timetable $timetable)
@@ -225,12 +225,12 @@ class TimetableController extends Controller
 
         $timetable->load('courseSection.semester.academicYear');
         if ($timetable->courseSection?->semester?->academicYear?->isLocked()) {
-            return back()->with('error', 'Timetable entries in a closed academic year are read-only.');
+            return back()->with('error', __('Timetable entries in a closed academic year are read-only.'));
         }
 
         $timetable->delete();
 
-        return redirect()->route('timetables.index')->with('success', 'Timetable entry removed.');
+        return redirect()->route('timetables.index')->with('success', __('Timetable entry removed.'));
     }
 
     private function prepareTimetableData(Request $request, ?Timetable $existing = null): array
@@ -255,39 +255,39 @@ class TimetableController extends Controller
         $endTime = $validated['end_time'];
 
         if ($section->course?->department_id !== $department->id) {
-            return ['ok' => false, 'message' => 'The selected module must belong to the selected department.'];
+            return ['ok' => false, 'message' => __('The selected module must belong to the selected department.')];
         }
 
         if (($section->grade_level ?: '') !== $validated['grade_level']) {
-            return ['ok' => false, 'message' => 'The selected module must match the selected stage.'];
+            return ['ok' => false, 'message' => __('The selected module must match the selected stage.')];
         }
 
         $sectionUniversityId = $section->course?->department?->university_id;
         if ($classroom->university_id && (int) $classroom->university_id !== (int) $sectionUniversityId) {
-            return ['ok' => false, 'message' => 'The selected room must belong to the same university as the module.'];
+            return ['ok' => false, 'message' => __('The selected room must belong to the same university as the module.')];
         }
 
         if ($section->semester?->academicYear?->isLocked()) {
-            return ['ok' => false, 'message' => 'Timetable entries in a closed academic year are read-only.'];
+            return ['ok' => false, 'message' => __('Timetable entries in a closed academic year are read-only.')];
         }
 
         if ($startTime >= $endTime) {
-            return ['ok' => false, 'message' => 'End time must be after start time.'];
+            return ['ok' => false, 'message' => __('End time must be after start time.')];
         }
 
         if ($validated['status'] === 'scheduled') {
             if ($classroom->status !== 'available') {
-                return ['ok' => false, 'message' => 'Only available rooms can receive scheduled timetable entries.'];
+                return ['ok' => false, 'message' => __('Only available rooms can receive scheduled timetable entries.')];
             }
 
             if ($classroom->capacity < $section->activeEnrollments->count()) {
-                return ['ok' => false, 'message' => 'Room capacity is lower than the enrolled student count for this module.'];
+                return ['ok' => false, 'message' => __('Room capacity is lower than the enrolled student count for this module.')];
             }
 
             $conflicts = $this->conflictsFor($section, $classroom, $validated['day_of_week'], $startTime, $endTime, $existing?->id);
 
             if ($conflicts->isNotEmpty()) {
-                return ['ok' => false, 'message' => 'Timetable conflict: '.$conflicts->pluck('label')->unique()->take(3)->implode('; ')];
+                return ['ok' => false, 'message' => __('Timetable conflict: :conflicts', ['conflicts' => $conflicts->pluck('label')->unique()->take(3)->implode('; ')])];
             }
         }
 
@@ -363,7 +363,7 @@ class TimetableController extends Controller
             })
             ->get()
             ->map(fn (Timetable $entry) => [
-                'label' => 'enrolled student overlap with '.$this->entryName($entry),
+                'label' => __('enrolled student overlap with :entry', ['entry' => $this->entryName($entry)]),
             ])
             ->toBase();
 
@@ -373,49 +373,49 @@ class TimetableController extends Controller
     private function conflictLabel(Timetable $entry, CourseSection $section, Classroom $classroom): string
     {
         if ($entry->classroom_id === $classroom->id) {
-            return 'room '.$classroom->name.' overlaps with '.$this->entryName($entry);
+            return __('room :room overlaps with :entry', ['room' => $classroom->name, 'entry' => $this->entryName($entry)]);
         }
 
         if ($entry->teacher_id && $entry->teacher_id === $section->teacher_id) {
-            return 'teacher overlaps with '.$this->entryName($entry);
+            return __('teacher overlaps with :entry', ['entry' => $this->entryName($entry)]);
         }
 
         if ($entry->course_section_id === $section->id) {
-            return 'module overlaps with another time for '.$this->entryName($entry);
+            return __('module overlaps with another time for :entry', ['entry' => $this->entryName($entry)]);
         }
 
-        return 'overlap with '.$this->entryName($entry);
+        return __('overlap with :entry', ['entry' => $this->entryName($entry)]);
     }
 
     private function entryName(Timetable $entry): string
     {
         $sectionCode = $entry->courseSection?->section_code ? ' '.$entry->courseSection->section_code : '';
 
-        return trim(($entry->course?->code ?? 'course').$sectionCode.' '.$entry->day_of_week.' '.substr((string) $entry->start_time, 0, 5).'-'.substr((string) $entry->end_time, 0, 5));
+        return trim(($entry->course?->code ?? __('course')).$sectionCode.' '.$entry->day_of_week.' '.substr((string) $entry->start_time, 0, 5).'-'.substr((string) $entry->end_time, 0, 5));
     }
 
     private function classifiedTimetables($entries)
     {
         return $entries
-            ->groupBy(fn (Timetable $entry) => $entry->course->department->name ?? 'No department')
+            ->groupBy(fn (Timetable $entry) => $entry->course->department->name ?? __('No department'))
             ->map(function ($departmentEntries, string $departmentName) {
                 return [
                     'department' => $departmentName,
                     'count' => $departmentEntries->count(),
                     'grades' => $departmentEntries
-                        ->groupBy(fn (Timetable $entry) => $entry->courseSection?->grade_level ?: 'No stage')
+                        ->groupBy(fn (Timetable $entry) => $entry->courseSection?->grade_level ?: __('No stage'))
                         ->map(function ($gradeEntries, string $gradeName) {
                             return [
                                 'grade' => $gradeName,
                                 'count' => $gradeEntries->count(),
                                 'semesters' => $gradeEntries
-                                    ->groupBy(fn (Timetable $entry) => trim(($entry->courseSection?->semester?->name ?? 'No semester').' '.($entry->courseSection?->semester?->academic_year ?? '')))
+                                    ->groupBy(fn (Timetable $entry) => trim(($entry->courseSection?->semester?->name ?? __('No semester')).' '.($entry->courseSection?->semester?->academic_year ?? '')))
                                     ->map(function ($semesterEntries, string $semesterName) {
                                         return [
                                             'semester' => $semesterName,
                                             'count' => $semesterEntries->count(),
                                             'groups' => $semesterEntries
-                                                ->groupBy(fn (Timetable $entry) => $entry->courseSection?->section_code ?? 'No group')
+                                                ->groupBy(fn (Timetable $entry) => $entry->courseSection?->section_code ?? __('No group'))
                                                 ->map(fn ($groupEntries, string $groupName) => [
                                                     'group' => $groupName,
                                                     'count' => $groupEntries->count(),

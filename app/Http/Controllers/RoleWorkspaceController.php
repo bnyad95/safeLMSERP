@@ -43,10 +43,10 @@ class RoleWorkspaceController extends Controller
 
         $materials = (clone $materialsQuery)->paginate(12)->withQueryString();
         $stats = [
-            ['label' => 'Resources', 'value' => number_format((clone $resourceStats)->count()), 'detail' => 'Course materials in the LMS'],
-            ['label' => 'Published', 'value' => number_format((clone $resourceStats)->where('visibility', 'published')->count()), 'detail' => 'Visible learning resources'],
-            ['label' => 'Drafts', 'value' => number_format((clone $resourceStats)->where('visibility', 'draft')->count()), 'detail' => 'Need teacher publication'],
-            ['label' => 'Student Documents', 'value' => number_format($documentStats->count()), 'detail' => 'Academic document records'],
+            ['label' => __('Resources'), 'value' => number_format((clone $resourceStats)->count()), 'detail' => __('Course materials in the LMS')],
+            ['label' => __('Published'), 'value' => number_format((clone $resourceStats)->where('visibility', 'published')->count()), 'detail' => __('Visible learning resources')],
+            ['label' => __('Drafts'), 'value' => number_format((clone $resourceStats)->where('visibility', 'draft')->count()), 'detail' => __('Need teacher publication')],
+            ['label' => __('Student Documents'), 'value' => number_format($documentStats->count()), 'detail' => __('Academic document records')],
         ];
         $fileTypes = CourseMaterial::getFileTypeOptions();
 
@@ -81,8 +81,8 @@ class RoleWorkspaceController extends Controller
                     ->where('status', 'enrolled')
                     ->filter(fn ($enrollment) => in_array($enrollment->courseSection?->status, ['planned', 'active'], true))
                     ->count(),
-                'average' => $publishedMarks->isNotEmpty() ? number_format((float) $publishedMarks->avg('final_mark'), 1) : 'N/A',
-                'attendance' => $attendanceTotal > 0 ? number_format(($attendancePresent / $attendanceTotal) * 100, 1).'%' : 'N/A',
+                'average' => $publishedMarks->isNotEmpty() ? number_format((float) $publishedMarks->avg('final_mark'), 1) : __('N/A'),
+                'attendance' => $attendanceTotal > 0 ? number_format(($attendancePresent / $attendanceTotal) * 100, 1).'%' : __('N/A'),
                 'balance' => $finance['value'],
                 'finance_detail' => $finance['detail'],
                 'recent_marks' => $publishedMarks->sortByDesc('published_at')->take(4),
@@ -91,9 +91,9 @@ class RoleWorkspaceController extends Controller
         });
 
         $stats = [
-            ['label' => 'Linked Students', 'value' => number_format($children->count()), 'detail' => 'Matched by guardian email'],
-            ['label' => 'Active Classes', 'value' => number_format($childSummaries->sum('classes')), 'detail' => 'Current enrolled classes'],
-            ['label' => 'Published Results', 'value' => number_format($children->flatMap->marks->where('visibility_status', 'published')->count()), 'detail' => 'Visible marks only'],
+            ['label' => __('Linked Students'), 'value' => number_format($children->count()), 'detail' => __('Matched by guardian email')],
+            ['label' => __('Active Classes'), 'value' => number_format($childSummaries->sum('classes')), 'detail' => __('Current enrolled classes')],
+            ['label' => __('Published Results'), 'value' => number_format($children->flatMap->marks->where('visibility_status', 'published')->count()), 'detail' => __('Visible marks only')],
         ];
 
         return view('workspaces.parent', compact('childSummaries', 'stats'));
@@ -129,9 +129,9 @@ class RoleWorkspaceController extends Controller
         OrganizationScope::apply($guardianStats, $request->user(), 'student_record');
 
         $stats = [
-            ['label' => 'Students', 'value' => number_format((clone $studentStats)->count()), 'detail' => 'Available front-desk records'],
-            ['label' => 'Active', 'value' => number_format((clone $studentStats)->where('status', 'Active')->count()), 'detail' => 'Currently active students'],
-            ['label' => 'With Guardians', 'value' => number_format($guardianStats->distinct('student_id')->count('student_id')), 'detail' => 'Emergency or guardian contacts'],
+            ['label' => __('Students'), 'value' => number_format((clone $studentStats)->count()), 'detail' => __('Available front-desk records')],
+            ['label' => __('Active'), 'value' => number_format((clone $studentStats)->where('status', 'Active')->count()), 'detail' => __('Currently active students')],
+            ['label' => __('With Guardians'), 'value' => number_format($guardianStats->distinct('student_id')->count('student_id')), 'detail' => __('Emergency or guardian contacts')],
         ];
 
         return view('workspaces.reception', compact('students', 'filters', 'stats'));
@@ -146,8 +146,8 @@ class RoleWorkspaceController extends Controller
         $balance = max(0, $charges - $credits);
 
         return [
-            'value' => $balance > 0 ? money($balance, $currency).' '.$currency : 'No balance',
-            'detail' => $balance > 0 ? 'Outstanding tuition balance' : 'No unpaid tuition charges',
+            'value' => $balance > 0 ? money($balance, $currency).' '.$currency : __('No balance'),
+            'detail' => $balance > 0 ? __('Outstanding tuition balance') : __('No unpaid tuition charges'),
         ];
     }
 

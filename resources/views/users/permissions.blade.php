@@ -2,12 +2,12 @@
     <x-slot name="header">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">User Permissions</h2>
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('User Permissions') }}</h2>
                 <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ $user->name }} / {{ $user->email }}</p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('users.edit', $user) }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">Back to User</a>
-                <a href="{{ route('users.index') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">All Users</a>
+                <a href="{{ route('users.edit', $user) }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Back to User') }}</a>
+                <a href="{{ route('users.index') }}" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('All Users') }}</a>
             </div>
         </div>
     </x-slot>
@@ -25,21 +25,21 @@
             <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="grid gap-4 md:grid-cols-3">
                     <div>
-                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Assigned Roles</p>
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Assigned Roles') }}</p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             @forelse($user->roles as $role)
                                 <span class="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{{ $role->display_name }}</span>
                             @empty
-                                <span class="text-sm text-gray-500">No role assigned</span>
+                                <span class="text-sm text-gray-500">{{ __('No role assigned') }}</span>
                             @endforelse
                         </div>
                     </div>
                     <div>
-                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Effective Route Access</p>
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Effective Route Access') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $effectiveRouteAccessCount }}</p>
                     </div>
                     <div>
-                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Overrides</p>
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{{ __('Overrides') }}</p>
                         <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ $overrideEffects->count() }}</p>
                     </div>
                 </div>
@@ -81,12 +81,12 @@
                                         <span class="rounded-md px-2.5 py-1 text-xs font-semibold {{ $access['status'] === 'effective' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : ($access['status'] === 'conditional' ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200' : ($access['status'] === 'unenforced' ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300')) }}" title="{{ $access['reason'] }}">{{ $access['label'] }}</span>
                                         <span class="rounded-md px-2.5 py-1 text-xs font-semibold {{ $permission->risk_level === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-200' : ($permission->risk_level === 'high' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300') }}" title="{{ $permission->risk_reason }}">{{ $permission->risk_label }}</span>
                                         @if($fromRole)
-                                            <span class="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Role</span>
+                                            <span class="rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">{{ __('Role') }}</span>
                                         @endif
                                         @if($override === 'grant')
-                                            <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Direct grant</span>
+                                            <span class="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{{ __('Direct grant') }}</span>
                                         @elseif($override === 'deny')
-                                            <span class="rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">Direct deny</span>
+                                            <span class="rounded-md bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">{{ __('Direct deny') }}</span>
                                         @endif
                                     </span>
                                 </label>
@@ -98,9 +98,9 @@
                 <div class="sticky bottom-0 flex flex-col gap-4 border-t border-gray-200 bg-gray-50/95 px-4 py-4 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 sm:flex-row sm:items-center sm:justify-between">
                     <label class="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
                         <input type="checkbox" name="confirm_permission_change" value="1" class="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500" required>
-                        <span>I understand that direct grants and denies change this user's live access and create an audit record.</span>
+                        <span>{{ __("I understand that direct grants and denies change this user's live access and create an audit record.") }}</span>
                     </label>
-                    <button type="submit" class="shrink-0 rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">Save Permissions</button>
+                    <button type="submit" class="shrink-0 rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">{{ __('Save Permissions') }}</button>
                 </div>
             </form>
         </div>
