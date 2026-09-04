@@ -2,11 +2,11 @@
     <x-slot name="header">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <h2 class="text-2xl font-semibold text-gray-900">Tuition Reminder</h2>
-                <p class="mt-1 text-sm text-gray-600">Filter unpaid tuition charges, select students, and send payment notifications.</p>
+                <h2 class="text-2xl font-semibold text-gray-900">{{ __('Tuition Reminder') }}</h2>
+                <p class="mt-1 text-sm text-gray-600">{{ __('Filter unpaid tuition charges, select students, and send payment notifications.') }}</p>
             </div>
             <a href="{{ route('finance') }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">
-                Back to Student Finance
+                {{ __('Back to Student Finance') }}
             </a>
         </div>
     </x-slot>
@@ -26,47 +26,47 @@
             <form method="GET" action="{{ route('finance.tuition-reminders.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
                     <div class="min-w-0 sm:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Search Student</label>
-                        <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="Name, email, ID, phone" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <label class="block text-sm font-medium text-gray-700">{{ __('Search Student') }}</label>
+                        <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="{{ __('Name, email, ID, phone') }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Payment Status</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ __('Payment Status') }}</label>
                         <select name="payment_status" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All unpaid</option>
+                            <option value="">{{ __('All unpaid') }}</option>
                             @foreach($paymentStatuses as $value => $label)
                                 <option value="{{ $value }}" @selected($filters['payment_status'] === $value)>{{ $label }}</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Currency</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ __('Currency') }}</label>
                         <select name="currency" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All currencies</option>
+                            <option value="">{{ __('All currencies') }}</option>
                             @foreach(['IQD', 'USD'] as $currency)
                                 <option value="{{ $currency }}" @selected($filters['currency'] === $currency)>{{ $currency }}</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Academic Year</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ __('Academic Year') }}</label>
                         <select name="academic_year" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">All years</option>
+                            <option value="">{{ __('All years') }}</option>
                             @foreach($filterOptions['academicYears'] as $year)
                                 <option value="{{ $year }}" @selected($filters['academic_year'] === $year)>{{ $year }}</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Due From</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ __('Due From') }}</label>
                         <input type="date" name="date_from" value="{{ $filters['date_from'] }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div class="min-w-0">
-                        <label class="block text-sm font-medium text-gray-700">Due To</label>
+                        <label class="block text-sm font-medium text-gray-700">{{ __('Due To') }}</label>
                         <input type="date" name="date_to" value="{{ $filters['date_to'] }}" class="mt-1 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div class="flex flex-col gap-3 sm:col-span-2 sm:flex-row sm:items-end lg:col-span-2">
-                        <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">Apply Filter</button>
-                        <a href="{{ route('finance.tuition-reminders.index') }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">Reset</a>
+                        <button type="submit" class="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">{{ __('Apply Filter') }}</button>
+                        <a href="{{ route('finance.tuition-reminders.index') }}" class="inline-flex w-full justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">{{ __('Reset') }}</a>
                     </div>
                 </div>
             </form>
@@ -83,12 +83,12 @@
                 <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                     <div class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
                         <div class="min-w-0">
-                            <h3 class="text-base font-semibold text-gray-900">Message</h3>
-                            <p class="mt-1 text-sm text-gray-500">This message will be sent only to students with unpaid tuition charges.</p>
+                            <h3 class="text-base font-semibold text-gray-900">{{ __('Message') }}</h3>
+                            <p class="mt-1 text-sm text-gray-500">{{ __('This message will be sent only to students with unpaid tuition charges.') }}</p>
                             <textarea
                                 name="message"
                                 rows="3"
-                                placeholder="Optional message for students..."
+                                placeholder="{{ __('Optional message for students...') }}"
                                 class="mt-3 block w-full min-w-0 rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             >{{ old('message') }}</textarea>
                         </div>
@@ -100,7 +100,7 @@
                                 @disabled($reminderRows->isEmpty())
                                 class="inline-flex w-full justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto"
                             >
-                                Send to Checked Students
+                                {{ __('Send to Checked Students') }}
                             </button>
                             <button
                                 type="submit"
@@ -109,7 +109,7 @@
                                 @disabled($reminderRows->isEmpty())
                                 class="inline-flex w-full justify-center rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                             >
-                                Send to Filtered Students
+                                {{ __('Send to Filtered Students') }}
                             </button>
                         </div>
                     </div>
@@ -117,13 +117,13 @@
 
                 <div class="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                     <div class="border-b border-gray-200 px-4 py-4 sm:px-5">
-                        <h3 class="text-base font-semibold text-gray-900">Students With Unpaid Tuition</h3>
+                        <h3 class="text-base font-semibold text-gray-900">{{ __('Students With Unpaid Tuition') }}</h3>
                     </div>
                     <div class="divide-y divide-gray-100">
                         @forelse($reminderRows as $row)
                             @php
                                 $student = $row['student'];
-                                $oldestDueDate = $row['oldestDueDate'] ? \Illuminate\Support\Carbon::parse($row['oldestDueDate'])->format('Y-m-d') : 'No due date';
+                                $oldestDueDate = $row['oldestDueDate'] ? \Illuminate\Support\Carbon::parse($row['oldestDueDate'])->format('Y-m-d') : __('No due date');
                             @endphp
                             <label class="flex min-w-0 flex-col gap-3 px-4 py-4 hover:bg-gray-50 sm:flex-row sm:items-start sm:px-5">
                                 <input
@@ -137,16 +137,16 @@
                                     <span class="min-w-0">
                                         <span class="block font-semibold text-gray-900">{{ $student->full_name }}</span>
                                         <span class="mt-1 block break-words text-sm text-gray-500">{{ $student->student_id }} / {{ $student->email }}</span>
-                                        <span class="mt-1 block break-words text-xs text-gray-500">{{ $student->department->name ?? 'No department' }} / {{ $student->phone ?? 'No phone' }}</span>
+                                        <span class="mt-1 block break-words text-xs text-gray-500">{{ $student->department->name ?? __('No department') }} / {{ $student->phone ?? __('No phone') }}</span>
                                     </span>
                                     <span class="text-left sm:text-right">
                                         <span class="block text-sm font-semibold text-gray-900">{{ $row['balanceText'] }}</span>
-                                        <span class="mt-1 block text-xs text-gray-500">Oldest due: {{ $oldestDueDate }}</span>
+                                        <span class="mt-1 block text-xs text-gray-500">{{ __('Oldest due:') }} {{ $oldestDueDate }}</span>
                                     </span>
                                 </span>
                             </label>
                         @empty
-                            <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">No unpaid tuition charges match these filters.</div>
+                            <div class="px-4 py-8 text-center text-sm text-gray-500 sm:px-5">{{ __('No unpaid tuition charges match these filters.') }}</div>
                         @endforelse
                     </div>
                     @if($reminderPaginator->hasPages())
