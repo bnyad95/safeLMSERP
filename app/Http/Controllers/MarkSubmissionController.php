@@ -168,7 +168,7 @@ class MarkSubmissionController extends Controller
     public function submitMarks(Request $request)
     {
         return response()->json([
-            'error' => 'Final exam marks are submitted by the examination committee.',
+            'error' => __('Final exam marks are submitted by the examination committee.'),
         ], 403);
     }
 
@@ -177,7 +177,7 @@ class MarkSubmissionController extends Controller
         $user = Auth::user();
 
         if (! $this->can($user, ['marks.approve'])) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+            return response()->json(['error' => __('Unauthorized')], 403);
         }
 
         $this->normalizeMarkIds($request);
@@ -193,12 +193,12 @@ class MarkSubmissionController extends Controller
         if (! $request->expectsJson()) {
             return redirect()
                 ->route('marks.submission-queue')
-                ->with('success', "Approved {$result['updated']} marks");
+                ->with('success', __('Approved :count marks', ['count' => $result['updated']]));
         }
 
         return response()->json([
             'success' => true,
-            'message' => "Approved {$result['updated']} marks",
+            'message' => __('Approved :count marks', ['count' => $result['updated']]),
             'data' => $result,
         ]);
     }
@@ -226,7 +226,7 @@ class MarkSubmissionController extends Controller
             $this->service->assertMarkIntegrity($mark);
 
             if (is_null($mark->prefinal_mark)) {
-                throw ValidationException::withMessages(['score' => 'Pre-final mark must be entered by the teacher before final exam scores.']);
+                throw ValidationException::withMessages(['score' => __('Pre-final mark must be entered by the teacher before final exam scores.')]);
             }
 
             $isPublishedCorrection = $mark->visibility_status === 'published'
@@ -239,24 +239,26 @@ class MarkSubmissionController extends Controller
             }
 
             if (! $isPublishedCorrection && ! in_array($mark->submission_status, ['draft', 'rejected'], true)) {
-                throw ValidationException::withMessages(['score' => 'Submitted, under-review, or approved marks must be rejected before their final exam score can be changed.']);
+                throw ValidationException::withMessages(['score' => __('Submitted, under-review, or approved marks must be rejected before their final exam score can be changed.')]);
             }
 
             $scoreField = $validated['trial'] === 'first' ? 'first_trial_final_exam' : 'second_trial_final_exam';
             $previousScore = $mark->{$scoreField};
             $previousStatus = $mark->submission_status;
             if (! is_null($previousScore) && ! $isPublishedCorrection && $previousStatus !== 'rejected') {
-                throw ValidationException::withMessages(['score' => ucfirst($validated['trial']).' trial has already been entered. Use the review workflow before correcting it.']);
+                throw ValidationException::withMessages(['score' => $validated['trial'] === 'first'
+                    ? __('First trial has already been entered. Use the review workflow before correcting it.')
+                    : __('Second trial has already been entered. Use the review workflow before correcting it.')]);
             }
             if (! is_null($previousScore) && blank($validated['change_reason'] ?? null)) {
-                throw ValidationException::withMessages(['change_reason' => 'A reason is required when correcting an existing final exam score.']);
+                throw ValidationException::withMessages(['change_reason' => __('A reason is required when correcting an existing final exam score.')]);
             }
             if ($validated['trial'] === 'second') {
                 if (is_null($mark->first_trial_final_exam)) {
-                    throw ValidationException::withMessages(['score' => 'Enter first trial final exam before second trial.']);
+                    throw ValidationException::withMessages(['score' => __('Enter first trial final exam before second trial.')]);
                 }
                 if (((float) $mark->prefinal_mark + (float) $mark->first_trial_final_exam) >= (float) config('academics.pass_mark', 50)) {
-                    throw ValidationException::withMessages(['score' => 'Second trial is only available for students who failed the first trial.']);
+                    throw ValidationException::withMessages(['score' => __('Second trial is only available for students who failed the first trial.')]);
                 }
             }
 
@@ -343,9 +345,9 @@ class MarkSubmissionController extends Controller
             : route('marks.submission-queue');
 
         $message = match (true) {
-            $firstTrialFailed => 'First trial score saved. Student is eligible for second trial.',
-            $isPublishedCorrection => 'Published mark corrected and republished.',
-            default => 'Final exam score saved and submitted for review.',
+            $firstTrialFailed => __('First trial score saved. Student is eligible for second trial.'),
+            $isPublishedCorrection => __('Published mark corrected and republished.'),
+            default => __('Final exam score saved and submitted for review.'),
         };
 
         return redirect()
@@ -358,7 +360,7 @@ class MarkSubmissionController extends Controller
         $user = Auth::user();
 
         if (! $this->can($user, ['marks.approve', 'marks.request_change'])) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+            return response()->json(['error' => __('Unauthorized')], 403);
         }
 
         $this->normalizeMarkIds($request);
@@ -374,12 +376,12 @@ class MarkSubmissionController extends Controller
         if (! $request->expectsJson()) {
             return redirect()
                 ->route('marks.submission-queue')
-                ->with('success', "Rejected {$result['updated']} marks");
+                ->with('success', __('Rejected :count marks', ['count' => $result['updated']]));
         }
 
         return response()->json([
             'success' => true,
-            'message' => "Rejected {$result['updated']} marks",
+            'message' => __('Rejected :count marks', ['count' => $result['updated']]),
             'data' => $result,
         ]);
     }
@@ -389,7 +391,7 @@ class MarkSubmissionController extends Controller
         $user = Auth::user();
 
         if (! $this->canPublish($user)) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+            return response()->json(['error' => __('Unauthorized')], 403);
         }
 
         $this->normalizeMarkIds($request);
@@ -404,12 +406,12 @@ class MarkSubmissionController extends Controller
         if (! $request->expectsJson()) {
             return redirect()
                 ->route('marks.submission-queue')
-                ->with('success', "Published {$result['updated']} marks");
+                ->with('success', __('Published :count marks', ['count' => $result['updated']]));
         }
 
         return response()->json([
             'success' => true,
-            'message' => "Published {$result['updated']} marks",
+            'message' => __('Published :count marks', ['count' => $result['updated']]),
             'data' => $result,
         ]);
     }
@@ -438,8 +440,8 @@ class MarkSubmissionController extends Controller
         return redirect()
             ->route('marks.submission-queue')
             ->with('success', $validated['open']
-                ? "Pre-final mark entry enabled for {$university->name}."
-                : "Pre-final mark entry disabled for {$university->name}.");
+                ? __('Pre-final mark entry enabled for :university.', ['university' => $university->name])
+                : __('Pre-final mark entry disabled for :university.', ['university' => $university->name]));
     }
 
     private function canManagePrefinalWindow($user): bool
@@ -886,14 +888,14 @@ class MarkSubmissionController extends Controller
     private function stageLabel(?string $alias, ?string $fallback): string
     {
         if ($alias === '__unassigned__') {
-            return 'Stage not specified';
+            return __('Stage not specified');
         }
 
         if ($alias && ctype_digit((string) $alias)) {
-            return 'Stage '.$alias;
+            return __('Stage :number', ['number' => $alias]);
         }
 
-        return $fallback && $fallback !== '__unassigned__' ? $fallback : 'Stage not specified';
+        return $fallback && $fallback !== '__unassigned__' ? $fallback : __('Stage not specified');
     }
 
     private function stageSortValue(?string $alias, string $label): string

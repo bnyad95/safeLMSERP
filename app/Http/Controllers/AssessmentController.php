@@ -42,7 +42,7 @@ class AssessmentController extends Controller
                 'college_administrator',
                 'department_administrator',
             ]);
-        $assessmentPageTitle = $isAdminOversight ? 'Assessment Analytics' : 'Assessments';
+        $assessmentPageTitle = $isAdminOversight ? __('Assessment Analytics') : __('Assessments');
         $studentSectionIds = $student
             ? $student->enrollments()
                 ->where('status', 'enrolled')
@@ -118,8 +118,8 @@ class AssessmentController extends Controller
                 $first = $items->first();
 
                 return [
-                    'course_code' => $first->courseSection->course->code ?? 'Course',
-                    'course_name' => $first->courseSection->course->name ?? 'Unassigned course',
+                    'course_code' => $first->courseSection->course->code ?? __('Course'),
+                    'course_name' => $first->courseSection->course->name ?? __('Unassigned course'),
                     'items' => $items,
                 ];
             })
@@ -133,7 +133,7 @@ class AssessmentController extends Controller
 
             return [
                 'title' => $item->title,
-                'section' => ($item->courseSection->course->code ?? 'Course').' '.$item->courseSection->section_code,
+                'section' => ($item->courseSection->course->code ?? __('Course')).' '.$item->courseSection->section_code,
                 'weight' => $item->weight_percent,
                 'graded' => $item->graded_submissions_count,
                 'weighted_average' => $average,
@@ -187,23 +187,23 @@ class AssessmentController extends Controller
         return response()->streamDownload(function () use ($items) {
             $handle = fopen('php://output', 'w');
             fputcsv($handle, [
-                'College',
-                'Department',
-                'Stage',
-                'Class',
-                'Course',
-                'Semester',
-                'Teacher',
-                'Assessment',
-                'Type',
-                'Status',
-                'Due at',
-                'Max score',
-                'Weight percent',
-                'Submissions',
-                'Graded',
-                'Pending grading',
-                'Average score',
+                __('College'),
+                __('Department'),
+                __('Stage'),
+                __('Class'),
+                __('Course'),
+                __('Semester'),
+                __('Teacher'),
+                __('Assessment'),
+                __('Type'),
+                __('Status'),
+                __('Due at'),
+                __('Max score'),
+                __('Weight percent'),
+                __('Submissions'),
+                __('Graded'),
+                __('Pending grading'),
+                __('Average score'),
             ]);
 
             foreach ($items as $item) {
@@ -211,7 +211,7 @@ class AssessmentController extends Controller
                 fputcsv($handle, [
                     $section->course?->department?->college?->name,
                     $section->course?->department?->name,
-                    $section->grade_level ?: 'Stage not specified',
+                    $section->grade_level ?: __('Stage not specified'),
                     $section->section_code,
                     trim(($section->course?->code ? $section->course->code.' - ' : '').($section->course?->name ?? '')),
                     trim(($section->semester?->name ?? '').' '.($section->semester?->academic_year ?? '')),
@@ -267,7 +267,7 @@ class AssessmentController extends Controller
 
         app(NotificationService::class)->syncAssessmentDeadline($assessmentItem);
 
-        return redirect()->route('assessments.index')->with('success', 'Assessment item created.');
+        return redirect()->route('assessments.index')->with('success', __('Assessment item created.'));
     }
 
     public function edit(AssessmentItem $assessmentItem)
@@ -322,7 +322,7 @@ class AssessmentController extends Controller
 
         app(NotificationService::class)->syncAssessmentDeadline($assessmentItem);
 
-        return redirect()->route('assessments.index')->with('success', 'Assessment item updated.');
+        return redirect()->route('assessments.index')->with('success', __('Assessment item updated.'));
     }
 
     public function storeRubric(Request $request, AssessmentItem $assessmentItem)
@@ -351,10 +351,10 @@ class AssessmentController extends Controller
 
         $rubricTotal = collect($criteria)->sum(fn ($criterion) => (float) ($criterion['points'] ?? 0));
         if (collect($criteria)->contains(fn ($criterion) => is_null($criterion['points']) || $criterion['points'] < 0)) {
-            throw ValidationException::withMessages(['criteria_text' => 'Each rubric line must include non-negative points after the | character.']);
+            throw ValidationException::withMessages(['criteria_text' => __('Each rubric line must include non-negative points after the | character.')]);
         }
         if (abs($rubricTotal - (float) $assessmentItem->max_score) > 0.01) {
-            throw ValidationException::withMessages(['criteria_text' => 'Rubric points must total the assessment maximum score.']);
+            throw ValidationException::withMessages(['criteria_text' => __('Rubric points must total the assessment maximum score.')]);
         }
 
         Rubric::updateOrCreate(
@@ -366,7 +366,7 @@ class AssessmentController extends Controller
             ]
         );
 
-        return redirect()->route('assessments.index')->with('success', 'Rubric saved.');
+        return redirect()->route('assessments.index')->with('success', __('Rubric saved.'));
     }
 
     public function submitWork(Request $request, AssessmentItem $assessmentItem)
@@ -376,7 +376,7 @@ class AssessmentController extends Controller
 
         $student = Student::where('email', $user->email)->firstOrFail();
         abort_unless($assessmentItem->status === 'published' && $assessmentItem->allow_submissions, 403);
-        abort_if($assessmentItem->due_at && now()->greaterThan($assessmentItem->due_at), 403, 'This assessment is past its due date.');
+        abort_if($assessmentItem->due_at && now()->greaterThan($assessmentItem->due_at), 403, __('This assessment is past its due date.'));
 
         $isEnrolled = $assessmentItem->courseSection
             ->activeEnrollments()
@@ -422,7 +422,7 @@ class AssessmentController extends Controller
 
         app(NotificationService::class)->notifyAssessmentSubmitted($submission);
 
-        return redirect()->route('assessments.index')->with('success', 'Submission received.');
+        return redirect()->route('assessments.index')->with('success', __('Submission received.'));
     }
 
     public function downloadItemFile(Request $request, AssessmentItem $assessmentItem)
@@ -472,7 +472,7 @@ class AssessmentController extends Controller
             'graded_at' => now(),
         ]);
 
-        return redirect()->route('assessments.index')->with('success', 'Submission graded.');
+        return redirect()->route('assessments.index')->with('success', __('Submission graded.'));
     }
 
     private function canAdminAccessAssessments(Request $request): bool
@@ -863,7 +863,7 @@ class AssessmentController extends Controller
 
         if ($assignedWeight + $weight > 100.001) {
             throw ValidationException::withMessages([
-                'weight_percent' => 'Assessment weights for a module cannot exceed 100%.',
+                'weight_percent' => __('Assessment weights for a module cannot exceed 100%.'),
             ]);
         }
     }
@@ -914,14 +914,14 @@ class AssessmentController extends Controller
     private function stageLabel(?string $alias, ?string $fallback): string
     {
         if ($alias === '__unassigned__') {
-            return 'Stage not specified';
+            return __('Stage not specified');
         }
 
         if ($alias && ctype_digit((string) $alias)) {
-            return 'Stage '.$alias;
+            return __('Stage :number', ['number' => $alias]);
         }
 
-        return $fallback && $fallback !== '__unassigned__' ? $fallback : 'Stage not specified';
+        return $fallback && $fallback !== '__unassigned__' ? $fallback : __('Stage not specified');
     }
 
     private function stageSortValue(?string $alias, string $label): string

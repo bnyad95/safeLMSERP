@@ -46,13 +46,13 @@ class AttendanceController extends Controller
         ]);
 
         $allowedIds = $this->sectionStudents($course, $section)->pluck('id')->map(fn ($id) => (string) $id);
-        abort_if(collect(array_keys($validated['attendance']))->diff($allowedIds)->isNotEmpty(), 422, 'Attendance contains students outside this class.');
+        abort_if(collect(array_keys($validated['attendance']))->diff($allowedIds)->isNotEmpty(), 422, __('Attendance contains students outside this class.'));
 
         $result = $this->service->recordAttendance($course->id, $validated['attendance'], $section?->id, $validated['date'] ?? null);
 
         return response()->json([
             'success' => true,
-            'message' => "Recorded attendance for {$result['created']} new and {$result['updated']} updated records",
+            'message' => __('Recorded attendance for :created new and :updated updated records', ['created' => $result['created'], 'updated' => $result['updated']]),
             'data' => $result,
         ]);
     }
@@ -117,14 +117,14 @@ class AttendanceController extends Controller
         if ($request->get('export') === 'csv') {
             return response()->streamDownload(function () use ($attendanceQuery) {
                 $handle = fopen('php://output', 'w');
-                fputcsv($handle, ['Date', 'Student ID', 'Student', 'Email', 'Status', 'Remarks']);
+                fputcsv($handle, [__('Date'), __('Student ID'), __('Student'), __('Email'), __('Status'), __('Remarks')]);
                 foreach ((clone $attendanceQuery)->lazy() as $record) {
                     fputcsv($handle, [
                         $record->date?->format('Y-m-d'),
                         $record->student->student_id ?? '',
                         $record->student->full_name ?? '',
                         $record->student->email ?? '',
-                        ucfirst($record->status),
+                        __(ucfirst($record->status)),
                         $record->remarks ?? '',
                     ]);
                 }
@@ -173,7 +173,7 @@ class AttendanceController extends Controller
 
         $matchingSections = $sections->get();
         abort_if($matchingSections->isEmpty() && ! $user->hasRole('super_administrator'), 403);
-        abort_if($matchingSections->count() > 1, 422, 'Choose a class section first.');
+        abort_if($matchingSections->count() > 1, 422, __('Choose a class section first.'));
 
         return $matchingSections->first();
     }
