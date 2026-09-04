@@ -2,17 +2,17 @@
     <x-slot name="header">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-xl font-semibold text-gray-800">Attendance Report</h2>
-                <p class="text-sm text-gray-600">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - Group '.$section->section_code : '' }}</p>
+                <h2 class="text-xl font-semibold text-gray-800">{{ __('Attendance Report') }}</h2>
+                <p class="text-sm text-gray-600">{{ $course->name }} ({{ $course->code }}){{ $section ? ' - '.__('Group :code', ['code' => $section->section_code]) : '' }}</p>
             </div>
             <div class="flex flex-wrap gap-3">
                 <a href="{{ route('attendance.history', ['course' => $course->id, 'section_id' => $section?->id]) }}"
                    class="inline-flex items-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
-                    History
+                    {{ __('History') }}
                 </a>
                 <a href="{{ route('attendance.index', ['course' => $course->id, 'section_id' => $section?->id]) }}"
                    class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                    Mark Attendance
+                    {{ __('Mark Attendance') }}
                 </a>
             </div>
         </div>
@@ -24,14 +24,14 @@
                 <table class="min-w-full divide-y divide-gray-100">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Student</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Classes</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Present</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Absent</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Late</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Excused</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Attendance %</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">Detail</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Student') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Classes') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Present') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Absent') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Late') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Excused') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Attendance %') }}</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ __('Detail') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -59,12 +59,12 @@
                                 </td>
                                 <td class="px-6 py-3">
                                     <a href="{{ route('attendance.student-report', ['course' => $course->id, 'student' => $row['student_id'], 'section_id' => $section?->id]) }}"
-                                       class="text-xs text-blue-600 hover:underline">View</a>
+                                       class="text-xs text-blue-600 hover:underline">{{ __('View') }}</a>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="px-6 py-8 text-center text-sm text-gray-500">No attendance records yet.</td>
+                                <td colspan="8" class="px-6 py-8 text-center text-sm text-gray-500">{{ __('No attendance records yet.') }}</td>
                             </tr>
                         @endforelse
                     </tbody>
