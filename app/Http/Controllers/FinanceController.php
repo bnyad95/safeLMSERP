@@ -303,6 +303,16 @@ class FinanceController extends Controller
             'overdueAging' => $agingRows,
             'financeUrl' => route('finance'),
             'remindersUrl' => route('finance.tuition-reminders.index'),
+            'labels' => [
+                'collected' => __('Collected'),
+                'outstanding' => __('Outstanding'),
+                'invoices' => __('Invoices'),
+                'overdueBalance' => __('Overdue balance'),
+                'statuses' => collect(['paid', 'partial', 'open', 'overdue'])
+                    ->mapWithKeys(fn ($status) => [$status => __(ucfirst($status))]),
+                'agingBuckets' => collect(['1-30 days', '31-60 days', '61-90 days', '90+ days'])
+                    ->mapWithKeys(fn ($bucket) => [$bucket => __($bucket)]),
+            ],
         ];
     }
 

@@ -27,7 +27,7 @@
                                 <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ $stat['label'] }}</p>
                                 <p class="mt-3 text-3xl font-semibold text-gray-900 dark:text-gray-100">{{ $stat['value'] }}</p>
                             </div>
-                            <span class="rounded-md border px-2.5 py-1 text-xs font-semibold {{ $tone }}">Live</span>
+                            <span class="rounded-md border px-2.5 py-1 text-xs font-semibold {{ $tone }}">{{ __('Live') }}</span>
                         </div>
                         <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">{{ $stat['detail'] }}</p>
                     </div>
@@ -37,7 +37,7 @@
             <div class="grid gap-6 xl:grid-cols-2">
                 <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Review Status</h3>
+                        <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Review Status') }}</h3>
                     </div>
                     <div class="divide-y divide-gray-100 dark:divide-gray-800">
                         @foreach($reviewItems as $item)
@@ -54,7 +54,7 @@
 
                     <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                         <div class="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Academic Structure</h3>
+                            <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ __('Academic Structure') }}</h3>
                         </div>
                         <div class="grid grid-cols-2 gap-3 p-5">
                             @foreach($structure as $item)

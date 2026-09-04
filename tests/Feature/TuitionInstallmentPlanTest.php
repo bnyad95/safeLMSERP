@@ -93,7 +93,7 @@ class TuitionInstallmentPlanTest extends TestCase
         $this->actingAs($admin)
             ->get(route('finance.students.records.create', $student))
             ->assertOk()
-            ->assertSee("Defaults to 8 for this student's program.", false);
+            ->assertSee("Defaults to 8 for this student's program.");
 
         $institute = $this->makeUniversity(University::TYPE_INSTITUTE);
         $instituteStudent = $this->makeStudentFor($institute);
@@ -101,7 +101,7 @@ class TuitionInstallmentPlanTest extends TestCase
         $this->actingAs($admin)
             ->get(route('finance.students.records.create', $instituteStudent))
             ->assertOk()
-            ->assertSee("Defaults to 4 for this student's program.", false);
+            ->assertSee("Defaults to 4 for this student's program.");
     }
 
     public function test_a_multi_semester_plan_can_start_before_future_semesters_exist(): void

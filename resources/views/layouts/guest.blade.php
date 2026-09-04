@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ config('localization.available.'.app()->getLocale().'.rtl') ? 'rtl' : 'ltr' }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -30,6 +30,16 @@
         @endif
     </head>
     <body class="font-sans text-gray-900 antialiased dark:text-gray-100">
+        <div class="fixed end-4 top-4 z-10 flex items-center gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            @foreach(config('localization.available') as $code => $meta)
+                <form method="POST" action="{{ route('locale.update') }}">
+                    @csrf
+                    <button type="submit" name="locale" value="{{ $code }}" class="{{ app()->getLocale() === $code ? 'bg-gray-900 text-white dark:bg-indigo-600' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800' }} rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        {{ $meta['native'] }}
+                    </button>
+                </form>
+            @endforeach
+        </div>
         <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100 dark:bg-gray-950">
             <div>
                 <a href="/">
@@ -41,7 +51,7 @@
                 {{ $slot }}
             </div>
 
-            <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">Developed by Safe Data Co. All rights reserved</p>
+            <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('Developed by Safe Data Co. All rights reserved') }}</p>
         </div>
     </body>
 </html>

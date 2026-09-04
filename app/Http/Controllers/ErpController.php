@@ -91,23 +91,23 @@ class ErpController extends Controller
         $todayAttendanceCount = Attendance::whereDate('date', today())->count();
 
         $stats = [
-            ['label' => 'Students', 'value' => number_format($studentsCount), 'detail' => number_format($activeStudentsCount).' active records', 'tone' => 'blue'],
-            ['label' => 'Teachers', 'value' => number_format($teachersCount), 'detail' => number_format($activeTeachersCount).' active staff', 'tone' => 'emerald'],
-            ['label' => 'Courses', 'value' => number_format($coursesCount), 'detail' => number_format(Department::count()).' departments mapped', 'tone' => 'indigo'],
-            ['label' => 'Marks Queue', 'value' => number_format($submittedMarksCount), 'detail' => number_format($publishedMarksCount).' published results', 'tone' => 'amber'],
+            ['label' => __('Students'), 'value' => number_format($studentsCount), 'detail' => __(':count active records', ['count' => number_format($activeStudentsCount)]), 'tone' => 'blue'],
+            ['label' => __('Teachers'), 'value' => number_format($teachersCount), 'detail' => __(':count active staff', ['count' => number_format($activeTeachersCount)]), 'tone' => 'emerald'],
+            ['label' => __('Courses'), 'value' => number_format($coursesCount), 'detail' => __(':count departments mapped', ['count' => number_format(Department::count())]), 'tone' => 'indigo'],
+            ['label' => __('Marks Queue'), 'value' => number_format($submittedMarksCount), 'detail' => __(':count published results', ['count' => number_format($publishedMarksCount)]), 'tone' => 'amber'],
         ];
 
         $reviewItems = [
-            ['label' => 'Submitted marks', 'value' => number_format($submittedMarksCount), 'hint' => 'Need review before publishing'],
-            ['label' => 'Draft materials', 'value' => number_format($draftMaterialsCount), 'hint' => 'Waiting for teacher publication'],
-            ['label' => 'Attendance entries today', 'value' => number_format($todayAttendanceCount), 'hint' => 'Recorded across active courses'],
+            ['label' => __('Submitted marks'), 'value' => number_format($submittedMarksCount), 'hint' => __('Need review before publishing')],
+            ['label' => __('Draft materials'), 'value' => number_format($draftMaterialsCount), 'hint' => __('Waiting for teacher publication')],
+            ['label' => __('Attendance entries today'), 'value' => number_format($todayAttendanceCount), 'hint' => __('Recorded across active courses')],
         ];
 
         $structure = [
-            ['label' => 'Universities', 'value' => number_format(University::count())],
-            ['label' => 'Colleges', 'value' => number_format(College::count())],
-            ['label' => 'Departments', 'value' => number_format(Department::count())],
-            ['label' => 'Semesters', 'value' => number_format(Semester::count())],
+            ['label' => __('Universities'), 'value' => number_format(University::count())],
+            ['label' => __('Colleges'), 'value' => number_format(College::count())],
+            ['label' => __('Departments'), 'value' => number_format(Department::count())],
+            ['label' => __('Semesters'), 'value' => number_format(Semester::count())],
         ];
 
         return view('dashboard', compact('stats', 'reviewItems', 'structure'));
@@ -811,12 +811,12 @@ class ErpController extends Controller
             ->values();
 
         $breadcrumbs = collect([
-            ['label' => 'Results Overview', 'href' => $url()],
+            ['label' => __('Results Overview'), 'href' => $url()],
             $selectedCollege ? ['label' => $selectedCollege->name, 'href' => $url(['college_id' => $selectedCollege->id])] : null,
             $selectedDepartment ? ['label' => $selectedDepartment->name, 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $selectedDepartment->id])] : null,
             $selectedStageLabel ? ['label' => $selectedStageLabel, 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage']])] : null,
             $selectedSemester ? ['label' => trim($selectedSemester->name.' '.$selectedSemester->academic_year), 'href' => $url(['college_id' => $filters['college_id'], 'department_id' => $filters['department_id'], 'stage' => $filters['stage'], 'semester_id' => $selectedSemester->id])] : null,
-            $selectedSection ? ['label' => ($selectedSection->course?->code ?? 'Course').' Group '.$selectedSection->section_code, 'href' => null] : null,
+            $selectedSection ? ['label' => __(':course Group :code', ['course' => $selectedSection->course?->code ?? __('Course'), 'code' => $selectedSection->section_code]), 'href' => null] : null,
         ])->filter()->values();
         $breadcrumbs = $breadcrumbs->map(fn ($crumb, $index) => $index === $breadcrumbs->count() - 1
             ? [...$crumb, 'href' => null]
@@ -892,14 +892,14 @@ class ErpController extends Controller
         return [
             'title' => match ($level) {
                 'stages' => $this->stageLabel($this->stageAlias((string) $cardId), $row->title),
-                'semesters' => trim($row->title.' '.$row->meta),
-                'classes' => $row->section_code ? $row->title.' / Group '.$row->section_code : $row->title,
-                default => $row->title,
+                'semesters' => trim($this->translateHierarchyFallback($row->title).' '.$this->translateHierarchyFallback($row->meta)),
+                'classes' => $row->section_code ? $row->title.' / '.__('Group :code', ['code' => $row->section_code]) : $row->title,
+                default => $this->translateHierarchyFallback($row->title),
             },
             'meta' => match ($level) {
-                'stages' => ((int) $row->semester_count).' semesters',
-                'classes' => $row->meta.' / '.($row->teacher_name ?: 'No teacher assigned'),
-                default => $row->meta,
+                'stages' => __(':count semesters', ['count' => (int) $row->semester_count]),
+                'classes' => $row->meta.' / '.($row->teacher_name ?: __('No teacher assigned')),
+                default => $this->translateHierarchyFallback($row->meta),
             },
             'href' => $href,
             'marks' => (int) $row->marks_count,
@@ -907,6 +907,21 @@ class ErpController extends Controller
             'published' => (int) $row->published_count,
             'average' => is_null($row->average_mark) ? null : round((float) $row->average_mark, 1),
         ];
+    }
+
+    /**
+     * The hierarchy queries fall back to fixed placeholder strings (via SQL COALESCE)
+     * when a mark has no linked college/department/semester/course. Translate only
+     * those known placeholders — real names must pass through untouched.
+     */
+    private function translateHierarchyFallback(?string $value): ?string
+    {
+        $placeholders = [
+            'College not specified', 'Department not specified', 'Semester not specified',
+            'Course not specified', 'No code', 'No academic year',
+        ];
+
+        return in_array($value, $placeholders, true) ? __($value) : $value;
     }
 
     private function joinResultDimensions($query): void
@@ -967,8 +982,8 @@ class ErpController extends Controller
         $passed = (int) ($row->passed ?? 0);
         $failed = (int) ($row->failed ?? 0);
         $graded = $passed + $failed;
-        $average = $graded > 0 && ! is_null($row->average) ? number_format((float) $row->average, 1) : 'N/A';
-        $passRate = $graded > 0 ? number_format(($passed / $graded) * 100, 1).'%' : 'N/A';
+        $average = $graded > 0 && ! is_null($row->average) ? number_format((float) $row->average, 1) : __('N/A');
+        $passRate = $graded > 0 ? number_format(($passed / $graded) * 100, 1).'%' : __('N/A');
 
         $stats = [
             ['label' => 'Total Marks', 'value' => number_format($total), 'detail' => 'Matching current scope'],
@@ -992,11 +1007,11 @@ class ErpController extends Controller
     private function resultRows($marks, bool $canOpenMarkQueue, bool $canViewStudents, bool $canViewCourses)
     {
         return $marks->map(fn (Mark $mark) => [
-            'student' => $mark->student?->full_name ?? 'Unknown student',
+            'student' => $mark->student?->full_name ?? __('Unknown student'),
             'student_id' => $mark->student?->student_id ?? '-',
-            'course' => trim(($mark->course?->code ? $mark->course->code.' - ' : '').($mark->course?->name ?? 'No course')),
-            'class' => $mark->courseSection ? 'Group '.$mark->courseSection->section_code : 'No class',
-            'final_mark' => $mark->hasCompleteFinalMark() ? number_format((float) $mark->final_mark, 1) : 'N/A',
+            'course' => trim(($mark->course?->code ? $mark->course->code.' - ' : '').($mark->course?->name ?? __('No course'))),
+            'class' => $mark->courseSection ? __('Group :code', ['code' => $mark->courseSection->section_code]) : __('No class'),
+            'final_mark' => $mark->hasCompleteFinalMark() ? number_format((float) $mark->final_mark, 1) : __('N/A'),
             'result_status' => $this->resultOutcome($mark),
             'submission_status' => $this->resultStatusLabel($mark->submission_status),
             'visibility_status' => $this->resultStatusLabel($mark->visibility_status),
@@ -1048,7 +1063,7 @@ class ErpController extends Controller
                 $graded = $passed + $failed;
 
                 return [
-                    'course' => trim(($row->code ? $row->code.' - ' : '').($row->name ?? 'No course')),
+                    'course' => trim(($row->code ? $row->code.' - ' : '').($row->name ?? __('No course'))),
                     'marks' => (int) $row->marks_count,
                     'average' => is_null($row->average_mark) ? null : round((float) $row->average_mark, 1),
                     'published' => $published,
@@ -1079,7 +1094,7 @@ class ErpController extends Controller
                 $unpublished = (int) $row->unpublished_count;
 
                 return [
-                    'department' => $row->department_name,
+                    'department' => $row->department_name === 'Department not specified' ? __('Department not specified') : $row->department_name,
                     'pending' => $pending,
                     'unpublished' => $unpublished,
                     'attention' => $pending + $unpublished,
@@ -2965,14 +2980,14 @@ class ErpController extends Controller
     private function stageLabel(?string $alias, ?string $fallback): string
     {
         if ($alias === '__unassigned__') {
-            return 'Stage not specified';
+            return __('Stage not specified');
         }
 
         if ($alias && ctype_digit((string) $alias)) {
-            return 'Stage '.$alias;
+            return __('Stage :number', ['number' => $alias]);
         }
 
-        return $fallback && $fallback !== '__unassigned__' ? $fallback : 'Stage not specified';
+        return $fallback && $fallback !== '__unassigned__' ? $fallback : __('Stage not specified');
     }
 
     private function stageSortValue(?string $alias, string $label): string

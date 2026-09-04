@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureAnyRole;
 use App\Http\Middleware\EnsureAnyRoleOrDirectPermission;
 use App\Http\Middleware\EnsurePasswordHashIsCurrent;
 use App\Http\Middleware\EnsurePasswordIsChanged;
+use App\Http\Middleware\SetLocale;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [
+            SetLocale::class,
             EnsureAccountIsNotBlocked::class,
             EnsurePasswordHashIsCurrent::class,
             EnsurePasswordIsChanged::class,

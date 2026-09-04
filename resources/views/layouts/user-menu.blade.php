@@ -67,6 +67,18 @@
             </button>
 
             <div x-show="settingsOpen" x-transition x-cloak class="space-y-2 bg-gray-50 px-4 py-3 dark:bg-gray-950/40">
+                <form method="POST" action="{{ route('locale.update') }}" class="flex items-center justify-between rounded-md py-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                    @csrf
+                    <span>{{ __('Language') }}</span>
+                    <div class="flex items-center gap-1">
+                        @foreach(config('localization.available') as $code => $meta)
+                            <button type="submit" name="locale" value="{{ $code }}" class="{{ app()->getLocale() === $code ? 'bg-gray-900 text-white dark:bg-indigo-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700' }} rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                {{ $meta['native'] }}
+                            </button>
+                        @endforeach
+                    </div>
+                </form>
+
                 <div class="flex items-center justify-between rounded-md py-1 text-xs font-medium text-gray-500 dark:text-gray-400">
                     <span>{{ __('Font size') }}</span>
                     <div class="flex items-center gap-1">
@@ -81,7 +93,7 @@
                     @click="toggleTheme()"
                     class="flex w-full items-center justify-between rounded-md py-1 text-xs font-medium text-gray-500 transition hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-400 dark:hover:text-gray-200"
                     :aria-pressed="darkMode.toString()"
-                    :aria-label="darkMode ? 'Dark mode' : 'Light mode'"
+                    :aria-label="darkMode ? '{{ __('Dark mode') }}' : '{{ __('Light mode') }}'"
                 >
                     <span class="flex items-center gap-1.5">
                         <svg x-show="!darkMode" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -90,7 +102,7 @@
                         <svg x-show="darkMode" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
                         </svg>
-                        <span x-text="darkMode ? 'Dark mode' : 'Light mode'">Theme</span>
+                        <span x-text="darkMode ? '{{ __('Dark mode') }}' : '{{ __('Light mode') }}'">{{ __('Theme') }}</span>
                     </span>
                     <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-gray-300 transition dark:bg-indigo-600">
                         <span

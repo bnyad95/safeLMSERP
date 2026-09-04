@@ -144,7 +144,7 @@ const initializeFinanceDashboardCharts = async () => {
 			type: 'line',
 			data: {
 				labels: source.dates.map((date) => new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(`${date}T00:00:00`))),
-				datasets: [{ label: 'Collected', data: collectionValues, borderColor: colors.emerald, backgroundColor: 'rgba(5, 150, 105, 0.12)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }],
+				datasets: [{ label: source.labels.collected, data: collectionValues, borderColor: colors.emerald, backgroundColor: 'rgba(5, 150, 105, 0.12)', fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }],
 			},
 			options: collectionOptions,
 		});
@@ -160,7 +160,7 @@ const initializeFinanceDashboardCharts = async () => {
 			data: {
 				labels: departmentRows.map((row) => row.department),
 				datasets: [{
-					label: 'Outstanding',
+					label: source.labels.outstanding,
 					data: departmentRows.map((row) => row.balance),
 					backgroundColor: departmentRows.map((_, index) => departmentPalette[index % departmentPalette.length]),
 					borderRadius: 3,
@@ -179,8 +179,8 @@ const initializeFinanceDashboardCharts = async () => {
 		createChart('finance-status-chart', {
 			type: 'bar',
 			data: {
-				labels: statuses.map((status) => status.charAt(0).toUpperCase() + status.slice(1)),
-				datasets: [{ label: 'Invoices', data: statuses.map((status) => valueFor(statusRows, (row) => row.status === status, 'total')), backgroundColor: [colors.emerald, colors.amber, colors.blue, colors.red], borderRadius: 3 }],
+				labels: statuses.map((status) => source.labels.statuses[status]),
+				datasets: [{ label: source.labels.invoices, data: statuses.map((status) => valueFor(statusRows, (row) => row.status === status, 'total')), backgroundColor: [colors.emerald, colors.amber, colors.blue, colors.red], borderRadius: 3 }],
 			},
 			options: statusOptions,
 		});
@@ -206,7 +206,7 @@ const initializeFinanceDashboardCharts = async () => {
 		};
 		createChart('finance-aging-chart', {
 			type: 'bar',
-			data: { labels: agingBuckets, datasets: [{ label: 'Overdue balance', data: agingBuckets.map((bucket) => valueFor(agingRows, (row) => row.bucket === bucket, 'balance')), backgroundColor: [colors.amber, '#ea580c', colors.red, '#991b1b'], borderRadius: 3 }] },
+			data: { labels: agingBuckets.map((bucket) => source.labels.agingBuckets[bucket]), datasets: [{ label: source.labels.overdueBalance, data: agingBuckets.map((bucket) => valueFor(agingRows, (row) => row.bucket === bucket, 'balance')), backgroundColor: [colors.amber, '#ea580c', colors.red, '#991b1b'], borderRadius: 3 }] },
 			options: agingOptions,
 		});
 

@@ -17,6 +17,7 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EnrollmentController;
 use App\Http\Controllers\ErpController;
 use App\Http\Controllers\FinanceController;
+use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\MarkSubmissionController;
 use App\Http\Controllers\NotificationCenterController;
 use App\Http\Controllers\ProfileController;
@@ -46,6 +47,8 @@ Route::get('/', function () {
         ? redirect()->route('dashboard')
         : redirect()->route('login');
 });
+
+Route::post('/locale', [LocaleController::class, 'update'])->name('locale.update');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [ErpController::class, 'dashboard'])->name('dashboard');
