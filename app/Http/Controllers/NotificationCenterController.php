@@ -42,7 +42,7 @@ class NotificationCenterController extends Controller
 
         $notification->update(['read_at' => now()]);
 
-        return redirect()->route('notifications.index')->with('success', 'Notification marked as read.');
+        return redirect()->route('notifications.index')->with('success', __('Notification marked as read.'));
     }
 
     public function markAllRead(Request $request)
@@ -54,7 +54,7 @@ class NotificationCenterController extends Controller
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
 
-        return redirect()->route('notifications.index')->with('success', 'All notifications marked as read.');
+        return redirect()->route('notifications.index')->with('success', __('All notifications marked as read.'));
     }
 
     private function recipientScope(Builder $query, Request $request, ?Student $student): void

@@ -45,9 +45,9 @@ class ActivityLogController extends Controller
         $actors = User::whereIn('id', $actorIds)->orderBy('name')->get(['id', 'name', 'email']);
 
         $stats = [
-            ['label' => 'Total Events', 'value' => number_format(ActivityLog::count()), 'detail' => 'All recorded activity'],
-            ['label' => 'Events Today', 'value' => number_format(ActivityLog::whereDate('created_at', today())->count()), 'detail' => 'Since midnight'],
-            ['label' => 'Distinct Actors', 'value' => number_format($actorIds->count()), 'detail' => 'Users who have triggered an event'],
+            ['label' => __('Total Events'), 'value' => number_format(ActivityLog::count()), 'detail' => __('All recorded activity')],
+            ['label' => __('Events Today'), 'value' => number_format(ActivityLog::whereDate('created_at', today())->count()), 'detail' => __('Since midnight')],
+            ['label' => __('Distinct Actors'), 'value' => number_format($actorIds->count()), 'detail' => __('Users who have triggered an event')],
         ];
 
         return view('activity-log.index', compact('logs', 'filters', 'logNames', 'actors', 'stats'));

@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Academic Transcript</title>
+    <title>{{ __('Academic Transcript') }}</title>
     <style>
         * {
             margin: 0;
@@ -176,39 +176,39 @@
     <div class="container">
         <div class="header">
             <div class="institution-name">{{ $institution }}</div>
-            <div class="subtitle">Academic Transcript</div>
+            <div class="subtitle">{{ __('Academic Transcript') }}</div>
         </div>
 
         <div class="student-info">
             <div class="info-group">
-                <span class="info-label">Student Name</span>
+                <span class="info-label">{{ __('Student Name') }}</span>
                 <span class="info-value">{{ $student->full_name }}</span>
             </div>
             <div class="info-group">
-                <span class="info-label">Student ID</span>
+                <span class="info-label">{{ __('Student ID') }}</span>
                 <span class="info-value">{{ $student->student_id }}</span>
             </div>
             <div class="info-group">
-                <span class="info-label">Email</span>
+                <span class="info-label">{{ __('Email') }}</span>
                 <span class="info-value">{{ $student->email }}</span>
             </div>
             <div class="info-group">
-                <span class="info-label">Department</span>
-                <span class="info-value">{{ $student->department?->name ?? 'N/A' }}</span>
+                <span class="info-label">{{ __('Department') }}</span>
+                <span class="info-value">{{ $student->department?->name ?? __('N/A') }}</span>
             </div>
         </div>
 
         <div class="summary">
             <div class="summary-card">
-                <div class="summary-label">Cumulative GPA</div>
+                <div class="summary-label">{{ __('Cumulative GPA') }}</div>
                 <div class="summary-value">{{ number_format($gpa, 2) }}</div>
             </div>
             <div class="summary-card">
-                <div class="summary-label">Total Credits</div>
+                <div class="summary-label">{{ __('Total Credits') }}</div>
                 <div class="summary-value">{{ $total_credits }}</div>
             </div>
             <div class="summary-card">
-                <div class="summary-label">Courses Completed</div>
+                <div class="summary-label">{{ __('Courses Completed') }}</div>
                 <div class="summary-value">{{ $completed_courses }}</div>
             </div>
         </div>
@@ -217,29 +217,29 @@
             <table class="marks-table">
                 <thead>
                     <tr>
-                        <th>Course Code</th>
-                        <th>Course Name</th>
-                        <th>Department</th>
-                        <th>Semester</th>
-                        <th>Credits</th>
-                        <th>Mark</th>
-                        <th>Grade</th>
+                        <th>{{ __('Course Code') }}</th>
+                        <th>{{ __('Course Name') }}</th>
+                        <th>{{ __('Department') }}</th>
+                        <th>{{ __('Semester') }}</th>
+                        <th>{{ __('Credits') }}</th>
+                        <th>{{ __('Mark') }}</th>
+                        <th>{{ __('Grade') }}</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($marks as $mark)
                         <tr>
-                            <td>{{ $mark->course->code ?? 'N/A' }}</td>
-                            <td>{{ $mark->course->name ?? 'N/A' }}</td>
-                            <td>{{ $mark->course->department?->name ?? 'N/A' }}</td>
+                            <td>{{ $mark->course->code ?? __('N/A') }}</td>
+                            <td>{{ $mark->course->name ?? __('N/A') }}</td>
+                            <td>{{ $mark->course->department?->name ?? __('N/A') }}</td>
                             <td>
                                 {{ $mark->courseSection?->semester
                                     ? $mark->courseSection->semester->name.' '.$mark->courseSection->semester->academic_year
-                                    : 'N/A' }}
+                                    : __('N/A') }}
                             </td>
                             <td>{{ $mark->course->credits ?? 0 }}</td>
                             <td>
-                                <span class="mark-value">{{ $mark->final_mark ?? 'N/A' }}</span>
+                                <span class="mark-value">{{ $mark->final_mark ?? __('N/A') }}</span>
                             </td>
                             <td>
                                 @php
@@ -261,15 +261,15 @@
             </table>
         @else
             <div style="text-align: center; padding: 20px; color: #999;">
-                No published marks available yet.
+                {{ __('No published marks available yet.') }}
             </div>
         @endif
 
         <div class="footer">
-            <div>System-generated academic transcript issued by {{ $institution }}</div>
-            <div class="timestamp">Generated on: {{ $generated_at->format('F j, Y \a\t g:i A') }}</div>
+            <div>{{ __('System-generated academic transcript issued by :institution', ['institution' => $institution]) }}</div>
+            <div class="timestamp">{{ __('Generated on: :date', ['date' => $generated_at->format('F j, Y \a\t g:i A')]) }}</div>
             <div style="margin-top: 5px; color: #999; font-size: 10px;">
-                Document Reference: {{ md5($student->id . $generated_at->timestamp) }}
+                {{ __('Document Reference: :reference', ['reference' => md5($student->id . $generated_at->timestamp)]) }}
             </div>
         </div>
     </div>

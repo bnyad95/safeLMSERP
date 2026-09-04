@@ -3,10 +3,10 @@
     $isSelf = $isEdit && auth()->id() === $user->id;
     $selectedRoleIds = old('roles', $userRoleIds ?? []);
     $scopeLabels = [
-        'university' => 'University scope required',
-        'college' => 'College scope required',
-        'department' => 'Department scope required',
-        'flexible' => 'University, college, or department scope required',
+        'university' => __('University scope required'),
+        'college' => __('College scope required'),
+        'department' => __('Department scope required'),
+        'flexible' => __('University, college, or department scope required'),
     ];
 @endphp
 
@@ -23,57 +23,57 @@
 
     <div class="grid gap-6 md:grid-cols-2">
         <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Full name</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Full name') }}</label>
             <input type="text" name="name" value="{{ old('name', $user->name ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email address</label>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Email address') }}</label>
             <input type="email" name="email" value="{{ old('email', $user->email ?? '') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
         </div>
 
         @unless($isEdit)
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Temporary password</label>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Temporary password') }}</label>
                 <input type="password" name="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">At least 8 characters with uppercase, lowercase, and a number. The user must replace it after login.</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ __('At least 8 characters with uppercase, lowercase, and a number. The user must replace it after login.') }}</p>
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm temporary password</label>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Confirm temporary password') }}</label>
                 <input type="password" name="password_confirmation" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" required>
             </div>
         @endunless
     </div>
 
     <div class="border-t border-gray-200 pt-6 dark:border-gray-800">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Organization scope</h3>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Select from broad to specific. The selected role determines which level is stored; unrelated values are removed automatically.</p>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ __('Organization scope') }}</h3>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ __('Select from broad to specific. The selected role determines which level is stored; unrelated values are removed automatically.') }}</p>
         <div class="mt-4 grid gap-4 md:grid-cols-3">
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="user-university">University</label>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="user-university">{{ __('University') }}</label>
                 <select id="user-university" name="university_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                    <option value="">Not assigned</option>
+                    <option value="">{{ __('Not assigned') }}</option>
                     @foreach($universities as $university)
                         <option value="{{ $university->id }}" @selected((int) old('university_id', $user->university_id ?? 0) === $university->id)>{{ $university->name }}</option>
                     @endforeach
                 </select>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="user-college">College</label>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="user-college">{{ __('College') }}</label>
                 <select id="user-college" name="college_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                    <option value="">Not assigned</option>
+                    <option value="">{{ __('Not assigned') }}</option>
                     @foreach($colleges as $college)
-                        <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected((int) old('college_id', $user->college_id ?? 0) === $college->id)>{{ $college->name }} / {{ $college->university?->name ?? 'University' }}</option>
+                        <option value="{{ $college->id }}" data-university-id="{{ $college->university_id }}" @selected((int) old('college_id', $user->college_id ?? 0) === $college->id)>{{ $college->name }} / {{ $college->university?->name ?? __('University') }}</option>
                     @endforeach
                 </select>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="user-department">Department</label>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="user-department">{{ __('Department') }}</label>
                 <select id="user-department" name="department_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                    <option value="">Not assigned</option>
+                    <option value="">{{ __('Not assigned') }}</option>
                     @foreach($departments as $department)
-                        <option value="{{ $department->id }}" data-college-id="{{ $department->college_id }}" data-university-id="{{ $department->university_id }}" @selected((int) old('department_id', $user->department_id ?? 0) === $department->id)>{{ $department->name }} / {{ $department->college?->name ?? $department->university?->name ?? 'Organization' }}</option>
+                        <option value="{{ $department->id }}" data-college-id="{{ $department->college_id }}" data-university-id="{{ $department->university_id }}" @selected((int) old('department_id', $user->department_id ?? 0) === $department->id)>{{ $department->name }} / {{ $department->college?->name ?? $department->university?->name ?? __('Organization') }}</option>
                     @endforeach
                 </select>
             </div>
@@ -81,8 +81,8 @@
     </div>
 
     <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign roles</label>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Student and Teacher accounts are created from their dedicated directories so their profiles and login accounts stay connected.</p>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('Assign roles') }}</label>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ __('Student and Teacher accounts are created from their dedicated directories so their profiles and login accounts stay connected.') }}</p>
         <div class="mt-4 space-y-5">
             @foreach ($roleGroups as $groupName => $groupRoles)
                 <section>
@@ -113,7 +113,7 @@
                                         <span class="mt-1 block text-xs font-semibold text-blue-700 dark:text-blue-300">{{ $scopeLabels[$roleScope] }}</span>
                                     @endif
                                     @if($isSelfSuperAdminRole)
-                                        <span class="mt-1 block text-xs font-semibold text-red-700">Protected for current account</span>
+                                        <span class="mt-1 block text-xs font-semibold text-red-700">{{ __('Protected for current account') }}</span>
                                     @endif
                                 </span>
                             </label>
@@ -125,8 +125,8 @@
     </div>
 
     <div class="flex items-center justify-end gap-3">
-        <a href="{{ route('users.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</a>
-        <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">{{ $isEdit ? 'Update User' : 'Create User' }}</button>
+        <a href="{{ route('users.index') }}" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Cancel') }}</a>
+        <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">{{ $isEdit ? __('Update User') : __('Create User') }}</button>
     </div>
 </div>
 

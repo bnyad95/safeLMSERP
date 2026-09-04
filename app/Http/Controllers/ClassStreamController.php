@@ -89,7 +89,7 @@ class ClassStreamController extends Controller
             'attachment_mime' => $attachment?->getClientMimeType(),
         ]);
 
-        return $this->redirectToStream($request, $courseSection)->with('success', 'Posted to the class stream.');
+        return $this->redirectToStream($request, $courseSection)->with('success', __('Posted to the class stream.'));
     }
 
     public function comment(Request $request, CourseSection $courseSection, ClassStreamPost $post)
@@ -103,7 +103,7 @@ class ClassStreamController extends Controller
             'body' => $validated['body'],
         ]);
 
-        return $this->redirectToStream($request, $courseSection)->with('success', 'Comment added.');
+        return $this->redirectToStream($request, $courseSection)->with('success', __('Comment added.'));
     }
 
     public function react(Request $request, CourseSection $courseSection, ClassStreamPost $post)
@@ -159,7 +159,7 @@ class ClassStreamController extends Controller
         }
         $post->delete();
 
-        return $this->redirectToStream($request, $courseSection)->with('success', 'Stream post deleted.');
+        return $this->redirectToStream($request, $courseSection)->with('success', __('Stream post deleted.'));
     }
 
     public function toggleStudentPosting(Request $request, CourseSection $courseSection)
@@ -169,7 +169,7 @@ class ClassStreamController extends Controller
 
         return $this->redirectToStream($request, $courseSection)->with(
             'success',
-            $courseSection->students_can_post_stream ? 'Students can now post to the stream.' : 'Student stream posting disabled.'
+            $courseSection->students_can_post_stream ? __('Students can now post to the stream.') : __('Student stream posting disabled.')
         );
     }
 
