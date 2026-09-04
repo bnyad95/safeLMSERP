@@ -121,26 +121,26 @@ class FinanceTransaction extends Model
     public function statusLabel(): string
     {
         if ($this->status !== 'paid') {
-            return ucfirst($this->status);
+            return __(ucfirst($this->status));
         }
 
-        return $this->nonCashLabelFor($this->type) ?? 'Paid';
+        return $this->nonCashLabelFor($this->type) ?? __('Paid');
     }
 
     public function paymentStatusLabel(): string
     {
         if ($this->payment_status !== 'paid') {
-            return ucfirst($this->payment_status);
+            return __(ucfirst($this->payment_status));
         }
 
-        return $this->nonCashLabelFor($this->type) ?? 'Paid';
+        return $this->nonCashLabelFor($this->type) ?? __('Paid');
     }
 
     private function nonCashLabelFor(string $type): ?string
     {
         return match ($type) {
-            'discount', 'scholarship' => 'Applied',
-            'refund' => 'Processed',
+            'discount', 'scholarship' => __('Applied'),
+            'refund' => __('Processed'),
             default => null,
         };
     }

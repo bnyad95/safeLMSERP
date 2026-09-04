@@ -382,7 +382,8 @@ class FinanceController extends Controller
             'transactions' => $transactions,
             'stats' => [
                 ['label' => __('Total Charges'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'charges'), 'detail' => __('Invoices by currency')],
-                ['label' => __('Total Credits'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'credits'), 'detail' => __('Payments, discounts, scholarships, net of refunds')],
+                ['label' => __('Cash Paid'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'cash_paid'), 'detail' => __('Payments received, net of refunds')],
+                ['label' => __('Discounts & Scholarships'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'non_cash_credits'), 'detail' => __('Non-cash credits applied to invoices')],
                 ['label' => __('Outstanding Balance'), 'value' => $this->formatCurrencyTotals($scopeBalances, 'balance'), 'detail' => __('Scoped balances by currency')],
                 ['label' => __('Filtered Balance'), 'value' => $this->formatCurrencyTotals($filteredBalances, 'balance'), 'detail' => $selectedStudent ? __('Selected filters for this student') : __('Current filters')],
             ],
@@ -1522,6 +1523,8 @@ class FinanceController extends Controller
             ->withoutEagerLoads()
             ->reorder()
             ->where('posting_status', 'posted')
+            ->where('status', '!=', 'cancelled')
+            ->whereNull('original_transaction_id')
             ->select('currency')
             ->selectRaw("SUM(CASE WHEN type = 'invoice' THEN amount ELSE 0 END) as invoice_charges")
             ->selectRaw("SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as refund_charges")
